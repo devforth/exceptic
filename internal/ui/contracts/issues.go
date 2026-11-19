@@ -1,0 +1,98 @@
+// Package contracts holds the view types the templates receive, with their
+// display methods; every view type of the UI is defined here.
+package contracts
+
+import (
+	"time"
+
+	"github.com/devforth/exceptic/internal/sentry"
+	"github.com/devforth/exceptic/internal/services"
+	"github.com/devforth/exceptic/internal/storage/store"
+	"github.com/devforth/exceptic/internal/ui/lists"
+)
+
+type IssueRow struct {
+	store.Issue
+	ProjectName string
+}
+
+// Resolved is when the issue was resolved; zero while it is not (a
+// regression clears it).
+func (row IssueRow) Resolved() time.Time {
+	if row.ResolvedAt == nil {
+		return time.Time{}
+	}
+
+	return *row.ResolvedAt
+}
+
+type IssuesData struct {
+	Projects lists.Picker
+	Status   string
+	Levels   lists.Picker
+	Query    string
+	Dates    lists.DateRange
+	Sort     string
+	Filter   lists.FilterLinks
+	Issues   []IssueRow
+	Pager    lists.Pager
+}
+
+// ShowResolved: the "Resolved" column is shown when resolved issues are listed.
+func (data IssuesData) ShowResolved() bool {
+	return data.Status == store.StatusResolved || data.Status == store.StatusAll
+}
+
+// Statuses are the choices of the status filter.
+func (data IssuesData) Statuses() []lists.IssueStatus {
+	return lists.StatusFilter
+}
+
+type IssueData struct {
+	Issue  IssueRow
+	Events []store.EventSummary
+	Event  store.Event
+	Parsed *sentry.Event
+	// RelatedLogs are the logs of the event's request (LogsFromRequest), or of
+	// the same trace around the time of the error when spans do not match.
+	RelatedLogs     []store.LogRecord
+	LogsFromRequest bool
+	// TraceLogs: the event's trace has logs.
+	TraceLogs   bool
+	AgentPrompt string
+	SelectedID  string
+	// History is who changed the status and when, newest first.
+	History []store.StatusChange
+}
+
+// ClockDrift is how far the device's clock was off (services.ClockDrift).
+func (data IssueData) ClockDrift() time.Duration {
+	return services.ClockDrift(data.Event, data.Parsed).Round(time.Minute)
+}
+
+// LastChange is the latest status change, for the header; nil without one.
+func (data IssueData) LastChange() *store.StatusChange {
+	if len(data.History) == 0 {
+		return nil
+	}
+
+	return &data.History[0]
+}
+
+type LogsData struct {
+	Projects lists.Picker
+	Query    string
+	Dates    lists.DateRange
+	TraceID  string
+	Levels   lists.Picker
+	Filter   lists.FilterLinks
+	Logs     []LogRow
+	Pager    lists.Pager
+}
+
+type LogRow struct {
+	store.LogRecord
+	ProjectName string
+	// Issue is the error raised in the same request, if any.
+	Issue *store.LogIssue
+}

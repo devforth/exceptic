@@ -1,0 +1,30 @@
+package requests
+
+import (
+	"context"
+	"net/http"
+
+	"github.com/devforth/exceptic/internal/services"
+	"github.com/devforth/exceptic/internal/storage/store"
+)
+
+type viewerKey struct{}
+
+// WithViewer returns the request with its logged-in user (set by
+// middleware.RequireLogin).
+func WithViewer(r *http.Request, viewer store.User) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), viewerKey{}, viewer))
+}
+
+// Viewer is the logged-in user of the request; the zero User (no role)
+// without a session.
+func Viewer(r *http.Request) store.User {
+	viewer, _ := r.Context().Value(viewerKey{}).(store.User)
+
+	return viewer
+}
+
+// ReadUser reads the user form.
+func ReadUser(r *http.Request) services.UserInput {
+	return services.UserInput{Username: r.PostFormValue("username"), Name: r.PostFormValue("name"), Role: r.PostFormValue("role")}
+}

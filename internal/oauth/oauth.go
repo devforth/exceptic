@@ -1,0 +1,242 @@
+// Package oauth signs coding agents in to the MCP server: an OAuth 2.1
+// authorization server for public clients, and the personal token.
+package oauth
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"errors"
+	"log/slog"
+	"net/http"
+	"net/netip"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/devforth/exceptic/internal/platform/secret"
+	"github.com/devforth/exceptic/internal/server"
+	"github.com/devforth/exceptic/internal/storage/store"
+)
+
+// Paths of the endpoints, below the server's address (PUBLIC_URL).
+const (
+	AuthorizePath = "/oauth/authorize" // the consent page, served by the UI
+	TokenPath     = "/oauth/token"
+	RegisterPath  = "/oauth/register"
+	jwksPath      = "/oauth/jwks"
+)
+
+const (
+	accessTokenTTL  = time.Hour
+	refreshTokenTTL = 30 * 24 * time.Hour
+	codeTTL         = 5 * time.Minute
+)
+
+// Token prefixes tell the kinds apart in logs and secret scanners.
+const (
+	accessPrefix   = "emcp_at_"
+	refreshPrefix  = "emcp_rt_"
+	personalPrefix = "emcp_pt_"
+)
+
+type Server struct {
+	Store store.Store
+	// Name (APP_NAME) is how agents show this server.
+	Name string
+	// PublicURL and TrustedProxies give the server's address, as for DSNs.
+	PublicURL      string
+	TrustedProxies []netip.Prefix
+	// ResourcePath is the MCP endpoint the tokens are for.
+	ResourcePath string
+	Now          func() time.Time // nil means time.Now
+	// MetadataClient fetches client metadata documents; nil is the client
+	// that reaches only public addresses (tests point it at a local server).
+	MetadataClient *http.Client
+	Logger         *slog.Logger // nil means slog.Default()
+}
+
+func (authorization *Server) now() time.Time {
+	if authorization.Now != nil {
+		return authorization.Now()
+	}
+
+	return time.Now()
+}
+
+// internalError logs err and answers 500 without its details.
+func (authorization *Server) internalError(w http.ResponseWriter, r *http.Request, err error) {
+	logger := authorization.Logger
+
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	logger.Error("oauth request failed", "path", r.URL.Path, "err", err)
+	http.Error(w, "internal error", http.StatusInternalServerError)
+}
+
+// Issuer identifies this authorization server: the server's address.
+func (authorization *Server) Issuer(r *http.Request) string {
+	return server.PublicURL(r, authorization.PublicURL, authorization.TrustedProxies).String()
+}
+
+// URL is the address of path on this server.
+func (authorization *Server) URL(r *http.Request, path string) string {
+	return server.PublicURL(r, authorization.PublicURL, authorization.TrustedProxies).JoinPath(path).String()
+}
+
+// ResourceURL is the MCP endpoint, as agents connect to it.
+func (authorization *Server) ResourceURL(r *http.Request) string {
+	return authorization.URL(r, authorization.ResourcePath)
+}
+
+// Error is an OAuth error response (RFC 6749 §5.2).
+type Error struct {
+	Code        string `json:"error"`
+	Description string `json:"error_description,omitempty"`
+}
+
+func (err *Error) Error() string { return err.Code + ": " + err.Description }
+
+func oauthError(code, description string) *Error {
+	return &Error{Code: code, Description: description}
+}
+
+// Codes and tokens are secretBytes random bytes, written in base64url.
+const secretBytes = 32
+
+var secretLength = base64.RawURLEncoding.EncodedLen(secretBytes)
+
+// newSecret returns a random token with prefix.
+func newSecret(prefix string) (string, error) {
+	random := make([]byte, secretBytes)
+
+	if _, err := rand.Read(random); err != nil {
+		return "", err
+	}
+
+	return prefix + base64.RawURLEncoding.EncodeToString(random), nil
+}
+
+func validSecret(secret, prefix string) bool {
+	if !strings.HasPrefix(secret, prefix) || len(secret) != len(prefix)+secretLength {
+		return false
+	}
+
+	random, err := base64.RawURLEncoding.Strict().DecodeString(strings.TrimPrefix(secret, prefix))
+
+	return err == nil && len(random) == secretBytes
+}
+
+// Authenticate returns the grant of a bearer token (an OAuth access token or
+// the personal token) and records its use; store.ErrNotFound when it is
+// unknown, expired or disconnected.
+func (authorization *Server) Authenticate(ctx context.Context, token string) (store.Grant, error) {
+	if !validSecret(token, accessPrefix) && !validSecret(token, personalPrefix) {
+		return store.Grant{}, store.ErrNotFound
+	}
+
+	return authorization.Store.UseGrant(ctx, secret.Hash(token), authorization.now())
+}
+
+// Protect lets requests with a valid bearer token through. Others get 401
+// with the address of the protected resource metadata, where agents find how
+// to sign in.
+func (authorization *Server) Protect(next http.Handler) http.Handler {
+	next = withGrant(next)
+
+	return authorization.guard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		header := r.Header.Get("Authorization")
+		scheme, token, found := strings.Cut(header, " ")
+		challenge := `Bearer resource_metadata="` + authorization.URL(r, "/.well-known/oauth-protected-resource"+authorization.ResourcePath) + `"`
+
+		if !found || !strings.EqualFold(scheme, "Bearer") || len(r.Header.Values("Authorization")) != 1 || strings.TrimSpace(token) == "" {
+			unauthorized(w, challenge, "sign in to connect: see the MCP page of the panel")
+
+			return
+		}
+
+		grant, err := authorization.Authenticate(r.Context(), strings.TrimSpace(token))
+
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			unauthorized(w, challenge+`, error="invalid_token"`, "the token is invalid, expired or disconnected")
+		case err != nil:
+			authorization.internalError(w, r, err)
+		default:
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), grantKey{}, grant)))
+		}
+	}))
+}
+
+func unauthorized(w http.ResponseWriter, challenge, message string) {
+	w.Header().Set("WWW-Authenticate", challenge)
+	server.WriteJSON(w, http.StatusUnauthorized, oauthError("invalid_token", message))
+}
+
+// NewPersonalToken replaces the user's personal token and returns the new
+// one; it is shown once, only its hash is stored.
+func (authorization *Server) NewPersonalToken(ctx context.Context, userID string) (string, error) {
+	token, err := newSecret(personalPrefix)
+
+	if err != nil {
+		return "", err
+	}
+
+	return token, authorization.Store.ReplacePersonalToken(ctx, userID, secret.Hash(token), authorization.now())
+}
+
+// Grants lists the connected agents and the personal token of a user,
+// newest first.
+func (authorization *Server) Grants(ctx context.Context, userID string) ([]store.Grant, error) {
+	return authorization.Store.ListGrants(ctx, userID, authorization.now())
+}
+
+// Grant reads a grant, to check whose it is.
+func (authorization *Server) Grant(ctx context.Context, grantID string) (store.Grant, error) {
+	return authorization.Store.GetGrant(ctx, grantID)
+}
+
+// Disconnect revokes a grant: its tokens stop working at once.
+func (authorization *Server) Disconnect(ctx context.Context, grantID string) error {
+	return authorization.Store.DeleteGrant(ctx, grantID)
+}
+
+// Unencrypted reports whether agents reach the server over plain HTTP on
+// another machine: codes and tokens could then be read on the way.
+func (authorization *Server) Unencrypted(r *http.Request) bool {
+	address := server.PublicURL(r, authorization.PublicURL, authorization.TrustedProxies)
+
+	return address.Scheme != "https" && !loopback(address)
+}
+
+// sameURL compares two URLs ignoring a trailing slash: agents differ in
+// whether they add one to the resource.
+func sameURL(first, second string) bool {
+	return strings.TrimRight(first, "/") == strings.TrimRight(second, "/")
+}
+
+// checkResource accepts a missing resource parameter (RFC 8707) or this MCP
+// endpoint.
+func (authorization *Server) checkResource(r *http.Request, resource string) error {
+	if resource != "" && !sameURL(resource, authorization.ResourceURL(r)) {
+		return oauthError("invalid_target", "resource must be "+authorization.ResourceURL(r))
+	}
+
+	return nil
+}
+
+// loopback reports whether a redirect goes back to the agent on this
+// machine (RFC 8252): http is fine there, and the port may change.
+func loopback(redirect *url.URL) bool {
+	host := redirect.Hostname()
+
+	if host == "localhost" {
+		return true
+	}
+
+	address, err := netip.ParseAddr(host)
+
+	return err == nil && address.IsLoopback()
+}

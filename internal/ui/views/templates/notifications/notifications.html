@@ -1,0 +1,60 @@
+{{define "title"}}Notifications{{end}}
+
+{{define "content"}}
+{{with .Data}}
+<div class="page-heading">
+  <h1>Notifications</h1>
+  <div class="actions">
+    <a class="button" href="/notifications/log">Delivery log</a>
+    <a class="button primary" href="/notifications/new">Add connection</a>
+  </div>
+</div>
+<p class="muted">New issues and regressions are sent to every active connection that has the project and the level selected.</p>
+
+{{with .Notice}}<p class="notice-success" role="status">{{.}}</p>{{end}}
+
+{{if .Rows}}
+<table class="list">
+  <thead><tr><th>Name</th><th class="wide-only">Type</th><th>Destination</th><th class="wide-only">Projects</th><th class="wide-only">Levels</th><th>Delivery</th><th>Status</th><th class="actions-column"><span class="visually-hidden">Actions</span></th></tr></thead>
+  <tbody>
+    {{range .Rows}}
+    <tr>
+      <td><a class="row-title" href="/notifications/{{.ID}}">{{.Name}}</a></td>
+      <td class="wide-only">{{.TypeLabel}}</td>
+      <td class="muted">{{.Destination}}</td>
+      <td class="wide-only">{{if .AllProjects}}All projects{{else}}{{range .Projects}}{{template "badge" (projectBadge .)}} {{end}}{{end}}</td>
+      <td class="wide-only">{{.Levels}}</td>
+      <td class="small">
+        {{$id := .ID}}
+        {{with .Delivery}}
+        {{if .Failing}}<a class="field-error" href="/notifications/log?connection={{$id}}" title="{{.LastError}}">failing: {{shorten .LastError 60}}</a>
+        {{if .Retrying}}{{template "retry-now" (retryNow $id .Retrying "/notifications")}}{{end}}
+        {{else if not .LastSentAt.IsZero}}<a class="muted" href="/notifications/log?connection={{$id}}">ok · {{template "time" .LastSentAt}}</a>
+        {{else if .Pending}}<span class="muted">{{.Pending}} queued</span>
+        {{else}}<span class="muted">—</span>{{end}}
+        {{end}}
+      </td>
+      <td>
+        <form method="post" action="/notifications/{{.ID}}/active">
+          <input type="hidden" name="active" value="{{if .Active}}0{{else}}1{{end}}">
+          <button type="submit" class="connection-status connection-{{.StatusClass}}" {{if and (not .Active) (not .Verified)}}disabled title="Confirm the email address first"{{else}}title="{{if .Active}}Deactivate{{else}}Activate{{end}}"{{end}} aria-label="{{if .Active}}Deactivate{{else}}Activate{{end}} {{.Name}}">
+            <svg viewBox="0 0 24 24" aria-hidden="true">{{if not .Verified}}<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>{{else if .Active}}<path d="M8 5v14 M16 5v14"/>{{else}}<path d="m7 4 14 8-14 8Z"/>{{end}}</svg>
+            {{.Status}}
+          </button>
+        </form>
+      </td>
+      <td class="actions-column">
+        <div class="actions row-actions">
+          {{template "edit-link" (editLink (printf "/notifications/%s" .ID) (printf "Edit %s" .Name))}}
+          {{template "delete-button" (deleteConnection .ID .Name "")}}
+        </div>
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}
+<p class="empty">No connections yet. Nothing is sent until you add one.</p>
+{{end}}
+{{end}}
+{{end}}

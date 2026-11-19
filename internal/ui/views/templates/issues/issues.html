@@ -1,0 +1,95 @@
+{{define "title"}}Issues{{end}}
+
+{{define "content"}}
+{{with .Data}}
+<h1>Issues</h1>
+
+{{/* Any change re-renders only #issue-list and keeps the filters in the URL. */}}
+<form class="filters" id="issue-filters" method="get" action="/issues"
+      hx-get="/issues" hx-target="#issue-list" hx-swap="outerHTML"
+      hx-trigger="input delay:300ms, submit" hx-push-url="true" hx-sync="this:replace">
+  {{template "picker" .Projects}}
+
+  <select name="status" aria-label="Status">
+    {{range .Statuses}}<option value="{{.Name}}" {{if eq .Name $.Data.Status}}selected{{end}}>{{.Label}}</option>{{end}}
+  </select>
+
+  {{template "picker" .Levels}}
+
+  <input type="search" name="query" value="{{.Query}}" placeholder="Search title or location" aria-label="Search">
+
+  {{template "date-range" .Dates}}
+</form>
+
+{{template "issue-list" $}}
+{{end}}
+{{end}}
+
+{{define "issue-list"}}
+{{with .Data}}
+<div id="issue-list">
+  {{/* The sort is chosen by the column headings; this field belongs to the
+       filter form (form=), so changing a filter keeps it, and it is
+       replaced with the list. */}}
+  {{with .Sort}}<input type="hidden" name="sort" value="{{.}}" form="issue-filters">{{end}}
+  {{template "active-filters" .Filter.IssueFilters}}
+  {{if .Issues}}
+  {{/* The same actions as on the issue page, applied to the checked issues. */}}
+  <form class="bulk" method="post" action="/issues/bulk" hx-post="/issues/bulk">
+    <input type="hidden" name="return" value="{{.Filter.Current}}">
+
+    <div class="bulk-bar">
+      <span class="bulk-count muted">Select issues to change them together</span>
+      {{template "issue-action-buttons" (bulkActions $.Viewer.CanAdminister)}}
+    </div>
+
+    <table class="list">
+      <thead>
+        <tr>
+          <th class="check"><input type="checkbox" class="select-all" aria-label="Select all issues"></th>
+          <th>Issue</th>
+          {{range .Filter.SortHeaders}}{{template "sort-header" .}}{{end}}
+          {{if .ShowResolved}}<th class="wide-only">Resolved</th>{{end}}<th class="actions-column"><span class="visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{template "issue-rows" $}}
+      </tbody>
+    </table>
+  </form>
+  {{template "pager" .Pager}}
+  {{else}}
+  <p class="empty">No issues match these filters.</p>
+  {{end}}
+</div>
+{{end}}
+{{end}}
+
+{{define "issue-rows"}}
+{{with .Data}}
+{{range .Issues}}
+{{/* The status is the row: resolved tinted, ignored faded; hovering says what it means. */}}
+<tr class="issue-{{.Status}}" title="{{(issueStatus .Status).Title}}">
+  <td class="check"><input type="checkbox" name="issue" value="{{.ID}}" aria-label="Select issue {{.ID}}"></td>
+  <td>
+    {{template "badge" (levelBadge .Level $.Data.Filter)}} <a class="row-title" href="/issues/{{.ID}}">{{.Title}}</a>
+    <span class="visually-hidden">({{.Status}})</span>
+    <div class="muted small">{{.Culprit}}</div>
+  </td>
+  <td>{{template "badge" (projectBadge .ProjectName $.Data.Filter)}}</td>
+  <td class="number wide-only">{{.EventCount}}</td>
+  <td class="wide-only">{{template "time" .FirstSeen}}</td>
+  <td class="wide-only">{{template "time" .LastSeen}}</td>
+  {{if $.Data.ShowResolved}}<td class="wide-only">{{if .ResolvedAt}}{{template "time" .Resolved}}{{else}}<span class="muted">—</span>{{end}}</td>{{end}}
+  <td class="actions-column">
+    <div class="actions row-actions">
+      {{template "mcp-copy" .ID}}
+      <a class="button accent" href="/issues/{{.ID}}" title="Open the issue" aria-label="Open the issue {{.Title}}">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg>
+      </a>
+    </div>
+  </td>
+</tr>
+{{end}}
+{{end}}
+{{end}}

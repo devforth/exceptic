@@ -1,0 +1,229 @@
+{{define "title"}}{{.Data.Issue.Title}}{{end}}
+
+{{define "content"}}
+{{with .Data}}
+{{template "back" (back "/issues" "Issues")}}
+
+<section class="issue-header">
+  <h1>{{template "badge" (levelBadge .Issue.Level)}} {{.Issue.Title}}</h1>
+  <p class="muted">{{.Issue.Culprit}}</p>
+
+  <dl class="facts">
+    <div><dt>ID</dt><dd>{{.Issue.ID}}</dd></div>
+    <div><dt>Project</dt><dd>{{template "badge" (projectBadge .Issue.ProjectName)}}</dd></div>
+    <div><dt>Status</dt><dd>{{template "badge" (statusBadge .Issue.Status)}}{{with .LastChange}} <span class="muted small">{{template "status-change-author" .}} · {{template "time" .CreatedAt}}</span>{{end}}</dd></div>
+    <div><dt>Events</dt><dd>{{if .Events}}<a href="#events" title="Show the events">{{.Issue.EventCount}}</a>{{else}}{{.Issue.EventCount}}{{end}}</dd></div>
+    <div><dt>First seen</dt><dd>{{template "time" .Issue.FirstSeen}}</dd></div>
+    <div><dt>Last seen</dt><dd>{{template "time" .Issue.LastSeen}}</dd></div>
+    {{if .Issue.ResolvedAt}}<div><dt>Resolved</dt><dd>{{template "time" .Issue.Resolved}}</dd></div>{{end}}
+  </dl>
+
+  {{$issue := .Issue}}
+  <form class="actions" method="post" action="/issues/{{$issue.ID}}/action" hx-post="/issues/{{$issue.ID}}/action">
+    {{template "issue-action-buttons" (issueActions $issue.Status $.Viewer.CanAdminister)}}
+    {{template "copy-button" (copyButton "agent-fix-prompt" "Prompt" "Copy prompt for a coding agent" "Agent prompt copied to clipboard.")}}
+    {{template "mcp-copy" .Issue.ID}}
+  </form>
+  <textarea id="agent-fix-prompt" hidden>{{.AgentPrompt}}</textarea>
+</section>
+
+{{with .Parsed}}
+<section>
+  <h2>Event <code>{{.EventID}}</code></h2>
+  {{if $.Data.Event.Thinned}}<p class="muted small">Details of this old event (breadcrumbs, request, user, tags, contexts, extra, local variables) were removed to save space; the error, its stack trace and message stay.</p>{{end}}
+  <dl class="facts">
+    <div><dt>Time</dt><dd>{{template "time" $.Data.Event.Timestamp}}{{with $.Data.ClockDrift}} <span class="muted small">the device's clock was off by {{.}}</span>{{end}}</dd></div>
+    {{with .Environment}}<div><dt>Environment</dt><dd>{{.}}</dd></div>{{end}}
+    {{with .Release}}<div><dt>Release</dt><dd>{{.}}</dd></div>{{end}}
+    {{with .ServerName}}<div><dt>Server</dt><dd>{{.}}</dd></div>{{end}}
+    {{with .Platform}}<div><dt>Platform</dt><dd>{{.}}</dd></div>{{end}}
+    {{with .SDK}}<div><dt>SDK</dt><dd>{{.Name}} {{.Version}}</dd></div>{{end}}
+    {{with .Trace.TraceID}}<div><dt>Trace</dt><dd>{{if $.Data.TraceLogs}}<a href="/logs?trace_id={{.}}"><code>{{.}}</code></a>{{else}}<code>{{.}}</code>{{end}}</dd></div>{{end}}
+  </dl>
+</section>
+
+{{if .Exception}}
+<section>
+  <h2>Exception</h2>
+  {{range $index, $exception := .Exception.OutermostFirst}}
+  <div class="exception">
+    <h3>
+      {{if gt $index 0}}<span class="muted">Caused by</span> {{end}}
+      {{with .Type}}<span class="exception-type">{{.}}</span>{{end}}
+      {{with handled .Mechanism}}<span class="badge {{.Class}}">{{.Label}}</span>{{end}}
+    </h3>
+    {{with .Value}}<p class="exception-value">{{.}}</p>{{end}}
+
+    {{with .Stacktrace.NewestFirst}}
+    <details class="section stacktrace">
+    <summary><span class="muted">Stack trace</span> <span class="muted small">{{len .}} frames</span></summary>
+    {{range .}}
+    {{$inApp := .IsInApp}}
+    {{if or .SourceLines .Vars}}
+    <details class="frame {{if $inApp}}in-app{{end}}" {{if and $inApp .ContextLine}}open{{end}}>
+      <summary>{{template "frame-location" .}}</summary>
+      {{with .SourceLines}}
+      {{/* No newline between the lines: each is a block already. */}}
+      <pre class="code">{{range .}}<span class="line {{if .Current}}current{{end}}"><span class="number">{{.Number}}</span>{{.Text}}</span>{{end}}</pre>
+      {{end}}
+      {{with .Vars}}<details class="vars"><summary>Local variables</summary><pre>{{prettyJSON .}}</pre></details>{{end}}
+    </details>
+    {{else}}
+    {{/* nothing to unfold: browser SDKs send no source */}}
+    <div class="frame frame-bare {{if $inApp}}in-app{{end}}">{{template "frame-location" .}}</div>
+    {{end}}
+    {{end}}
+    </details>
+    {{end}}
+  </div>
+  {{end}}
+</section>
+{{else if .Message}}
+<section>
+  <h2>Message</h2>
+  <pre class="message">{{.Message}}</pre>
+</section>
+{{end}}
+{{else}}
+<section>
+  <p class="muted">{{if $.Data.SelectedID}}This event's stored data cannot be read.{{else if $.Data.Events}}This event is no longer stored. <a href="/issues/{{$issue.ID}}">Show the latest event</a>{{else}}No events of this issue are stored.{{end}}</p>
+</section>
+{{end}}
+
+{{/* Who changed the status and when; a resolved issue that happened again
+     is reopened by its event. */}}
+{{with $.Data.History}}
+<section>
+  <h2>Status history</h2>
+  <ol class="status-history">
+    {{range .}}
+    <li>
+      {{template "badge" (label "status" .From)}} → {{template "badge" (label "status" .To)}}
+      <span>{{template "status-change-author" .}}</span>
+      <span class="muted small">{{template "time" .CreatedAt}}</span>
+    </li>
+    {{end}}
+  </ol>
+</section>
+{{end}}
+
+{{/* The other events of the issue, right after what went wrong. */}}
+{{if $.Data.Events}}
+<section id="events">
+  <h2>Events</h2>
+  <div class="table-scroll"><table class="list compact">
+    <thead><tr><th>Event</th><th>Received</th><th>Environment</th><th>Release</th></tr></thead>
+    <tbody>
+      {{range $.Data.Events}}
+      <tr {{if eq .EventID $.Data.SelectedID}}class="selected"{{end}}>
+        <td><a href="/issues/{{$issue.ID}}?event={{.EventID}}"><code>{{short .EventID 8}}</code></a></td>
+        <td>{{template "time" .ReceivedAt}}</td>
+        <td>{{.Environment}}</td>
+        <td>{{.Release}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table></div>
+  {{if gt $.Data.Issue.EventCount (len $.Data.Events)}}<p class="muted small">Showing the latest {{len $.Data.Events}} of {{$.Data.Issue.EventCount}} events.</p>{{end}}
+</section>
+{{end}}
+
+{{with .Parsed}}
+{{with $.Data.RelatedLogs}}
+<section><details class="section">
+  <summary><h2>{{if $.Data.LogsFromRequest}}Logs from the same request{{else}}Logs from the same trace{{end}}</h2> <span class="muted">{{len .}}</span></summary>
+  {{if not $.Data.LogsFromRequest}}<p class="muted small">Not linked to this request exactly: logs of the same trace within a minute of the error.</p>{{end}}
+  <div class="table-scroll"><table class="list compact">
+    <tbody>
+      {{range .}}
+      <tr>
+        <td class="nowrap">{{template "time" .Timestamp}}</td>
+        <td class="nowrap">{{template "badge" (levelBadge .Level)}}</td>
+        <td>{{template "log-body" .Body}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table></div>
+</details></section>
+{{end}}
+
+{{if .Breadcrumbs}}
+<section><details class="section">
+  <summary><h2>Breadcrumbs</h2> <span class="muted">{{len .Breadcrumbs}}</span></summary>
+  <div class="table-scroll"><table class="list compact">
+    <thead><tr><th>Time</th><th>Category</th><th>Level</th><th>Message</th></tr></thead>
+    <tbody>
+      {{range .Breadcrumbs}}
+      <tr>
+        <td class="nowrap">{{if not .Timestamp.IsZero}}{{.Timestamp.UTC.Format "15:04:05.000"}}{{end}}</td>
+        <td>{{.Category}}</td>
+        <td>{{with .Level}}{{template "badge" (levelBadge .)}}{{end}}</td>
+        <td>
+          {{with .Message}}{{template "log-body" .}}{{end}}
+          {{with .Data}}<details><summary class="muted small">data</summary><pre>{{prettyJSON .}}</pre></details>{{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table></div>
+</details></section>
+{{end}}
+
+{{with parseRequest .Request}}
+<section><details class="section">
+  <summary><h2>Request</h2> <code class="muted">{{.Method}} {{.URL}}</code></summary>
+  {{with .Headers}}
+  <div class="table-scroll"><table class="list compact kv"><tbody>
+    {{range $name, $value := .}}<tr><th>{{$name}}</th><td>{{$value}}</td></tr>{{end}}
+  </tbody></table></div>
+  {{end}}
+</details></section>
+{{end}}
+
+{{if or .Tags .User}}
+<section class="columns">
+  {{with .Tags}}
+  <details class="section">
+    <summary><h2>Tags</h2> <span class="muted">{{len .}}</span></summary>
+    <div class="table-scroll"><table class="list compact kv"><tbody>
+      {{range $name, $value := .}}<tr><th>{{$name}}</th><td>{{$value}}</td></tr>{{end}}
+    </tbody></table></div>
+  </details>
+  {{end}}
+  {{with .User}}
+  <details class="section">
+    <summary><h2>User</h2></summary>
+    <div class="table-scroll"><table class="list compact kv"><tbody>
+      {{with .ID}}<tr><th>ID</th><td>{{.}}</td></tr>{{end}}
+      {{with .Email}}<tr><th>Email</th><td>{{.}}</td></tr>{{end}}
+      {{with .Username}}<tr><th>Username</th><td>{{.}}</td></tr>{{end}}
+      {{with .IPAddress}}<tr><th>IP address</th><td>{{.}}</td></tr>{{end}}
+    </tbody></table></div>
+  </details>
+  {{end}}
+</section>
+{{end}}
+
+{{with .Contexts}}
+<section><details class="section">
+  <summary><h2>Contexts</h2> <span class="muted">{{len .}}</span></summary>
+  {{range $name, $value := .}}
+  <details><summary>{{$name}}</summary><pre>{{prettyJSON $value}}</pre></details>
+  {{end}}
+</details></section>
+{{end}}
+
+<section>
+  <details><summary>Raw event JSON</summary><pre>{{prettyJSON $.Data.Event.Payload}}</pre></details>
+</section>
+{{end}}
+
+{{end}}
+{{end}}
+
+{{/* Who made a status change (store.StatusChange). */}}
+{{define "status-change-author"}}{{if .ByEvent}}reopened: happened again{{with .EventID}} (<a href="?event={{.}}">event</a>){{end}}{{else}}by {{or .Name "a deleted user"}}{{if .ViaMCP}} via MCP{{end}}{{end}}{{end}}
+
+{{/* A stack frame: function and where it is. */}}
+{{define "frame-location"}}<span class="function">{{or .Function "<anonymous>"}}</span>
+<span class="muted">{{or .Filename .Module}}{{if .Lineno}}:{{.Lineno}}{{end}}{{if .Colno}}:{{.Colno}}{{end}}</span>{{end}}

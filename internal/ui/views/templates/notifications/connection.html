@@ -1,0 +1,216 @@
+{{define "title"}}{{if .Data.New}}Add connection{{else}}{{.Data.Name}}{{end}} · Notifications{{end}}
+
+{{define "content"}}
+{{with .Data}}
+{{template "back" (back "/notifications" "Notifications")}}
+<div class="page-heading">
+  <h1>{{if .New}}Add connection{{else}}{{.Name}}{{end}}</h1>
+  {{if not .New}}
+  {{template "delete-button" (deleteConnection .ID .Name "Delete")}}
+  {{end}}
+</div>
+
+{{with .Notice}}<p class="notice-success" role="status">{{.}}</p>{{end}}
+{{with .Error}}<p class="error" role="alert">{{.}}</p>{{end}}
+
+<form class="settings-form connection-form" method="post" action="{{if .New}}/notifications{{else}}/notifications/{{.ID}}{{end}}">
+  {{if .New}}
+  <fieldset>
+    <legend>Type {{template "hint" (fieldHelp "Notifications" "Type")}}</legend>
+    {{range .Types}}
+    <label class="option {{if not .Available}}disabled{{end}}">
+      <input type="radio" name="type" value="{{.Value}}" data-name-placeholder="{{.NamePlaceholder}}" data-issue-link="{{.IssueLink}}" {{if .Selected}}checked{{end}} {{if not .Available}}disabled{{end}} required>
+      {{.Label}}{{if not .Available}} <span class="muted small">({{.Reason}})</span>{{end}}
+    </label>
+    {{end}}
+  </fieldset>
+  {{with index .Errors "type"}}<p class="field-error">{{.}}</p>{{end}}
+  {{else}}
+  <p class="muted">Type: <b>{{.TypeLabel}}</b></p>
+  {{end}}
+
+  {{/* app.js shows only the fields of the selected type; without JS all are shown. */}}
+  {{$testURL := "/notifications/test-chat"}}{{if not .New}}{{$testURL = printf "/notifications/%s/test-chat" .ID}}{{end}}
+  {{if or .New .IsEmail}}
+  <div class="type-fields" data-type="email">
+    {{template "email-step" .Email}}
+    {{with index .Errors "address"}}<p class="field-error">{{.}}</p>{{end}}
+  </div>
+  {{end}}
+
+  {{if or .New .IsTelegram}}
+  <div class="type-fields" data-type="telegram">
+    <label><span>Bot token {{template "hint" (fieldHelp "Notifications" "Telegram bot token")}}</span>
+      <span class="field-with-button">
+        <input type="password" name="bot_token" autocomplete="new-password" pattern="{{limits.TelegramToken}}" {{if .SavedTelegramToken}}data-saved{{else}}required{{end}} placeholder="{{with .SavedTelegramToken}}saved: {{.}} — leave empty to keep{{else}}123456:ABC-DEF…{{end}}">
+        {{/* app.js links it to the bot's getUpdates once a valid token is typed. */}}
+        <a class="info-button disabled" data-telegram-updates aria-disabled="true" target="_blank" rel="noopener noreferrer" title="Opens the bot's getUpdates: write to the chat first, the chat ID is in the answer">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>
+          <span>Find chat ID</span>
+        </a>
+      </span>
+    </label>
+    {{with index .Errors "bot_token"}}<p class="field-error">{{.}}</p>{{end}}
+    <label><span>Chat ID {{template "hint" (fieldHelp "Notifications" "Chat ID")}}</span>
+      <input name="chat_id" value="{{.ChatID}}" pattern="{{limits.TelegramChat}}" required placeholder="-1001234567890 or @channel">
+    </label>
+    {{with index .Errors "chat_id"}}<p class="field-error">{{.}}</p>{{end}}
+    {{template "chat-test-button" (chatTest $testURL "bot_token chat_id")}}
+    {{if .IsTelegram}}{{with .Duplicate}}{{template "duplicate" .}}{{end}}{{end}}
+    <p class="muted small">
+      Create a bot with <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer">@BotFather</a> (send <code>/newbot</code>, it replies with the token) and add the bot to the chat.
+      <a href="https://core.telegram.org/bots/tutorial#obtain-your-bot-token" target="_blank" rel="noopener noreferrer">Telegram's guide</a>.
+    </p>
+  </div>
+  {{end}}
+
+  {{if or .New .IsSlack}}
+  <div class="type-fields" data-type="slack">
+    <label><span>Incoming webhook URL {{template "hint" (fieldHelp "Notifications" "Incoming webhook URL")}}</span>
+      <input type="password" name="webhook_url" autocomplete="new-password" {{if .SavedWebhook}}data-saved{{end}} placeholder="{{with .SavedWebhook}}saved: {{.}} — leave empty to keep{{else}}https://hooks.slack.com/services/…{{end}}">
+    </label>
+    {{with index .Errors "webhook_url"}}<p class="field-error">{{.}}</p>{{end}}
+    <p class="muted small">
+      <a href="https://api.slack.com/apps?new_app=1" target="_blank" rel="noopener noreferrer">Create a Slack app</a>, turn on Incoming Webhooks and add one for the channel.
+      <a href="https://api.slack.com/messaging/webhooks" target="_blank" rel="noopener noreferrer">Slack's guide</a>.
+    </p>
+    <label><span>Bot token <span class="muted small">(optional)</span> {{template "hint" (fieldHelp "Notifications" "Slack bot token")}}</span>
+      <input type="password" name="slack_bot_token" autocomplete="new-password" pattern="{{limits.SlackToken}}" {{if .SavedSlackToken}}data-saved{{end}} placeholder="{{with .SavedSlackToken}}saved: {{.}} — leave empty to keep{{else}}xoxb-…{{end}}">
+    </label>
+    {{with index .Errors "slack_bot_token"}}<p class="field-error">{{.}}</p>{{end}}
+    <label><span>Channel ID {{template "hint" (fieldHelp "Notifications" "Channel ID")}}</span>
+      <input name="slack_channel" value="{{.SlackChannel}}" pattern="{{limits.SlackChannel}}" placeholder="C0123456789">
+    </label>
+    {{with index .Errors "slack_channel"}}<p class="field-error">{{.}}</p>{{end}}
+    {{template "chat-test-button" (chatTest $testURL "webhook_url|slack_bot_token slack_channel")}}
+    {{if .IsSlack}}{{with .Duplicate}}{{template "duplicate" .}}{{end}}{{end}}
+    <p class="muted small">
+      Bot: <a href="https://api.slack.com/apps" target="_blank" rel="noopener noreferrer">your Slack app</a> → OAuth &amp; Permissions → Bot Token Scopes: <code>chat:write</code> → Install to Workspace → Bot User OAuth Token.
+      To invite it to the channel: <code>/invite @app</code>.
+    </p>
+  </div>
+  {{end}}
+
+  {{/* Locked until the email address is confirmed (app.js unlocks it when the step reports it). */}}
+  <fieldset class="connection-rest" {{if .RestLocked}}disabled{{end}}>
+    <label>Name
+      <input name="name" value="{{.Name}}" maxlength="{{limits.ConnectionName}}" placeholder="{{.NamePlaceholder}}">
+    </label>
+    <p class="muted small">Optional: left empty, it is filled in when saved.</p>
+    {{with index .Errors "name"}}<p class="field-error">{{.}}</p>{{end}}
+
+    <details class="form-section" {{if index .Errors "projects"}}open{{end}}>
+      <summary>
+        {{template "section-heading" (sectionHeading "Projects" (fieldHelp "Notifications" "Projects"))}}
+        {{$all := "All projects"}}
+        <span class="section-values"><span class="summary-badges" data-summary-of="project" data-summary-all="all_projects" data-summary-all-text="{{$all}}">{{if .AllProjects}}{{$all}}{{else}}{{range .ChosenProjects}}{{template "badge" (label "project" .Label)}}{{else}}<span class="muted">none</span>{{end}}{{end}}</span></span>
+      </summary>
+      <fieldset>
+        <label class="option"><input type="checkbox" name="all_projects" class="all-projects" {{if .AllProjects}}checked{{end}}> All projects, including ones added later</label>
+        <div class="project-choices">
+          {{range .Projects}}<label class="option"><input type="checkbox" name="project" value="{{.Value}}" {{if .Checked}}checked{{end}}> {{.Label}}</label>{{end}}
+        </div>
+      </fieldset>
+    </details>
+    {{with index .Errors "projects"}}<p class="field-error">{{.}}</p>{{end}}
+
+    <details class="form-section" {{if index .Errors "levels"}}open{{end}}>
+      <summary>
+        {{template "section-heading" (sectionHeading "Levels" (fieldHelp "Notifications" "Levels"))}}
+        <span class="section-values"><span class="summary-badges" data-summary-of="level">{{range .ChosenLevels}}{{template "badge" (label "level" .Label)}}{{else}}<span class="muted">none</span>{{end}}</span></span>
+      </summary>
+      <fieldset>
+        {{range .Levels}}<label class="option"><input type="checkbox" name="level" value="{{.Value}}" {{if .Checked}}checked{{end}}> {{template "badge" (label "level" .Label)}}</label>{{end}}
+      </fieldset>
+    </details>
+    {{with index .Errors "levels"}}<p class="field-error">{{.}}</p>{{end}}
+
+    <div class="actions connection-options">
+    <label class="option">
+      <input type="checkbox" name="active" {{if .Active}}checked{{end}}>
+      Active: send notifications {{template "hint" (fieldHelp "Notifications" "Active")}}
+    </label>
+    <label class="option">
+      <input type="checkbox" name="include_issue_link" {{if not .HideIssueLink}}checked{{end}}>
+      Include Open issue link {{template "hint" (fieldHelp "Notifications" "Include Open issue link")}}
+    </label>
+    </div>
+    {{with index .Errors "active"}}<p class="field-error">{{.}}</p>{{end}}
+
+    <div class="actions">
+      <button type="submit" class="primary">{{if .New}}Add{{else}}Save{{end}}</button>
+      <a class="button" href="/notifications">Cancel</a>
+    </div>
+  </fieldset>
+</form>
+
+{{if not .New}}
+<div class="actions secondary-actions">
+  {{if .Waiting}}{{template "retry-now" (retryNow .ID .Waiting "")}}{{end}}
+  {{/* Chats are tested from their fields above, before saving. */}}
+  {{if and .Verified .IsEmail}}
+  <form method="post" action="/notifications/{{.ID}}/test">
+    <button type="submit">Send test message</button>
+  </form>
+  {{end}}
+</div>
+{{end}}
+{{end}}
+{{end}}
+
+{{/* The email step (services.EmailStep), swapped by htmx; data-verified tells app.js to unlock the rest. */}}
+{{define "email-step"}}
+<div class="email-step" {{if .Verified}}data-verified{{end}}>
+  {{if .Input}}
+  <label><span>Email address {{template "hint" (fieldHelp "Notifications" "Email address")}}</span>
+    <span class="inline-form">
+      <input type="email" name="address" value="{{.Address}}" placeholder="team@example.com" autocomplete="email">
+      <button type="button" class="primary" hx-post="/notifications/email/start" hx-target="closest .email-step" hx-swap="outerHTML">Verify</button>
+    </span>
+  </label>
+  {{else}}
+  {{if .Fixed}}<input type="hidden" name="address_fixed" value="1">{{end}}
+  <input type="hidden" name="destination_id" value="{{.DestinationID}}">
+  <input type="hidden" name="address" value="{{.Address}}">
+  <p class="email-confirmed">{{.Address}}
+    {{if .Verified}}<span class="confirmed">✓ confirmed{{if not .VerifiedAt.IsZero}} {{template "time" .VerifiedAt}}{{end}}</span>{{end}}
+  </p>
+  {{if .Unconfirmed}}
+  <p class="muted small">This address is not confirmed yet: notifications start after you enter the code we mail to it.</p>
+  <span class="step-actions">
+    <button type="button" class="primary" hx-post="/notifications/email/resend" hx-target="closest .email-step" hx-swap="outerHTML">Send a code</button>
+  </span>
+  {{end}}
+  {{if .AwaitingCode}}
+  <span class="inline-form">
+    <input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="{{limits.VerificationCode}}" placeholder="123456" aria-label="Confirmation code">
+    <button type="button" class="primary" hx-post="/notifications/email/confirm" hx-target="closest .email-step" hx-swap="outerHTML">Confirm</button>
+  </span>
+  {{end}}
+  <span class="step-actions">
+    {{if .AwaitingCode}}<button type="button" class="link" hx-post="/notifications/email/resend" hx-target="closest .email-step" hx-swap="outerHTML">Send the code again</button>{{end}}
+    {{if not .Fixed}}<button type="button" class="link" hx-post="/notifications/email/change" hx-target="closest .email-step" hx-swap="outerHTML">Change email</button>{{end}}
+  </span>
+  {{end}}
+  {{with .Duplicate}}{{template "duplicate" .}}{{end}}
+  {{with .Notice}}<p class="notice-success small" role="status">{{.}}</p>{{end}}
+  {{with .Error}}<p class="field-error" role="alert">{{.}}</p>{{end}}
+</div>
+{{end}}
+
+{{/* Sends a test message with the chat fields as typed (the whole form goes
+     with it). Needs names the fields it requires: groups separated by |,
+     any one group filled enables it (app.js; a saved token counts). */}}
+{{define "chat-test-button"}}
+<div class="chat-test">
+  <button type="button" data-test-needs="{{.Needs}}" hx-post="{{.URL}}" hx-target="next .chat-test-result" hx-swap="innerHTML">Send test message</button>
+  <span class="chat-test-result" aria-live="polite"></span>
+</div>
+{{end}}
+
+{{define "chat-test"}}<span class="{{if .Sent}}notice-success{{else}}field-error{{end}} small" role="status">{{.Message}}</span>{{end}}
+
+{{/* One connection per address or chat: link to the one that has it. */}}
+{{define "duplicate"}}
+<p class="field-error" role="alert">Already added as <a href="/notifications/{{.ID}}">{{.Name}}</a>: edit that connection instead.</p>
+{{end}}

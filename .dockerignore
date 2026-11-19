@@ -1,0 +1,15 @@
+.git
+.github
+envelopes
+data
+testdata
+tools
+bin
+.env
+.env.*
+# the UI quotes these docs as field hints (package docs embeds them)
+docs/*
+!docs/configuration.md
+!docs/ui.md
+!docs/docs.go
+*.md

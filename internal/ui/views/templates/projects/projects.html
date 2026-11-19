@@ -1,0 +1,67 @@
+{{define "title"}}Projects{{end}}
+
+{{define "content"}}
+{{with .Data}}
+<div class="page-heading">
+  <h1>Projects</h1>
+  {{if $.Viewer.CanAdminister}}<a class="button primary" href="/projects/new">Add project</a>{{end}}
+</div>
+
+{{with .Notice}}<p class="notice-success" role="status">{{.}}</p>{{end}}
+
+{{with .Storage}}
+<section class="card storage">
+  <h2>Storage</h2>
+  <p>Database: <b>{{.Used}}</b>{{if .Limit}} of {{.Limit}}{{end}}</p>
+  {{if .Limit}}<meter min="0" max="100" value="{{.Percent}}" high="{{.CleanupStop}}" optimum="0">{{.Percent}}%</meter>{{end}}
+  <p class="muted small">{{if .Limit}}At the limit the least useful data is deleted until the database is at {{.CleanupStop}}%: old logs first, errors last.{{else}}Nothing is deleted: the limit is off.{{end}}
+    <code>MAX_DATABASE_SIZE</code> {{template "hint" (settingHelp "MAX_DATABASE_SIZE")}}</p>
+  <p><a href="/projects/cleanups">Cleanup history</a></p>
+</section>
+{{end}}
+
+<p class="muted">Each service (backend, frontend, …) gets its own project. Put a project's DSN into the Sentry SDK config of that service.</p>
+
+{{if .Projects}}
+<table class="list projects-table">
+  <thead><tr><th>Project</th><th>DSN</th><th class="number">Unresolved</th><th class="wide-only">Records</th><th class="actions-column"><span class="visually-hidden">Actions</span></th></tr></thead>
+  <tbody>
+    {{range .Projects}}
+    <tr>
+      <td>
+        {{template "badge" (projectBadge .Name)}}
+        <div class="muted small">#{{.ID}}{{if .FromEnv}} · from PROJECTS{{end}}</div>
+      </td>
+      <td>
+        <div class="copy-row dsn-row">
+          <input class="mono-field" id="dsn-{{.ID}}" value="{{.DSN}}" readonly aria-label="DSN of {{.Name}}">
+          {{template "copy-button" (copyButton (printf "dsn-%d" .ID) "" (printf "Copy the DSN of %s" .Name) "DSN copied to clipboard.")}}
+        </div>
+      </td>
+      <td class="number"><a href="/issues?project={{.Name}}">{{.UnresolvedIssues}}</a></td>
+      <td class="small wide-only">
+        <div>{{if .EventLevels}}{{range .EventLevels}}{{template "badge" (levelBadge .)}} {{end}}{{else if eq .EventLevels nil}}all errors{{else}}<span class="muted">no errors</span>{{end}}</div>
+        <div class="muted">logs: {{if .LogLevels}}{{range .LogLevels}}{{.}} {{end}}{{else if eq .LogLevels nil}}all{{else}}none{{end}}</div>
+      </td>
+      <td class="actions-column">
+        <div class="actions row-actions">
+          {{if $.Viewer.CanAdminister}}
+          {{template "edit-link" (editLink (printf "/projects/%d" .ID) (printf "Settings of %s" .Name))}}
+          {{end}}
+          <a class="button" href="/logs?project={{.Name}}" title="Logs" aria-label="Logs of {{.Name}}">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16 M4 12h16 M4 18h10"/></svg>
+          </a>
+          {{if and $.Viewer.CanAdminister (not .FromEnv)}}
+          {{template "delete-button" (deleteProject .ID .Name "")}}
+          {{end}}
+        </div>
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}
+<p class="empty">No projects yet. Add one, or set <code>PROJECTS=1:backend:&lt;public key&gt;</code>.</p>
+{{end}}
+{{end}}
+{{end}}

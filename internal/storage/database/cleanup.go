@@ -1,0 +1,894 @@
+package database
+
+import (
+	"cmp"
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"maps"
+	"math"
+	"slices"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/devforth/exceptic/internal/platform/background"
+	"github.com/devforth/exceptic/internal/platform/config"
+	"github.com/devforth/exceptic/internal/platform/logging"
+	"github.com/devforth/exceptic/internal/storage/kv"
+	"github.com/devforth/exceptic/internal/storage/store"
+)
+
+// The cleanup by size; what it deletes and in which order: docs/configuration.md (Retention).
+const (
+	cleanupStart  = float64(config.CleanupStartPercent) / 100
+	cleanupStop   = float64(config.CleanupStopPercent) / 100
+	cleanupChunk  = 2000
+	cleanupDecode = 2 << 20
+	cleanupRest   = 2 * time.Millisecond
+)
+
+// The records of a run are the store's.
+type (
+	CleanupRun    = store.CleanupRun
+	CleanupStep   = store.CleanupStep
+	CleanupCounts = store.CleanupCounts
+)
+
+const (
+	cleanupRunning = store.CleanupRunning
+	cleanupDone    = store.CleanupDone
+	cleanupFailed  = store.CleanupFailed
+)
+
+// quietFor is how long ingest must be quiet before a forced compaction:
+// under writes goleveldb repeats a range compaction as long as new files come.
+var quietFor = 2 * time.Second
+
+func (database *Store) quiet() bool {
+	return time.Since(time.Unix(0, database.lastAppend.Load())) >= quietFor
+}
+
+// CompactInbox takes processed envelopes, credentials included, out of the
+// files, when ingest is quiet: a deleted record keeps its bytes until a
+// compaction reaches its key.
+func (database *Store) CompactInbox(context.Context) error {
+	if !database.quiet() || database.backups.Load() > 0 {
+		return nil
+	}
+
+	return database.compactInbox()
+}
+
+// CleanupWake ticks after every config.CleanupWritten bytes written.
+func (database *Store) CleanupWake() <-chan struct{} { return database.cleanupWake }
+
+// Lane is the periodic jobs of the database (schedule: config/schedule.go),
+// for the server and the load tests alike.
+func (database *Store) Lane(maxBytes int64, logger *slog.Logger) background.Lane {
+	return background.Lane{Name: "database", Jobs: []background.Job{
+		{Name: "inbox compaction", AtStart: true, First: config.InboxCompactionAt, Every: config.CleanupInterval, Timeout: config.InboxCompactionTimeout,
+			Note: "when ingest is quiet", Run: database.CompactInbox},
+		{Name: "size check", AtStart: true, First: config.CleanupInterval, Every: config.CleanupInterval, Timeout: config.SizeCheckTimeout,
+			Wake: database.CleanupWake(), Note: fmt.Sprintf("after %s written", config.FormatSize(config.CleanupWritten)),
+			Run: func(ctx context.Context) error { return database.CheckSize(ctx, maxBytes, logger) }},
+		{Name: "project purge", AtStart: true, First: config.ProjectPurgeAt, Every: config.OutboxCleanupInterval, Timeout: config.ProjectPurgeTimeout,
+			Note: "the data of deleted projects", Run: database.PurgeProjects},
+	}}
+}
+
+// CheckSize thins the events that turned a month old and runs the cleanup if the database is at maxBytes.
+func (database *Store) CheckSize(ctx context.Context, maxBytes int64, logger *slog.Logger) error {
+	if maxBytes > 0 {
+		reduced, err := database.ReduceAging(ctx)
+
+		if err != nil {
+			return fmt.Errorf("thinning old events: %w", err)
+		}
+
+		if len(reduced) > 0 {
+			logger.Debug("old events thinned", "step", stepLine(reduced[0]))
+		}
+	}
+
+	run, err := database.Cleanup(ctx, maxBytes)
+
+	if err != nil {
+		return fmt.Errorf("cleanup, step %d: %w", run.Reached, err)
+	}
+
+	if run.Status == cleanupDone {
+		logCleanup(logger, run)
+	}
+
+	return nil
+}
+
+// logCleanup writes a run as one record: sizes, the last step reached and a line per step that deleted something.
+func logCleanup(logger *slog.Logger, run CleanupRun) {
+	attributes := []any{logging.Block, "limit", config.FormatSize(run.Limit), "size_before", config.FormatSize(run.SizeBefore),
+		"compacted", config.FormatSize(run.Compacted), "size_after", config.FormatSize(run.SizeAfter)}
+
+	if run.Reached > 0 {
+		attributes = append(attributes, "reached", fmt.Sprintf("step %d", run.Reached))
+	} else {
+		attributes = append(attributes, "deleted", "nothing, compacting was enough")
+	}
+
+	attributes = append(attributes, "duration", run.Duration.Round(time.Millisecond))
+
+	for _, step := range run.Steps {
+		attributes = append(attributes, fmt.Sprintf("step_%d", step.Number), stepLine(step))
+	}
+
+	logger.Info("cleanup", attributes...)
+}
+
+// stepLine reads "logs below error, freed 1.2 MB in 40ms: project 1: 300 logs; project 2: 12 logs".
+func stepLine(step CleanupStep) string {
+	var projects []string
+
+	for _, project := range slices.Sorted(maps.Keys(step.Projects)) {
+		projects = append(projects, fmt.Sprintf("project %d: %s", project, step.Projects[project]))
+	}
+
+	return fmt.Sprintf("%s, freed %s in %s: %s", step.Name, config.FormatSize(step.Freed), step.Duration.Round(time.Millisecond),
+		strings.Join(projects, "; "))
+}
+
+// compactInbox takes processed envelopes, credentials included, out of the
+// files: a deleted record keeps its bytes until a compaction reaches its key.
+func (database *Store) compactInbox() error {
+	return database.db.CompactRange(database.inbox.KeyRange())
+}
+
+func (database *Store) noteWritten() {
+	written := database.db.Written()
+
+	if written-database.checkedAt.Load() < config.CleanupWritten {
+		return
+	}
+
+	database.checkedAt.Store(written)
+
+	select {
+	case database.cleanupWake <- struct{}{}:
+	default:
+	}
+}
+
+// Cleanup goes on with a run a restart stopped, or starts one when the
+// database is at cleanupStart of maxBytes (0: no limit) and no backup runs. A run stopped by ctx
+// stays running and goes on at the next call, unless maxBytes changed meanwhile.
+func (database *Store) Cleanup(ctx context.Context, maxBytes int64) (CleanupRun, error) {
+	latest, err := database.cleanups.Primary().Newest().First(database.db)
+	run := latest.Record
+
+	if err == nil && run.Status == cleanupRunning && run.Limit != maxBytes {
+		if err := database.finishCleanup(&run, nil, limitChanged(maxBytes)); err != nil {
+			return run, err
+		}
+	}
+
+	if maxBytes <= 0 {
+		return CleanupRun{}, nil
+	}
+
+	switch {
+	case err == nil && run.Status == cleanupRunning:
+	case database.backups.Load() > 0:
+		// A backup's snapshot keeps deleted records on disk, which would make the goal too low.
+		return CleanupRun{}, nil
+	case err == nil || errors.Is(err, kv.ErrNotFound):
+		run, err = database.startCleanup(maxBytes)
+
+		if err != nil || run.Status != cleanupRunning {
+			return run, err
+		}
+	default:
+		return CleanupRun{}, err
+	}
+
+	err = database.advance(ctx, &run)
+
+	if ctx.Err() != nil {
+		return run, err
+	}
+
+	return run, database.finishCleanup(&run, err, "")
+}
+
+// startCleanup compacts first, when ingest is quiet, what collects deleted
+// and replaced records (the inbox, the issues rewritten with every event):
+// that may be enough. Otherwise it saves a run whose goal is cleanupStop of maxBytes.
+func (database *Store) startCleanup(maxBytes int64) (CleanupRun, error) {
+	run := CleanupRun{StartedAt: database.now().UTC(), Limit: maxBytes}
+	size, err := database.db.Size()
+
+	if err != nil || float64(size) < cleanupStart*float64(maxBytes) {
+		return run, err
+	}
+
+	run.SizeBefore = size
+
+	if database.quiet() {
+		for _, keyRange := range []func() ([]byte, []byte){database.inbox.KeyRange, database.issues.KeyRange, database.status.KeyRange} {
+			if err := database.db.CompactRange(keyRange()); err != nil {
+				return run, err
+			}
+		}
+	}
+
+	if run.Compacted, err = database.db.Size(); err != nil {
+		return run, err
+	}
+
+	if float64(run.Compacted) < cleanupStart*float64(maxBytes) {
+		run.Status, run.SizeAfter = cleanupDone, run.Compacted
+		run.Duration = database.now().Sub(run.StartedAt)
+
+		return run, database.saveCleanup(&run)
+	}
+
+	// The counters count bytes before compression; the ratio converts.
+	logical := database.logicalSize()
+	ratio := float64(run.Compacted) / float64(max(logical, 1))
+	run.Goal = logical - int64((float64(run.Compacted)-cleanupStop*float64(maxBytes))/ratio)
+	run.Status, run.Reached = cleanupRunning, 1
+
+	return run, database.saveCleanup(&run)
+}
+
+// finishCleanup compacts what the run deleted from and saves it: failed with
+// err or the reason it was stopped, otherwise done.
+func (database *Store) finishCleanup(run *CleanupRun, err error, stopped string) error {
+	if err == nil {
+		err = database.compactCleaned(run)
+	}
+
+	if err == nil {
+		run.SizeAfter, err = database.db.Size()
+	}
+
+	run.Status, run.Duration, run.Error = cleanupDone, database.now().Sub(run.StartedAt), stopped
+
+	if err != nil {
+		run.Error = err.Error()
+	}
+
+	if run.Error != "" {
+		run.Status = cleanupFailed
+	}
+
+	return errors.Join(err, database.db.Update(true, func(batch *kv.Batch) error { return database.cleanups.Save(batch, *run) }))
+}
+
+// limitChanged is why a run whose goal came from another limit than maxBytes stops.
+func limitChanged(maxBytes int64) string {
+	if maxBytes <= 0 {
+		return "stopped: MAX_DATABASE_SIZE turned off"
+	}
+
+	return "stopped: MAX_DATABASE_SIZE changed to " + config.FormatSize(maxBytes)
+}
+
+// saveCleanup stores a new run and keeps the newest store.CleanupRunsKept of them.
+func (database *Store) saveCleanup(run *CleanupRun) error {
+	sequence, err := database.db.Next()
+
+	if err != nil {
+		return err
+	}
+
+	run.Sequence = sequence
+
+	return database.db.Update(true, func(batch *kv.Batch) error {
+		if err := database.cleanups.Insert(batch, *run); err != nil {
+			return err
+		}
+
+		var stored []kv.Key
+
+		err := database.cleanups.Primary().Keys(database.db, func(key kv.Key) (bool, error) {
+			stored = append(stored, key)
+
+			return true, nil
+		})
+
+		for _, key := range stored[:max(0, len(stored)+1-store.CleanupRunsKept)] {
+			if err == nil {
+				_, err = database.cleanups.DeleteKey(batch, key)
+			}
+		}
+
+		return err
+	})
+}
+
+func (database *Store) CleanupHistory(_ context.Context, limit int) ([]CleanupRun, error) {
+	return database.cleanups.Primary().Newest().Limit(limit).All(database.db)
+}
+
+// compactCleaned compacts the collections the run deleted from, so the disk space comes back now.
+func (database *Store) compactCleaned(run *CleanupRun) error {
+	var logs, events, issues bool
+
+	for _, step := range run.Steps {
+		for _, counts := range step.Projects {
+			logs = logs || counts.Logs > 0
+			events = events || counts.Events > 0 || counts.Thinned > 0
+			issues = issues || counts.Issues > 0
+		}
+	}
+
+	var ranges []func() ([]byte, []byte)
+
+	if logs {
+		ranges = append(ranges, database.logs.KeyRange)
+	}
+
+	if events {
+		ranges = append(ranges, database.events.KeyRange)
+	}
+
+	if issues {
+		ranges = append(ranges, database.issues.KeyRange, database.status.KeyRange)
+	}
+
+	for _, keyRange := range ranges {
+		if err := database.db.CompactRange(keyRange()); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (database *Store) logicalSize() int64 {
+	var total int64
+
+	for _, size := range database.db.Counters() {
+		total += size
+	}
+
+	return total
+}
+
+// Logs below error go whenever the cleanup runs; error and fatal ones only while needed.
+var (
+	minorLogRanks = allRanks[:levelRank("error")]
+	majorLogRanks = allRanks[levelRank("error"):]
+)
+
+// cleanupStep deletes in batches: each batch reads the data as it is then,
+// under the write lock, so what arrives meanwhile is judged by its rule too.
+type cleanupStep struct {
+	name   string
+	always bool // runs in full; the others stop once the goal is reached
+	batch  cleanupBatch
+}
+
+type cleanupBatch func(writer *batchWriter, cursor *cleanupCursor) (finished bool, err error)
+
+// cleanupCursor is one batch of a step: where it starts and goes on, and how much it may do.
+type cleanupCursor struct {
+	batch    *kv.Batch
+	position []byte
+	need     int64 // bytes still to free; only steps that are not always stop there
+	always   bool
+	records  int
+	decoded  int // bytes of payloads parsed (thinning), which is what takes the time
+}
+
+// full says the batch has done enough: cleanupChunk records or cleanupDecode
+// bytes parsed (the write lock is held meanwhile), or freed what is needed.
+func (cursor *cleanupCursor) full() bool {
+	return cursor.records >= cleanupChunk || cursor.decoded >= cleanupDecode || (!cursor.always && -cursor.batch.Counted() >= cursor.need)
+}
+
+func (cursor *cleanupCursor) number(offset int) uint64 {
+	return kv.Decode(cursor.position, offset).U64()
+}
+
+// cleanupSteps are the steps in the order of docs/configuration.md; their number is their place.
+func (database *Store) cleanupSteps() []cleanupStep {
+	now := database.now()
+	month, week := now.Add(-config.CleanupAge), now.Add(-config.CleanupRecentAge)
+
+	return []cleanupStep{
+		{"logs older than a month", true, database.deleteLogs(allRanks, func() uint64 { return database.sequenceFrom(month) })},
+		{"events older than a month beyond the newest of their issue", true, database.trimIssues(config.OldEventsPerIssue, month, func(issue *issueRecord) bool {
+			return len(issue.EventDays) > 0 && issue.EventDays[0].Day <= dayOf(month)
+		})},
+		{"events of resolved and ignored issues but the latest", true, database.trimIssues(1, time.Time{}, func(issue *issueRecord) bool {
+			return issue.Status != store.StatusUnresolved
+		})},
+		{"logs below error", true, database.deleteLogs(minorLogRanks, nil)},
+		{"error and fatal logs", false, database.deleteOldestLogs(majorLogRanks)},
+		{"events beyond the newest of their issue", false, database.trimIssues(config.OldEventsPerIssue, time.Time{}, nil)},
+		{"events older than a week", false, database.deleteOldestEvents(week)},
+		{"events of the last week", false, database.deleteOldestEvents(time.Time{})},
+		{"latest events of issues not seen for a week", false, database.deleteUnseen(week, false)},
+		{"whole issues", false, database.deleteUnseen(time.Time{}, true)},
+	}
+}
+
+// agingSteps thin the events older than a month as they age, in the background; they delete nothing.
+func (database *Store) agingSteps() []cleanupStep {
+	return []cleanupStep{{"details of events older than a month", true, database.thinBefore(database.now().Add(-config.CleanupAge))}}
+}
+
+// ReduceAging runs agingSteps to the end and says what they did; only what
+// aged since the last call is left to do, so it is cheap when run often.
+func (database *Store) ReduceAging(ctx context.Context) ([]CleanupStep, error) {
+	var done []CleanupStep
+
+	for _, step := range database.agingSteps() {
+		run := CleanupRun{Reached: 1}
+
+		for finished := false; !finished && ctx.Err() == nil; {
+			started := time.Now()
+
+			err := database.update(func(writer *batchWriter) error {
+				writer.counted = map[int]*CleanupCounts{}
+				cursor := &cleanupCursor{batch: writer.batch, position: run.Position, always: true}
+
+				var err error
+
+				finished, err = step.batch(writer, cursor)
+				// The run is in memory only: a restart starts over, and the steps skip what is done.
+				writer.batch.AfterWrite(func() {
+					run = withBatch(run, step.name, writer.counted, -writer.batch.Counted(), time.Since(started))
+					run.Position = cursor.position
+				})
+
+				return err
+			})
+
+			if err != nil {
+				return done, err
+			}
+
+			if !finished {
+				select {
+				case <-ctx.Done():
+				case <-time.After(cleanupRest):
+				}
+			}
+		}
+
+		done = append(done, run.Steps...)
+	}
+
+	return done, ctx.Err()
+}
+
+// advance runs the run's steps batch by batch from where it is; each batch
+// saves the run with it, so the progress and the deletes are written together.
+func (database *Store) advance(ctx context.Context, run *CleanupRun) error {
+	steps := database.cleanupSteps()
+
+	for ctx.Err() == nil {
+		if run.Reached > len(steps) {
+			run.Reached = len(steps)
+
+			return nil
+		}
+
+		step := steps[run.Reached-1]
+		need := database.logicalSize() - run.Goal
+
+		if !step.always && need <= 0 {
+			// A step started has a position or deleted something; one not started does not count.
+			if run.Position == nil && (len(run.Steps) == 0 || run.Steps[len(run.Steps)-1].Number != run.Reached) {
+				run.Reached--
+			}
+
+			return nil
+		}
+
+		var next CleanupRun
+
+		started := time.Now()
+
+		err := database.update(func(writer *batchWriter) error {
+			writer.counted = map[int]*CleanupCounts{}
+			cursor := &cleanupCursor{batch: writer.batch, position: run.Position, need: need, always: step.always}
+			finished, err := step.batch(writer, cursor)
+
+			if err != nil {
+				return err
+			}
+
+			next = withBatch(*run, step.name, writer.counted, -writer.batch.Counted(), time.Since(started))
+			next.Position = cursor.position
+
+			if finished {
+				next.Reached, next.Position = next.Reached+1, nil
+			}
+
+			return database.cleanups.Save(writer.batch, next)
+		})
+
+		if err != nil {
+			return err
+		}
+
+		*run = next
+
+		select {
+		case <-ctx.Done():
+		case <-time.After(cleanupRest):
+		}
+	}
+
+	return ctx.Err()
+}
+
+// withBatch returns a copy of the run with a batch of its current step added.
+func withBatch(run CleanupRun, name string, counted map[int]*CleanupCounts, freed int64, took time.Duration) CleanupRun {
+	steps := make([]CleanupStep, len(run.Steps))
+
+	for index, step := range run.Steps {
+		step.Projects = maps.Clone(step.Projects)
+
+		for project, counts := range step.Projects {
+			copied := *counts
+			step.Projects[project] = &copied
+		}
+
+		steps[index] = step
+	}
+
+	run.Steps = steps
+
+	if len(counted) == 0 {
+		return run
+	}
+
+	if len(steps) == 0 || steps[len(steps)-1].Number != run.Reached {
+		run.Steps = append(run.Steps, CleanupStep{Number: run.Reached, Name: name, Projects: map[int]*CleanupCounts{}})
+	}
+
+	step := &run.Steps[len(run.Steps)-1]
+	step.Freed += freed
+	step.Duration += took
+
+	for project, counts := range counted {
+		total := step.Projects[project]
+
+		if total == nil {
+			total = &CleanupCounts{}
+			step.Projects[project] = total
+		}
+
+		total.Add(*counts)
+	}
+
+	return run
+}
+
+// deleteLogs deletes logs of ranks, lowest level and oldest first, that
+// arrived before the sequence bound returns (nil: any). Position: rank, sequence.
+func (database *Store) deleteLogs(ranks []byte, bound func() uint64) cleanupBatch {
+	return func(writer *batchWriter, cursor *cleanupCursor) (bool, error) {
+		start, from := kv.Decode(cursor.position, 0).U8(), cursor.number(1)
+		before := uint64(math.MaxUint64)
+
+		if bound != nil {
+			before = bound()
+		}
+
+		for _, rank := range ranks {
+			if rank < start {
+				continue
+			}
+
+			if rank > start {
+				from = 0
+			}
+
+			full := false
+
+			err := database.logs.Primary(kv.U8(rank)).From(kv.U64(from)).Before(kv.U64(before)).Each(database.db, func(entry kv.Entry[logRecord]) (bool, error) {
+				if full = cursor.full(); full {
+					return false, nil
+				}
+
+				database.logs.DeleteEntry(writer.batch, entry)
+				writer.count(entry.Record.ProjectID).Logs++
+				cursor.records++
+				from = entry.Record.Sequence + 1
+
+				return true, nil
+			})
+
+			if err != nil || full {
+				cursor.position = kv.K(kv.U8(rank), kv.U64(from))
+
+				return false, err
+			}
+		}
+
+		return true, nil
+	}
+}
+
+// deleteOldestLogs deletes logs of ranks oldest first, whatever their level. Position: sequence.
+func (database *Store) deleteOldestLogs(ranks []byte) cleanupBatch {
+	return func(writer *batchWriter, cursor *cleanupCursor) (bool, error) {
+		from := cursor.number(0)
+		queries := make([]kv.Query[logRecord], 0, len(ranks))
+
+		for _, rank := range ranks {
+			queries = append(queries, database.logs.Primary(kv.U8(rank)).From(kv.U64(from)))
+		}
+
+		full := false
+
+		err := oldestFirst(database.db, queries, func(entry kv.Entry[logRecord]) bool {
+			if full = cursor.full(); full {
+				return false
+			}
+
+			database.logs.DeleteEntry(writer.batch, entry)
+			writer.count(entry.Record.ProjectID).Logs++
+			cursor.records++
+			from = entry.Record.Sequence + 1
+
+			return true
+		})
+
+		cursor.position = kv.K(kv.U64(from))
+
+		return !full, err
+	}
+}
+
+// eachIssue visits, by ID from the cursor on, the issues wants accepts as
+// they are now; visit says whether it is done with one. Position: issue ID.
+func (database *Store) eachIssue(wants func(*issueRecord) bool,
+	visit func(writer *batchWriter, cursor *cleanupCursor, issue *issueRecord) (bool, error),
+) cleanupBatch {
+	var ids []string // sorted once per step; each batch checks the issues as they are then
+
+	return func(writer *batchWriter, cursor *cleanupCursor) (bool, error) {
+		if ids == nil {
+			ids = database.issueIDs(wants)
+		}
+
+		from := kv.Decode(cursor.position, 0).Text()
+
+		for _, id := range ids[sort.SearchStrings(ids, from):] {
+			// The table changes only under the write lock, which this batch holds.
+			database.issuesMutex.RLock()
+			stored, ok := database.table.byID[id]
+			database.issuesMutex.RUnlock()
+
+			if !ok || !wants(stored) {
+				continue
+			}
+
+			if cursor.full() {
+				cursor.position = kv.K(kv.Text(id))
+
+				return false, nil
+			}
+
+			issue, _ := writer.issue(id)
+			done, err := visit(writer, cursor, issue)
+
+			if err != nil || !done {
+				cursor.position = kv.K(kv.Text(id))
+
+				return false, err
+			}
+		}
+
+		return true, nil
+	}
+}
+
+// issueIDs lists, sorted, the issues wants accepts now.
+func (database *Store) issueIDs(wants func(*issueRecord) bool) []string {
+	database.issuesMutex.RLock()
+
+	ids := []string{}
+
+	for id, issue := range database.table.byID {
+		if wants(issue) {
+			ids = append(ids, id)
+		}
+	}
+
+	database.issuesMutex.RUnlock()
+	slices.Sort(ids)
+
+	return ids
+}
+
+// trimIssues deletes the oldest events received before cutoff (zero: any)
+// beyond keep, of the issues match accepts (nil: all).
+func (database *Store) trimIssues(keep int, cutoff time.Time, match func(*issueRecord) bool) cleanupBatch {
+	wants := func(issue *issueRecord) bool { return issue.Stored > keep && (match == nil || match(issue)) }
+
+	return database.eachIssue(wants, func(writer *batchWriter, cursor *cleanupCursor, issue *issueRecord) (bool, error) {
+		done := true
+
+		err := database.events.Primary(kv.Text(issue.ID)).Head().Each(database.db, func(entry kv.Entry[eventRecord]) (bool, error) {
+			if issue.Stored <= keep || (!cutoff.IsZero() && !entry.Record.ReceivedAt.Before(cutoff)) {
+				return false, nil
+			}
+
+			if cursor.full() {
+				done = false
+
+				return false, nil
+			}
+
+			writer.deleteEvent(entry)
+
+			cursor.records++
+
+			return true, nil
+		})
+
+		return done, err
+	})
+}
+
+// deleteOldestEvents deletes events received before cutoff (zero: any), oldest
+// first whatever their level, but not the latest of an issue. Position: sequence.
+func (database *Store) deleteOldestEvents(cutoff time.Time) cleanupBatch {
+	return func(writer *batchWriter, cursor *cleanupCursor) (bool, error) {
+		from := cursor.number(0)
+		queries := make([]kv.Query[eventRecord], 0, len(allRanks))
+
+		for _, rank := range allRanks {
+			queries = append(queries, database.events.By("age", kv.U8(rank)).From(kv.U64(from)).Head())
+		}
+
+		full := false
+
+		err := oldestFirst(database.db, queries, func(entry kv.Entry[eventRecord]) bool {
+			if !cutoff.IsZero() && !entry.Record.ReceivedAt.Before(cutoff) {
+				return false
+			}
+
+			if full = cursor.full(); full {
+				return false
+			}
+
+			from = entry.Record.Sequence + 1
+			cursor.records++
+
+			// The latest event of an issue is the one it was last seen with.
+			if issue, ok := writer.issue(entry.Record.IssueID); ok && issue.Stored > 1 && entry.Record.ReceivedAt.Before(issue.LastSeen) {
+				writer.deleteEvent(entry)
+			}
+
+			return true
+		})
+
+		cursor.position = kv.K(kv.U64(from))
+
+		return !full, err
+	}
+}
+
+// deleteUnseen deletes, longest unseen first, the events of the issues last
+// seen before seenBefore (zero: any) or, with whole, the issues.
+// Position: last seen and ID of the last issue done, then the ID of an issue
+// whose events took more than a batch and the sequence its next batch starts at.
+func (database *Store) deleteUnseen(seenBefore time.Time, whole bool) cleanupBatch {
+	type unseen struct {
+		lastSeen int64
+		id       string
+	}
+
+	compare := func(first, second unseen) int {
+		return cmp.Or(cmp.Compare(first.lastSeen, second.lastSeen), strings.Compare(first.id, second.id))
+	}
+
+	wants := func(issue *issueRecord) bool {
+		return (whole || issue.Stored > 0) && (seenBefore.IsZero() || issue.LastSeen.Before(seenBefore))
+	}
+
+	var issues []unseen // sorted once per step; each batch checks the issues as they are then
+
+	return func(writer *batchWriter, cursor *cleanupCursor) (bool, error) {
+		if issues == nil {
+			database.issuesMutex.RLock()
+
+			for _, issue := range database.table.byID {
+				if wants(issue) {
+					issues = append(issues, unseen{issue.LastSeen.UnixNano(), issue.ID})
+				}
+			}
+
+			database.issuesMutex.RUnlock()
+			slices.SortFunc(issues, compare)
+		}
+
+		after := unseen{math.MinInt64, ""}
+		started, from := "", uint64(0)
+
+		if len(cursor.position) > 0 {
+			decoder := kv.Decode(cursor.position, 0)
+			after = unseen{int64(decoder.U64()), decoder.Text()}
+			started, from = decoder.Text(), decoder.U64()
+		}
+
+		take := func() bool {
+			if cursor.full() {
+				return false
+			}
+
+			cursor.records++
+
+			return true
+		}
+
+		start, _ := slices.BinarySearchFunc(issues, after, compare)
+
+		for _, candidate := range issues[start:] {
+			// Gone, or seen again since the list was made: the next run judges it.
+			database.issuesMutex.RLock()
+			stored, ok := database.table.byID[candidate.id]
+			database.issuesMutex.RUnlock()
+
+			if !ok || compare(candidate, after) <= 0 || !wants(stored) || stored.LastSeen.UnixNano() != candidate.lastSeen {
+				continue
+			}
+
+			if cursor.full() {
+				cursor.position = kv.K(kv.U64(uint64(after.lastSeen)), kv.Text(after.id))
+
+				return false, nil
+			}
+
+			if candidate.id != started {
+				from = 0
+			}
+
+			issue, _ := writer.issue(candidate.id)
+			next, done, err := writer.deleteIssueEvents(issue.ID, from, take)
+
+			if err != nil || !done {
+				cursor.position = kv.K(kv.U64(uint64(after.lastSeen)), kv.Text(after.id), kv.Text(issue.ID), kv.U64(next))
+
+				return false, err
+			}
+
+			if whole {
+				if err := writer.deleteIssue(issue); err != nil {
+					return false, err
+				}
+
+				cursor.records++
+			}
+
+			after = candidate
+		}
+
+		return true, nil
+	}
+}
+
+// count is the counts of a project in this batch; a batch outside the
+// cleanup counts nothing.
+func (writer *batchWriter) count(project int) *CleanupCounts {
+	if writer.counted == nil {
+		return &CleanupCounts{}
+	}
+
+	counts := writer.counted[project]
+
+	if counts == nil {
+		counts = &CleanupCounts{}
+		writer.counted[project] = counts
+	}
+
+	return counts
+}
