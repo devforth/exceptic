@@ -2,7 +2,7 @@ IMAGE ?= devforth/exceptic
 VERSION ?= dev
 MAX_IMAGE_MB ?= 50
 
-.PHONY: test lint fix build web web-deps web-check web-dev run backup docker image-size
+.PHONY: test lint fix build api-types web web-deps web-check web-dev run backup docker image-size
 
 test:
 	go test -race ./...
@@ -19,6 +19,10 @@ fix:
 build: web
 	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o bin/exceptic ./cmd/exceptic
 
+# Rewrites the web app's types of the catalog (web/src/lib/api/catalog.gen.ts); make test fails while they are stale.
+api-types:
+	UPDATE_API_TYPES=1 go test ./internal/api -run TestTypeScriptCatalog -count=1
+
 # The single-page app (web/, Node and pnpm): built into web/dist/spa, which Go embeds.
 web: web-deps
 	cd web && pnpm build
@@ -26,11 +30,11 @@ web: web-deps
 web-deps:
 	cd web && pnpm install --frozen-lockfile
 
-# Types (svelte-check), formatting (prettier) and eslint.
+# Types (svelte-check), formatting (prettier), eslint and unit tests (vitest).
 web-check: web-deps
-	cd web && pnpm check && pnpm lint
+	cd web && pnpm check && pnpm lint && pnpm test
 
-# The app with hot reload at http://localhost:5173/next/; every other address goes to `make run`.
+# The app with hot reload at http://localhost:5173: its pages here, every other address from `make run`.
 web-dev: web-deps
 	cd web && pnpm dev
 

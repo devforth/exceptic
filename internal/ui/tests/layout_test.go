@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/devforth/exceptic/internal/fixtures"
 )
 
 func TestStaticAndSecurityHeaders(t *testing.T) {
@@ -123,13 +125,13 @@ func TestMenuGroupsAndCounter(t *testing.T) {
 	server := newTestServer(t, password)
 	server.login()
 
-	if page := server.page("/projects"); strings.Contains(page, `class="nav-count"`) {
+	if page := server.page("/logs"); strings.Contains(page, `class="nav-count"`) {
 		t.Error("a counter with no issues")
 	}
 
 	server.ingestFixtures()
 
-	page := server.page("/projects")
+	page := server.page("/logs")
 	ids := issueIDs(server.page("/issues"))
 	counter := fmt.Sprintf(`<b class="nav-count" aria-label="%d unresolved">%d</b>`, len(ids), len(ids))
 
@@ -175,22 +177,25 @@ func TestMenuMarksTheSection(t *testing.T) {
 	}
 }
 
-// Unknown addresses, missing records and pages a role may not open all get
-// the same 404 page, with the way back home.
+// Missing records and pages a role may not open get the same 404 page, with
+// the way back home; any other address is the web app's, which shows its own.
 func TestNotFoundPage(t *testing.T) {
 	server := newTestServer(t, password)
 
-	anonymous := server.get("/no-such-page")
+	for _, path := range []string{"/no-such-page", "/projects"} {
+		if response := server.get(path); response.Code != http.StatusOK || !strings.Contains(response.Body.String(), fixtures.WebPage) {
+			t.Errorf("%s: %d %s, want the web app", path, response.Code, response.Body)
+		}
+	}
 
-	if body := anonymous.Body.String(); anonymous.Code != http.StatusNotFound || !strings.Contains(body, `class="not-found"`) || strings.Contains(body, `class="sidebar"`) {
-		t.Fatalf("anonymous: %d %s", anonymous.Code, body)
+	if response := server.post("/no-such-page", url.Values{}); response.Code != http.StatusNotFound {
+		t.Errorf("a form to an unknown address: %d", response.Code)
 	}
 
 	server.login()
 	_, user := server.createUser("dev", "user")
 
 	for name, response := range map[string]*httptest.ResponseRecorder{
-		"unknown address":   server.get("/no-such-page"),
 		"missing issue":     server.get("/issues/zzzzzzzz"),
 		"not for this role": user.get("/notifications"),
 	} {

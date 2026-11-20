@@ -1,5 +1,6 @@
 // Package api is the one catalog of the server's requests, each declared
-// once with its input and handler, served as the REST API and as MCP tools.
+// once with its input and handler, served as the REST API, as MCP tools and
+// to the web app.
 package api
 
 import (
@@ -10,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -23,7 +25,7 @@ import (
 
 // Endpoint is one request of the catalog.
 type Endpoint struct {
-	// Name is the MCP tool and the last part of the REST path: list_issues.
+	// Name is the MCP tool and the last part of the REST and web app paths: list_issues.
 	Name string
 	// Description says when to use it; agents choose tools by it.
 	Description string
@@ -40,40 +42,77 @@ type Endpoint struct {
 	Confirm bool
 	// Admin endpoints need a user who can administer (store.User.CanAdminister).
 	Admin bool
-	// RESTOnly: its output must not reach a model provider.
-	RESTOnly bool
-	// AgentsOnly: it acts as a user, which the REST API's token is not.
-	AgentsOnly bool
+	// Transports serve the endpoint; every endpoint names them (Define).
+	Transports Transport
+	// OpenWithTemporaryPassword: the web app may call it while the user must
+	// still choose a password; it refuses every other endpoint until then.
+	OpenWithTemporaryPassword bool
 	// Choices are the values an input field takes (a list field: each
 	// item's; an optional field also ""), set as the schema's enum: clients
 	// see them, Run checks them.
 	Choices map[string][]string
 	// InputSchema describes the input, inferred from the handler's input type.
 	InputSchema *jsonschema.Schema
+	// output is the handler's output type, for the web app's generated types.
+	output reflect.Type
 
 	run func(ctx context.Context, call Call, input map[string]any) (any, error)
 }
 
+// Transport is how a request reaches the catalog; a set of them is an
+// Endpoint's Transports.
+type Transport uint8
+
+const (
+	// TransportREST: the REST API's token, which may run every REST endpoint.
+	TransportREST Transport = 1 << iota
+	// TransportMCP: an agent acting for its user; the output goes to the
+	// agent's model provider.
+	TransportMCP
+	// TransportUI: the web app with the user's login session.
+	TransportUI
+
+	AllTransports = TransportREST | TransportMCP | TransportUI
+	// ActsAsUser: it acts as a user, which the REST API's token is not.
+	ActsAsUser = TransportMCP | TransportUI
+)
+
+func (transport Transport) String() string {
+	switch transport {
+	case TransportREST:
+		return "rest"
+	case TransportMCP:
+		return "mcp"
+	case TransportUI:
+		return "ui"
+	default:
+		return fmt.Sprintf("transports(%d)", uint8(transport))
+	}
+}
+
 // Call is what a handler knows about the request.
 type Call struct {
-	// Viewer is the user an agent acts for; empty for the REST API token.
+	// Transport is how the request came; a Call without one runs nothing.
+	Transport Transport
+	// Viewer is the user an agent or the web app acts for; empty for the REST API token.
 	Viewer store.User
-	// ByToken: the REST API's token, which may run every REST endpoint.
-	ByToken bool
-	// Actor is recorded with the changes: the user an agent acts for, or
-	// the API token.
+	// Actor is recorded with the changes: the viewer, or the API token.
 	Actor store.Actor
-	// ForAgent: the output goes to the agent's model provider, so free text
-	// written by the monitored apps is redacted (see Text).
-	ForAgent bool
 	// Address is the server as the client reached it (for DSNs).
 	Address *url.URL
+}
+
+// ForAgent: the output may reach a model provider, so free text written by
+// the monitored apps is redacted (see Text). Only the REST API and the web
+// app are known not to be one.
+func (call Call) ForAgent() bool {
+	return call.Transport != TransportREST && call.Transport != TransportUI
 }
 
 // Text is free text written by a monitored app (titles, log lines),
 // redacted when it goes to an agent.
 func (call Call) Text(value string) string {
-	if call.ForAgent {
+	if call.ForAgent() {
 		return agentprompt.Redact(value)
 	}
 
@@ -83,7 +122,7 @@ func (call Call) Text(value string) string {
 // TraceID is a trace ID as an SDK sent it, left out for agents unless it
 // has the protocol's form.
 func (call Call) TraceID(value string) string {
-	if call.ForAgent {
+	if call.ForAgent() {
 		return agentprompt.TraceID(value)
 	}
 
@@ -95,8 +134,13 @@ type Text string
 
 // Define binds a handler to its endpoint; the input schema comes from In,
 // with Choices and the bounds of a "limit" (a page size). It panics on an
-// input the schema cannot describe, a programming error found at startup.
+// endpoint without transports or an input the schema cannot describe,
+// programming errors found at startup.
 func Define[In, Out any](endpoint Endpoint, handler func(context.Context, Call, In) (Out, error)) Endpoint {
+	if endpoint.Transports == 0 {
+		panic(fmt.Sprintf("endpoint %s: no transports", endpoint.Name))
+	}
+
 	schema, err := jsonschema.For[In](nil)
 
 	if err != nil {
@@ -133,6 +177,7 @@ func Define[In, Out any](endpoint Endpoint, handler func(context.Context, Call, 
 	}
 
 	endpoint.InputSchema = schema
+	endpoint.output = reflect.TypeFor[Out]()
 	endpoint.run = func(ctx context.Context, call Call, input map[string]any) (any, error) {
 		if input == nil {
 			input = map[string]any{}
@@ -174,13 +219,29 @@ func (endpoint Endpoint) Run(ctx context.Context, call Call, input map[string]an
 	return endpoint.run(ctx, call, input)
 }
 
-// AllowedFor: the REST token runs what REST serves; a user what their role allows.
+// Serves: the endpoint is served through transport.
+func (endpoint Endpoint) Serves(transport Transport) bool {
+	return endpoint.Transports&transport != 0
+}
+
+// AllowedFor: the REST token runs what REST serves; a user what their role
+// allows, and in the web app with a temporary password only what is open then.
 func (endpoint Endpoint) AllowedFor(call Call) bool {
-	if call.ByToken {
-		return !endpoint.AgentsOnly
+	if call.Transport == 0 || !endpoint.Serves(call.Transport) {
+		return false
 	}
 
-	return call.Viewer.ID != "" && !endpoint.RESTOnly && (!endpoint.Admin || call.Viewer.CanAdminister())
+	if call.Transport == TransportREST {
+		return true // protectAPI has checked the token
+	}
+
+	viewer := call.Viewer
+
+	if viewer.ID == "" || endpoint.Admin && !viewer.CanAdminister() {
+		return false
+	}
+
+	return call.Transport != TransportUI || !viewer.MustChangePassword || endpoint.OpenWithTemporaryPassword
 }
 
 // The notes that end the description of a tool that must be confirmed:

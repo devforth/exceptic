@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -42,7 +43,7 @@ func get(handler http.Handler, path string) *httptest.ResponseRecorder {
 func TestServesPageForEveryAddress(t *testing.T) {
 	handler := testApp(t)
 
-	for _, path := range []string{Base + "/", Base + "/issues/k3x9q2mf", Base + "/" + fallbackPage} {
+	for _, path := range []string{"/", "/issues/k3x9q2mf", "/" + fallbackPage} {
 		response := get(handler, path)
 
 		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), testScript) {
@@ -52,12 +53,17 @@ func TestServesPageForEveryAddress(t *testing.T) {
 		if cache := response.Header().Get("Cache-Control"); cache != "no-store" {
 			t.Errorf("%s: Cache-Control %q", path, cache)
 		}
+
+		// The Origin check of the app's requests needs it: no-referrer makes browsers send Origin: null.
+		if policy := response.Header().Get("Referrer-Policy"); policy != "same-origin" {
+			t.Errorf("%s: Referrer-Policy %q", path, policy)
+		}
 	}
 }
 
 func TestPolicyAllowsOnlyInlineScriptsOfPage(t *testing.T) {
 	sum := sha256.Sum256([]byte(testScript))
-	policy := get(testApp(t), Base+"/").Header().Get("Content-Security-Policy")
+	policy := get(testApp(t), "/").Header().Get("Content-Security-Policy")
 	want := "script-src 'self' 'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "';"
 
 	if !strings.Contains(policy, want) || !strings.Contains(policy, "style-src 'self';") {
@@ -69,8 +75,8 @@ func TestServesBuiltFiles(t *testing.T) {
 	handler := testApp(t)
 
 	cases := map[string]string{
-		Base + "/_app/immutable/entry/start.js": "public, max-age=31536000, immutable",
-		Base + "/_app/version.json":             "no-cache",
+		"/_app/immutable/entry/start.js": "public, max-age=31536000, immutable",
+		"/_app/version.json":             "no-cache",
 	}
 
 	for path, cache := range cases {
@@ -81,12 +87,20 @@ func TestServesBuiltFiles(t *testing.T) {
 		}
 	}
 
-	if response := get(handler, Base+"/_app/immutable/entry/gone.js"); response.Code != http.StatusNotFound {
+	if response := get(handler, "/_app/immutable/entry/gone.js"); response.Code != http.StatusNotFound {
 		t.Errorf("missing file: %d", response.Code)
 	}
 
-	if response := get(handler, Base+"/_app/immutable/"); response.Code != http.StatusNotFound {
+	if response := get(handler, "/_app/immutable/"); response.Code != http.StatusNotFound {
 		t.Errorf("directory: %d", response.Code)
+	}
+
+	// Pages only: a form sent to an address no route takes is unknown.
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/projects", nil))
+
+	if recorder.Code != http.StatusNotFound {
+		t.Errorf("POST: %d", recorder.Code)
 	}
 }
 
@@ -110,8 +124,9 @@ func TestEmbeddedBuild(t *testing.T) {
 
 	page := string(app.page)
 
-	if !strings.Contains(page, `"`+Base+"/"+immutableDir) {
-		t.Errorf("the page does not load the app from %s (paths.base in vite.config.ts)", Base)
+	// From the root: the page is served at every address, so a relative path would break.
+	if !strings.Contains(page, `"/`+immutableDir) {
+		t.Error("the page does not load the app from /" + immutableDir)
 	}
 
 	if count := len(inlineScript.FindAllStringSubmatch(page, -1)); count != 1 {
@@ -121,4 +136,38 @@ func TestEmbeddedBuild(t *testing.T) {
 	if strings.Contains(page, "style=") || strings.Contains(page, "<style") {
 		t.Error("inline style in the page: the CSP blocks it")
 	}
+
+	err = fs.WalkDir(app.files, ".", func(name string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+
+		data, err := fs.ReadFile(app.files, name)
+
+		if err != nil {
+			return err
+		}
+
+		if strings.HasPrefix(name, appDir) && strings.Contains(string(data), `style="`) {
+			t.Errorf("%s: a style attribute in markup, which the CSP blocks", name)
+		}
+
+		// SvelteKit's own error page has a <style>; src/error.html replaces it.
+		if strings.Contains(string(data), "<style") {
+			t.Errorf("%s: a <style> element, which the CSP blocks", name)
+		}
+
+		if strings.Contains(string(data), designSystemMarker) || strings.Contains(name, "DesignSystem") {
+			t.Errorf("%s: the design-system page is for the dev server only", name)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
 }
+
+// The id of the dev-only component catalog (src/lib/design-system/DesignSystem.svelte).
+const designSystemMarker = "exceptic-design-system"

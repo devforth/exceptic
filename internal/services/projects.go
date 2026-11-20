@@ -2,11 +2,14 @@ package services
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/netip"
 	"net/url"
+	"strings"
 
 	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/server"
@@ -20,17 +23,55 @@ type Projects struct {
 	store          store.Store
 	registry       *projects.Registry
 	recording      config.Recording
+	retention      config.Retention
 	publicURL      string
 	trustedProxies []netip.Prefix
 }
 
-func newProjects(database store.Store, registry *projects.Registry, recording config.Recording, publicURL string, trustedProxies []netip.Prefix) *Projects {
-	return &Projects{store: database, registry: registry, recording: recording, publicURL: publicURL, trustedProxies: trustedProxies}
+func newProjects(database store.Store, registry *projects.Registry, settings *config.Config) *Projects {
+	return &Projects{
+		store: database, registry: registry, recording: settings.Recording, retention: settings.Retention,
+		publicURL: settings.Notifications.PublicURL, trustedProxies: settings.TrustedProxies,
+	}
 }
 
 // List gives the current projects (a config.ProjectList).
 func (service *Projects) List() config.Projects {
 	return service.registry.List()
+}
+
+// RecordedLevels are the levels project records, highest first.
+func (service *Projects) RecordedLevels(project config.Project) (events, logs []string) {
+	return service.recording.RecordedLevels(project.EventLevels, project.LogLevels)
+}
+
+// ProjectColorsPath serves the stylesheet of the project colors.
+const ProjectColorsPath = "/project-colors.css"
+
+// Stylesheet sets the color of every project, since the CSP forbids inline
+// styles; pages link it with its Version, so a changed color is fetched at once.
+type Stylesheet struct {
+	CSS     string
+	Version string
+}
+
+// Colors gives each project badge (data-project="<name>") its color. Names
+// and colors are validated, so they are safe in CSS.
+func (service *Projects) Colors() Stylesheet {
+	var css strings.Builder
+
+	for _, project := range service.List() {
+		fmt.Fprintf(&css, "[data-project=%q] { --project-color: %s; }\n", project.Name, project.Color)
+	}
+
+	sum := sha256.Sum256([]byte(css.String()))
+
+	return Stylesheet{CSS: css.String(), Version: hex.EncodeToString(sum[:])[:12]}
+}
+
+// ColorsURL is where pages link the stylesheet of the current colors.
+func (service *Projects) ColorsURL() string {
+	return ProjectColorsPath + "?v=" + service.Colors().Version
 }
 
 // FromEnv: the project comes from PROJECTS (its name and key are fixed).
@@ -162,6 +203,34 @@ func (service *Projects) UnresolvedCounts(ctx context.Context) (map[int]int, err
 // DatabaseSize is how many bytes the database holds.
 func (service *Projects) DatabaseSize(ctx context.Context) (int64, error) {
 	return service.store.DatabaseSize(ctx)
+}
+
+// Storage is how much the database holds and how the cleanup keeps it under the limit.
+type Storage struct {
+	UsedBytes  int64
+	LimitBytes int64 // 0: no size limit
+	// Used and Limit are the sizes as the server writes them (config.FormatSize).
+	Used, Limit string
+	Percent     int // of the limit
+	// CleanupStopPercent: at the limit the cleanup deletes down to this percent of it.
+	CleanupStopPercent int
+}
+
+func (service *Projects) Storage(ctx context.Context) (Storage, error) {
+	used, err := service.DatabaseSize(ctx)
+
+	if err != nil {
+		return Storage{}, err
+	}
+
+	storage := Storage{UsedBytes: used, Used: config.FormatSize(used), CleanupStopPercent: config.CleanupStopPercent}
+
+	if limit := service.retention.MaxDatabaseBytes; limit > 0 {
+		storage.LimitBytes, storage.Limit = limit, config.FormatSize(limit)
+		storage.Percent = int(min(100, used*100/limit))
+	}
+
+	return storage, nil
 }
 
 // Cleanups are every run of the cleanup by size the store keeps, newest first.

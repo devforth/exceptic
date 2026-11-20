@@ -14,9 +14,6 @@ import (
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
-// RESTPrefix is where the endpoints are served.
-const RESTPrefix = "/api/v1/"
-
 // maxBody caps a POST body: inputs are a few fields.
 const maxBody = 1 << 16
 
@@ -33,51 +30,79 @@ func NewREST(logger *slog.Logger, endpoints []Endpoint, publicURL string, truste
 	return &REST{logger: logger, endpoints: endpoints, publicURL: publicURL, trustedProxies: trustedProxies}
 }
 
-// Route is the method and path of an endpoint.
-func Route(endpoint Endpoint) string {
+// Route is the method and path of an endpoint in a transport served over
+// HTTP: GET for a read-only one, POST otherwise.
+func Route(transport Transport, endpoint Endpoint) string {
 	method := http.MethodPost
 
 	if endpoint.ReadOnly {
 		method = http.MethodGet
 	}
 
-	return method + " " + RESTPrefix + endpoint.Name
+	prefix := server.RESTPrefix
+
+	if transport == TransportUI {
+		prefix = server.UIAPIPrefix
+	}
+
+	return method + " " + prefix + endpoint.Name
 }
 
 // Register adds the routes to router, each wrapped with protect (IP
-// allowlist and token).
+// allowlist and token). Other /api/ addresses are the server's (server.unknownAPI).
 func (handler *REST) Register(router *http.ServeMux, protect func(http.Handler) http.Handler) {
-	for _, endpoint := range handler.endpoints {
-		// Agent-only endpoints act as a user; the token is none.
-		if !endpoint.AgentsOnly {
-			router.Handle(Route(endpoint), protect(handler.serve(endpoint)))
-		}
-	}
-
-	// Any other /api/ address: a JSON 404, not the UI's page. Less specific
-	// than the ingest route /api/{projectID}/envelope/, so it does not overlap it.
-	router.Handle("/api/", protect(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		server.JSONError(w, http.StatusNotFound, "unknown API endpoint: see /api/v1/<name> in docs/api.md")
-	})))
+	register(router, handler.logger, TransportREST, handler.endpoints, protect, handler.caller)
 }
 
 // apiActor is who changes a status through the REST API: its one token.
 var apiActor = store.Actor{Name: "API token", Source: store.SourceAPI}
 
-func (handler *REST) serve(endpoint Endpoint) http.Handler {
+func (handler *REST) caller(_ http.ResponseWriter, r *http.Request) (Call, bool) {
+	return Call{Transport: TransportREST, Actor: apiActor, Address: server.PublicURL(r, handler.publicURL, handler.trustedProxies)}, true
+}
+
+// register adds the routes of the endpoints transport serves, one by one: a
+// subtree pattern would overlap the ingest route /api/{projectID}/envelope/.
+func register(router *http.ServeMux, logger *slog.Logger, transport Transport, endpoints []Endpoint,
+	protect func(http.Handler) http.Handler, caller func(http.ResponseWriter, *http.Request) (Call, bool),
+) {
+	for _, endpoint := range endpoints {
+		if endpoint.Serves(transport) {
+			router.Handle(Route(transport, endpoint), protect(serve(logger, transport, endpoint, caller)))
+		}
+	}
+}
+
+// serve runs endpoint over HTTP for the caller of the request; caller has
+// answered itself when it returns false. The role is checked before the
+// input is read, so a refused endpoint answers as an unknown one.
+func serve(logger *slog.Logger, transport Transport, endpoint Endpoint, caller func(http.ResponseWriter, *http.Request) (Call, bool)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call, ok := caller(w, r)
+
+		if !ok {
+			return
+		}
+
+		if !endpoint.AllowedFor(call) {
+			fail(logger, transport, w, r, endpoint, ErrNotFound)
+
+			return
+		}
+
 		input, err := readInput(endpoint, w, r)
 
 		if err != nil {
 			server.JSONError(w, http.StatusBadRequest, err.Error())
+
 			return
 		}
 
-		call := Call{ByToken: true, Actor: apiActor, Address: server.PublicURL(r, handler.publicURL, handler.trustedProxies)}
 		output, err := endpoint.Run(r.Context(), call, input)
 
 		if err != nil {
-			handler.fail(w, r, endpoint, err)
+			fail(logger, transport, w, r, endpoint, err)
+
 			return
 		}
 
@@ -93,12 +118,12 @@ func (handler *REST) serve(endpoint Endpoint) http.Handler {
 	})
 }
 
-func (handler *REST) fail(w http.ResponseWriter, r *http.Request, endpoint Endpoint, err error) {
+func fail(logger *slog.Logger, transport Transport, w http.ResponseWriter, r *http.Request, endpoint Endpoint, err error) {
 	message, notFound, ok := Outcome(err)
 
 	switch {
 	case !ok:
-		handler.logger.Error("api request failed", "endpoint", endpoint.Name, "path", r.URL.Path, "err", err)
+		logger.Error("api request failed", "transport", transport, "endpoint", endpoint.Name, "path", r.URL.Path, "err", err)
 		server.JSONError(w, http.StatusInternalServerError, "internal error")
 	case notFound:
 		server.JSONError(w, http.StatusNotFound, message)

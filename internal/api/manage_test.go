@@ -11,6 +11,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/devforth/exceptic/internal/api"
 	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/storage/store"
 )
@@ -66,10 +67,11 @@ func TestToolsFollowTheRole(t *testing.T) {
 		}
 	}
 
-	// Never a tool: the own password (UI only) and minting MCP tokens.
-	for _, name := range []string{"change_password", "update_account_password", "generate_personal_token", "get_event_payload", "list_trace"} {
-		if slices.Contains(admin, name) {
-			t.Errorf("%s offered to agents", name)
+	// Never a tool: an endpoint MCP does not serve (the own password and
+	// minting MCP tokens are none, in any transport).
+	for _, endpoint := range api.Endpoints(nil, nil) {
+		if !endpoint.Serves(api.TransportMCP) && slices.Contains(admin, endpoint.Name) {
+			t.Errorf("%s offered to agents", endpoint.Name)
 		}
 	}
 

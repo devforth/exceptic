@@ -11,14 +11,12 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+
+	"github.com/devforth/exceptic/internal/server"
 )
 
 //go:embed all:dist
 var dist embed.FS
-
-// Base is where the app is served (paths.base in vite.config.ts): the
-// server-rendered UI keeps the root until the app replaces it.
-const Base = "/next"
 
 const (
 	// fallbackPage is the page of every address (adapter-static's fallback).
@@ -63,20 +61,25 @@ func Load(files fs.FS) (*App, error) {
 	return &App{files: files, page: page, policy: contentSecurityPolicy(page)}, nil
 }
 
-// Register adds the app's routes. protect is the IP allowlist; the page holds
-// no data, the requests it makes check the login.
+// Register serves the app at every address no other route takes: the pages
+// of the server-rendered UI that it has not replaced yet keep theirs. protect
+// is the IP allowlist; the page holds no data, the requests it makes check the login.
 func (app *App) Register(router *http.ServeMux, protect func(http.Handler) http.Handler) {
-	router.Handle("GET "+Base+"/", protect(http.HandlerFunc(app.serve)))
+	router.Handle("/", protect(http.HandlerFunc(app.serve)))
 }
 
 func (app *App) serve(w http.ResponseWriter, r *http.Request) {
 	header := w.Header()
-	header.Set("Content-Security-Policy", app.policy)
-	header.Set("X-Content-Type-Options", "nosniff")
-	header.Set("Referrer-Policy", "same-origin")
-	header.Set("X-Frame-Options", "DENY")
+	server.SecurityHeaders(header, app.policy)
 
-	name := strings.TrimPrefix(r.URL.Path, Base+"/")
+	// The app is pages: a form sent to an address no route takes is unknown.
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.NotFound(w, r)
+
+		return
+	}
+
+	name := strings.TrimPrefix(r.URL.Path, "/")
 
 	if name != fallbackPage && app.isFile(name) {
 		if strings.HasPrefix(name, immutableDir) {
@@ -115,10 +118,10 @@ func (app *App) isFile(name string) bool {
 
 var inlineScript = regexp.MustCompile(`(?is)<script\b([^>]*)>(.*?)</script>`)
 
-// contentSecurityPolicy allows scripts and styles only from the server, and
-// the page's own inline scripts (SvelteKit starts the app with one) by hash.
+// contentSecurityPolicy adds the page's inline scripts (SvelteKit starts
+// the app with one) by hash.
 func contentSecurityPolicy(page []byte) string {
-	scripts := "'self'"
+	var hashes []string
 
 	for _, match := range inlineScript.FindAllSubmatch(page, -1) {
 		if strings.Contains(strings.ToLower(string(match[1])), "src=") {
@@ -126,9 +129,8 @@ func contentSecurityPolicy(page []byte) string {
 		}
 
 		sum := sha256.Sum256(match[2])
-		scripts += " 'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+		hashes = append(hashes, "'sha256-"+base64.StdEncoding.EncodeToString(sum[:])+"'")
 	}
 
-	return "default-src 'self'; script-src " + scripts +
-		"; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; form-action 'self'; base-uri 'none'"
+	return server.ContentSecurityPolicy(hashes)
 }

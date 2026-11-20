@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"github.com/devforth/exceptic/internal/app"
+	"github.com/devforth/exceptic/internal/session"
 	"github.com/devforth/exceptic/internal/storage/database"
 
 	"github.com/devforth/exceptic/internal/storage/storetest"
@@ -107,7 +108,7 @@ func startServer(t *testing.T, database *database.Store, adminUsername, adminPas
 	t.Cleanup(telegram.Close)
 
 	built, err := app.New(context.Background(), app.Options{
-		Settings: settings, Logger: logger, Store: database, Version: "test",
+		Settings: settings, Logger: logger, Store: database, Version: "test", Web: fixtures.WebApp(t),
 		Factory: notify.Factory{SMTP: smtp, Box: box, TelegramURL: telegram.URL},
 	})
 
@@ -176,7 +177,7 @@ func (server *testServer) loginAs(username, userPassword string) {
 	}
 
 	for _, cookie := range response.Result().Cookies() {
-		if cookie.Name == "exceptic_session" && cookie.Value != "" {
+		if cookie.Name == session.CookieName && cookie.Value != "" {
 			server.cookie = cookie
 		}
 	}

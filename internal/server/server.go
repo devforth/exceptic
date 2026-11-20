@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
+	"strings"
 	"time"
 )
 
@@ -18,6 +19,20 @@ type Pinger interface {
 type Routes interface {
 	Register(router *http.ServeMux, protect func(http.Handler) http.Handler)
 }
+
+// UIRoutes are the routes of the web app's API; as a handler it answers
+// every other address under UIAPIPrefix, with the same checks as its routes.
+type UIRoutes interface {
+	Routes
+	http.Handler
+}
+
+// Where the catalog of requests (package api) is served: to the API token,
+// and to the web app with its login session.
+const (
+	RESTPrefix  = "/api/v1/"
+	UIAPIPrefix = "/api/ui/"
+)
 
 // Options are the server's dependencies.
 type Options struct {
@@ -33,8 +48,10 @@ type Options struct {
 	OAuth Routes
 	// UI adds the web interface; it handles its own login, the server adds the IP allowlist.
 	UI Routes
-	// Web adds the single-page app (package web) that replaces the UI; the server adds the IP allowlist.
+	// Web adds the single-page app (package web) that replaces the UI, and
+	// UIAPI the requests it makes; the server adds the IP allowlist.
 	Web            Routes
+	UIAPI          UIRoutes
 	APIToken       string
 	AllowedIPs     []netip.Prefix
 	TrustedProxies []netip.Prefix
@@ -76,7 +93,43 @@ func (server *Server) Handler() http.Handler {
 		server.Web.Register(router, server.protectUI)
 	}
 
+	if server.UIAPI != nil {
+		server.UIAPI.Register(router, server.protectUI)
+	}
+
+	router.Handle("/api/", server.unknownAPI())
+
 	return server.logRequests(router)
+}
+
+// unknownAPI answers any other /api/ address with JSON, not the UI's page:
+// under UIAPIPrefix the web app's API itself (a login, then 404), elsewhere
+// a 404, behind the token when the REST API is served. Less specific than
+// the ingest route /api/{projectID}/envelope/, so it does not overlap it.
+func (server *Server) unknownAPI() http.Handler {
+	var rest http.Handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		JSONError(w, http.StatusNotFound, "unknown API endpoint: see "+RESTPrefix+"<name> in docs/api.md")
+	})
+
+	if server.API != nil {
+		rest = server.protectAPI(rest)
+	}
+
+	var web http.Handler
+
+	if server.UIAPI != nil {
+		web = server.protectUI(server.UIAPI)
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if web != nil && strings.HasPrefix(r.URL.Path, UIAPIPrefix) {
+			web.ServeHTTP(w, r)
+
+			return
+		}
+
+		rest.ServeHTTP(w, r)
+	})
 }
 
 func (server *Server) protectUI(next http.Handler) http.Handler {

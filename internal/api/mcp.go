@@ -70,13 +70,13 @@ func NewMCP(logger *slog.Logger, database store.Store, endpoints []Endpoint, aut
 	return handler
 }
 
-// agentEndpoints are the tools viewer may use: the catalog without the
-// REST-only endpoints and those of other roles, plus fetch_skill.
+// agentEndpoints are the tools viewer may use: the catalog's MCP endpoints
+// their role allows, plus fetch_skill.
 func agentEndpoints(endpoints []Endpoint, viewer store.User) []Endpoint {
 	var tools []Endpoint
 
 	for _, endpoint := range append(endpoints, fetchSkill) {
-		if endpoint.AllowedFor(Call{Viewer: viewer}) {
+		if endpoint.AllowedFor(Call{Transport: TransportMCP, Viewer: viewer}) {
 			tools = append(tools, endpoint)
 		}
 	}
@@ -192,7 +192,7 @@ func (handler *MCP) withCaller(next http.Handler) http.Handler {
 		}
 
 		address := server.PublicURL(r, handler.oauth.PublicURL, handler.oauth.TrustedProxies)
-		call := Call{Viewer: viewer, Actor: viewer.Actor(store.SourceMCP), ForAgent: true, Address: address}
+		call := Call{Transport: TransportMCP, Viewer: viewer, Actor: viewer.Actor(store.SourceMCP), Address: address}
 
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), callerKey{}, call)))
 	})

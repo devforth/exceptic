@@ -7,30 +7,6 @@ import (
 	"github.com/devforth/exceptic/internal/ui/lists"
 )
 
-type ProjectInfo struct {
-	ID               int
-	Name             string
-	DSN              string
-	UnresolvedIssues int
-	FromEnv          bool
-	EventLevels      []string
-	LogLevels        []string // nil: every level
-}
-
-type ProjectsView struct {
-	Projects []ProjectInfo
-	Storage  StorageInfo
-	Notice   string
-}
-
-// StorageInfo shows how much the database holds and how it is cleaned.
-type StorageInfo struct {
-	Used        string
-	Limit       string // empty: no size limit
-	Percent     int    // of the limit
-	CleanupStop int    // the cleanup stops at this percent of the limit
-}
-
 // CleanupsView is the page of the cleanup runs.
 type CleanupsView struct {
 	Runs []CleanupRunView

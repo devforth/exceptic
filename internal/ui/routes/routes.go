@@ -4,17 +4,21 @@ package routes
 
 import (
 	"net/http"
+	"net/netip"
 	"strings"
 
 	"github.com/devforth/exceptic/internal/oauth"
+	"github.com/devforth/exceptic/internal/services"
+	"github.com/devforth/exceptic/internal/session"
 	"github.com/devforth/exceptic/internal/ui/controllers"
 	"github.com/devforth/exceptic/internal/ui/middleware"
-	"github.com/devforth/exceptic/internal/ui/session"
 	"github.com/devforth/exceptic/internal/ui/views"
 )
 
 // Register adds the UI routes. protect is the IP allowlist.
-func Register(router *http.ServeMux, protect func(http.Handler) http.Handler, controller *controllers.Controllers, auth *session.Auth) {
+func Register(router *http.ServeMux, protect func(http.Handler) http.Handler, controller *controllers.Controllers, auth *session.Auth, trustedProxies []netip.Prefix) {
+	registrar := registrar{router: router, protect: protect, sameOrigin: middleware.SameOrigin(trustedProxies)}
+
 	// Open to anyone who passes the IP allowlist: the login itself.
 	public := group{
 		"GET /login":   controller.LoginPage,
@@ -30,7 +34,6 @@ func Register(router *http.ServeMux, protect func(http.Handler) http.Handler, co
 		"POST /issues/{issueID}/action": controller.IssueAction, // deleting needs an admin (services.Issues)
 		"POST /issues/bulk":             controller.BulkIssueAction,
 		"GET /logs":                     controller.LogsPage,
-		"GET /projects":                 controller.ProjectsPage, // read-only for users: the DSNs
 		"GET /projects/cleanups":        controller.CleanupsPage,
 
 		"GET /agents":                       controller.AgentsPage,
@@ -39,7 +42,7 @@ func Register(router *http.ServeMux, protect func(http.Handler) http.Handler, co
 		"GET " + oauth.AuthorizePath:        controller.AuthorizePage,
 		"POST " + oauth.AuthorizePath:       controller.Authorize,
 
-		"GET /project-colors.css": controller.ProjectColors, // names the projects
+		"GET " + services.ProjectColorsPath: controller.ProjectColors, // names the projects
 	}
 
 	// Settings only admins (and the superadmin) may change.
@@ -87,13 +90,10 @@ func Register(router *http.ServeMux, protect func(http.Handler) http.Handler, co
 
 	login, passwordChanged := middleware.RequireLogin(auth), middleware.RequirePasswordChanged(controllers.AccountPath)
 
-	public.register(router, protect)
-	account.register(router, protect, login)
-	dashboard.register(router, protect, login, passwordChanged)
-	admin.register(router, protect, login, passwordChanged, middleware.RequireAdmin(controller.NotFoundPage))
-
-	// Any other address: the 404 page, with the menu for logged-in users.
-	group{"/": controller.NotFoundPage}.register(router, protect, middleware.WithSession(auth))
+	registrar.add(public)
+	registrar.add(account, login)
+	registrar.add(dashboard, login, passwordChanged)
+	registrar.add(admin, login, passwordChanged, middleware.RequireAdmin(controller.NotFoundPage))
 
 	static := http.StripPrefix("/static/", middleware.StaticCache(http.FileServerFS(views.Static())))
 	router.Handle("GET /static/", protect(middleware.SecurityHeaders(static)))
@@ -102,19 +102,26 @@ func Register(router *http.ServeMux, protect func(http.Handler) http.Handler, co
 // group is a set of routes that share their middleware.
 type group map[string]http.HandlerFunc
 
-// register adds the routes, each wrapped in wrap (outermost first). Every
+// registrar adds groups of routes with the protection every route gets.
+type registrar struct {
+	router     *http.ServeMux
+	protect    func(http.Handler) http.Handler // the IP allowlist
+	sameOrigin func(http.HandlerFunc) http.HandlerFunc
+}
+
+// add registers the routes, each wrapped in wrap (outermost first). Every
 // POST also gets the same-origin check (CSRF), inside the others: a group
 // cannot forget it.
-func (routes group) register(router *http.ServeMux, protect func(http.Handler) http.Handler, wrap ...func(http.HandlerFunc) http.HandlerFunc) {
+func (registrar registrar) add(routes group, wrap ...func(http.HandlerFunc) http.HandlerFunc) {
 	for pattern, route := range routes {
 		if strings.HasPrefix(pattern, http.MethodPost+" ") {
-			route = middleware.SameOrigin(route)
+			route = registrar.sameOrigin(route)
 		}
 
 		for index := len(wrap) - 1; index >= 0; index-- {
 			route = wrap[index](route)
 		}
 
-		router.Handle(pattern, protect(middleware.SecurityHeaders(route)))
+		registrar.router.Handle(pattern, registrar.protect(middleware.SecurityHeaders(route)))
 	}
 }

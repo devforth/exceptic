@@ -10,11 +10,11 @@ import (
 
 	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/services"
+	"github.com/devforth/exceptic/internal/session"
 	"github.com/devforth/exceptic/internal/storage/store"
 	"github.com/devforth/exceptic/internal/ui/lists"
 	"github.com/devforth/exceptic/internal/ui/presenters"
 	"github.com/devforth/exceptic/internal/ui/requests"
-	"github.com/devforth/exceptic/internal/ui/session"
 	"github.com/devforth/exceptic/internal/ui/views"
 )
 

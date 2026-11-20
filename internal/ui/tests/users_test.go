@@ -67,7 +67,7 @@ func TestRoles(t *testing.T) {
 	_, admin := server.createUser("ops", store.RoleAdmin)
 	userID, user := server.createUser("dev", store.RoleUser)
 
-	for _, path := range []string{"/issues", "/logs", "/projects", "/agents", "/account"} {
+	for _, path := range []string{"/issues", "/logs", "/agents", "/account"} {
 		user.page(path)
 	}
 
@@ -79,17 +79,13 @@ func TestRoles(t *testing.T) {
 		admin.page(path)
 	}
 
-	// The menu and the projects page show only what the role allows.
-	menu := user.page("/projects")
+	// The menu shows only what the role allows.
+	menu := user.page("/logs")
 
-	for _, hidden := range []string{`href="/notifications"`, `href="/users"`, `href="/projects/new"`, `href="/projects/1"`, "/delete"} {
+	for _, hidden := range []string{`href="/notifications"`, `href="/users"`} {
 		if strings.Contains(menu, hidden) {
 			t.Errorf("a user sees %s", hidden)
 		}
-	}
-
-	if !strings.Contains(admin.page("/projects"), `href="/projects/new"`) {
-		t.Error("an admin cannot add projects")
 	}
 
 	if response := user.post("/projects", url.Values{"name": {"sneaky"}}); response.Code != http.StatusNotFound {

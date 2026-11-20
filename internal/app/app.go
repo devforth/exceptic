@@ -3,7 +3,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/server"
 	"github.com/devforth/exceptic/internal/services"
+	"github.com/devforth/exceptic/internal/session"
 	"github.com/devforth/exceptic/internal/storage/database"
 	"github.com/devforth/exceptic/internal/storage/projects"
 	"github.com/devforth/exceptic/internal/ui"
@@ -27,7 +27,9 @@ type Options struct {
 	Logger   *slog.Logger
 	Store    *database.Store
 	Factory  notify.Factory // the notification channels
-	Version  string
+	// Web is the single-page app (web.New in main, a small fake in tests); nil serves none.
+	Web     *web.App
+	Version string
 }
 
 // App is a built server; Run serves it.
@@ -66,22 +68,19 @@ func New(ctx context.Context, options Options) (*App, error) {
 		return nil, err
 	}
 
-	webUI, err := ui.New(logger, settings, all)
+	// One login for the UI and the web app: its attempt limits live in memory.
+	auth := session.NewAuth(logger, settings, all.Users, all.Sessions)
+	webUI, err := ui.New(logger, settings, all, auth)
 
 	if err != nil {
 		return nil, err
 	}
 
-	// The single-page app is embedded at build time; without Node a build has none.
+	// A nil *web.App must not become a non-nil server.Routes.
 	var spa server.Routes
 
-	switch webApp, err := web.New(); {
-	case errors.Is(err, web.ErrNotBuilt):
-		logger.Warn("web app not built, "+web.Base+"/ is not served", "build", "make web")
-	case err != nil:
-		return nil, err
-	default:
-		spa = webApp
+	if options.Web != nil {
+		spa = options.Web
 	}
 
 	app := &App{Registry: registry, OAuth: authorization, Services: all, options: options}
@@ -104,6 +103,7 @@ func New(ctx context.Context, options Options) (*App, error) {
 		OAuth:          authorization,
 		UI:             webUI,
 		Web:            spa,
+		UIAPI:          api.NewUI(logger, endpoints, auth, settings.Notifications.PublicURL, settings.TrustedProxies),
 		APIToken:       settings.APIToken,
 		AllowedIPs:     settings.AllowedIPs,
 		TrustedProxies: settings.TrustedProxies,

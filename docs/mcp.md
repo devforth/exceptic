@@ -51,7 +51,7 @@ The [exceptic skill](../skills/exceptic/SKILL.md) tells an agent how to do the r
 
 ## Tools
 
-An agent acts as the user who connected it and is offered only the tools of that user's role; the role is read at every request, so a change applies at once. The data tools are the endpoints of the [REST API](api.md) with the same names and inputs; the management tools are for agents only, since the REST API has a token but no user.
+An agent acts as the user who connected it and is offered only the tools of that user's role; the role is read at every request, so a change applies at once. The data tools are the endpoints of the [REST API](api.md) with the same names and inputs; the management tools are for agents and the web interface only, since the REST API has a token but no user.
 
 | Tool | Role | |
 |---|---|---|

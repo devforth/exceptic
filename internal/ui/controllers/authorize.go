@@ -5,8 +5,8 @@ import (
 	"net/http"
 
 	"github.com/devforth/exceptic/internal/oauth"
+	"github.com/devforth/exceptic/internal/server"
 	"github.com/devforth/exceptic/internal/ui/contracts"
-	"github.com/devforth/exceptic/internal/ui/middleware"
 	"github.com/devforth/exceptic/internal/ui/requests"
 )
 
@@ -71,7 +71,7 @@ func (controller *Controllers) Authorize(w http.ResponseWriter, r *http.Request)
 // the agent, which CSP form-action would block (it covers redirects too).
 // The target was checked against the agent's registered redirect URIs.
 func allowAuthorizationRedirect(w http.ResponseWriter, request oauth.Request) {
-	w.Header().Set("Content-Security-Policy", middleware.ContentSecurityPolicy(request.RedirectOrigin()))
+	w.Header().Set("Content-Security-Policy", server.ContentSecurityPolicy(nil, request.RedirectOrigin()))
 }
 
 func (controller *Controllers) authorizationError(w http.ResponseWriter, r *http.Request, err error) {

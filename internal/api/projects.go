@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"strconv"
+
+	"github.com/devforth/exceptic/internal/platform/config"
 )
 
 type listProjectsInput struct {
@@ -10,12 +12,34 @@ type listProjectsInput struct {
 	Cursor string `json:"cursor,omitempty" jsonschema:"next_cursor of the previous page."`
 }
 
-type projectOutput struct {
-	ID               int    `json:"id"`
-	Name             string `json:"name"`
-	UnresolvedIssues int    `json:"unresolved_issues"`
+// projectView is a project as list_projects and get_project show it.
+type projectView struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
 	// DSN configures a Sentry SDK to report to the project.
 	DSN string `json:"dsn,omitempty"`
+	// FromEnv: set by PROJECTS, so only its color and levels change.
+	FromEnv bool `json:"from_env,omitempty"`
+	// EventLevels and LogLevels are recorded, highest first.
+	EventLevels []string `json:"event_levels"`
+	LogLevels   []string `json:"log_levels"`
+}
+
+func (handler *handlers) projectView(call Call, project config.Project) projectView {
+	view := projectView{ID: project.ID, Name: project.Name, FromEnv: handler.services.Projects.FromEnv(project.ID)}
+	view.EventLevels, view.LogLevels = handler.services.Projects.RecordedLevels(project)
+
+	if call.Address != nil {
+		view.DSN = project.DSN(call.Address)
+	}
+
+	return view
+}
+
+type projectOutput struct {
+	projectView
+
+	UnresolvedIssues int `json:"unresolved_issues"`
 }
 
 func (handler *handlers) listProjects(ctx context.Context, call Call, input listProjectsInput) (Page[projectOutput], error) {
@@ -42,13 +66,7 @@ func (handler *handlers) listProjects(ctx context.Context, call Call, input list
 	end := min(offset+limit, len(projects))
 
 	for _, project := range projects[offset:end] {
-		item := projectOutput{ID: project.ID, Name: project.Name, UnresolvedIssues: counts[project.ID]}
-
-		if call.Address != nil {
-			item.DSN = project.DSN(call.Address)
-		}
-
-		output.Items = append(output.Items, item)
+		output.Items = append(output.Items, projectOutput{projectView: handler.projectView(call, project), UnresolvedIssues: counts[project.ID]})
 	}
 
 	if end < len(projects) {

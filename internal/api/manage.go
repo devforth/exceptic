@@ -13,7 +13,7 @@ import (
 )
 
 // The endpoints that manage the server, as the UI pages do: they act as a
-// user (AgentsOnly) through the same services. Users and Agents check what
+// user (ActsAsUser) through the same services. Users and Agents check what
 // the user may change; the Admin flag guards projects and notifications.
 // A user changes their own password only in the UI; an agent never mints
 // MCP tokens.
@@ -22,71 +22,71 @@ func (handler *handlers) management() []Endpoint {
 		Define(Endpoint{
 			Name:        "get_account",
 			Description: "Who the agent acts for: username, name and role (superadmin, admin or user), which decides the tools offered.",
-			ReadOnly:    true, AgentsOnly: true,
+			ReadOnly:    true, Transports: ActsAsUser,
 		}, handler.getAccount),
 		Define(Endpoint{
 			Name:        "update_account_name",
 			Description: "Change the display name of the user the agent acts for. The password can only be changed in the UI.",
-			Idempotent:  true, AgentsOnly: true,
+			Idempotent:  true, Transports: ActsAsUser,
 		}, handler.updateAccountName),
 		Define(Endpoint{
 			Name:        "list_agents",
 			Description: "Coding agents and personal tokens connected to MCP for the user (admins: user_id of a user they manage), with when each was last used.",
-			ReadOnly:    true, AgentsOnly: true,
+			ReadOnly:    true, Transports: ActsAsUser,
 		}, handler.listAgents),
 		Define(Endpoint{
 			Name:        "disconnect_agent",
 			Description: "Revoke a connected agent or personal token (grant_id from list_agents); it stops working at once.",
-			Destructive: true, AgentsOnly: true,
+			Destructive: true, Transports: ActsAsUser,
 		}, handler.disconnectAgent),
 
 		Define(Endpoint{
 			Name:        "get_project",
 			Description: "Settings of a project: DSN, color (missing when it follows the palette) and recorded levels.",
-			ReadOnly:    true, Admin: true, AgentsOnly: true,
+			ReadOnly:    true, Admin: true, Transports: ActsAsUser,
 		}, handler.getProject),
 		Define(Endpoint{
 			Name:        "create_project",
 			Description: "Add a project (one per service sending errors); returns its DSN for the app's Sentry SDK.",
-			Admin:       true, AgentsOnly: true,
+			Admin:       true, Transports: ActsAsUser,
 			Choices: projectChoices,
 		}, handler.createProject),
 		Define(Endpoint{
 			Name:        "update_project",
 			Description: "Change a project's settings; fields not given keep their values, an empty string returns a setting to the default. Projects from PROJECTS keep their name.",
-			Idempotent:  true, Admin: true, AgentsOnly: true, Confirm: true,
+			Idempotent:  true, Admin: true, Transports: ActsAsUser, Confirm: true,
 			Choices: projectChoices,
 		}, handler.updateProject),
 		Define(Endpoint{
 			Name:        "delete_project",
 			Description: "Delete a project added in the UI with all its issues, events and logs; apps using its DSN are rejected afterwards.",
-			Destructive: true, Admin: true, AgentsOnly: true,
+			Destructive: true, Admin: true, Transports: ActsAsUser,
 		}, handler.deleteProject),
 
 		Define(Endpoint{
 			Name:        "list_users",
 			Description: "Users of the panel with their role and last login.",
-			ReadOnly:    true, Admin: true, AgentsOnly: true,
+			ReadOnly:    true, Admin: true, Transports: ActsAsUser,
 		}, handler.listUsers),
 		Define(Endpoint{
 			Name:        "create_user",
 			Description: "Add a user with a role (admin or user). Returns a temporary password, shown only this once, that the user must change at the first login: give it to the user privately.",
-			Admin:       true, AgentsOnly: true, Confirm: true,
+			Admin:       true, Transports: ActsAsUser, Confirm: true,
 		}, handler.createUser),
 		Define(Endpoint{
 			Name:        "update_user",
 			Description: "Change another user's name or role (admin or user); fields not given keep their values. Not the superadmin, not yourself (update_account_name).",
-			Idempotent:  true, Admin: true, AgentsOnly: true, Confirm: true,
+			Idempotent:  true, Admin: true, Transports: ActsAsUser, Confirm: true,
 		}, handler.updateUser),
 		Define(Endpoint{
 			Name:        "reset_user_password",
 			Description: "Give another user a new temporary password (returned once): their sessions end and their connected agents are disconnected.",
-			Destructive: true, Admin: true, AgentsOnly: true,
+			Destructive: true, Admin: true, Transports: ActsAsUser,
 		}, handler.resetUserPassword),
 		Define(Endpoint{
 			Name:        "delete_user",
 			Description: "Delete another user; their sessions and connected agents end. Their past status changes keep their name.",
-			Destructive: true, Admin: true, AgentsOnly: true,
+			Destructive: true, Admin: true, Transports: ActsAsUser,
 		}, handler.deleteUser),
 	}, handler.notificationEndpoints()...)
 }
@@ -192,14 +192,12 @@ type projectInput struct {
 	Project string `json:"project" jsonschema:"Project name or ID."`
 }
 
+// projectSettings is a project the way update_project takes it.
 type projectSettings struct {
-	ID          int      `json:"id"`
-	Name        string   `json:"name"`
-	DSN         string   `json:"dsn,omitempty"`
-	FromEnv     bool     `json:"from_env,omitempty"`
-	Color       string   `json:"color,omitempty"`
-	EventLevels []string `json:"event_levels"`
-	LogLevels   []string `json:"log_levels"`
+	projectView
+
+	// Color is missing when the project follows the palette.
+	Color string `json:"color,omitempty"`
 }
 
 // findProject reads the project given by name or ID.
@@ -213,19 +211,10 @@ func (handler *handlers) findProject(ctx context.Context, nameOrID string) (stor
 	return handler.services.Projects.Get(ctx, project.ID)
 }
 
-// settings shows a project the way update_project takes it (its form).
 func (handler *handlers) settings(call Call, project store.Project) projectSettings {
-	form := handler.services.Projects.FormValues(project)
-	output := projectSettings{
-		ID: project.ID, Name: project.Name, FromEnv: handler.services.Projects.FromEnv(project.ID), Color: project.Color,
-		EventLevels: form["event_level"], LogLevels: form["log_level"],
-	}
+	shown := config.Project{ID: project.ID, Name: project.Name, PublicKey: project.PublicKey, EventLevels: project.EventLevels, LogLevels: project.LogLevels}
 
-	if call.Address != nil {
-		output.DSN = config.Project{ID: project.ID, PublicKey: project.PublicKey}.DSN(call.Address)
-	}
-
-	return output
+	return projectSettings{projectView: handler.projectView(call, shown), Color: project.Color}
 }
 
 func (handler *handlers) getProject(ctx context.Context, call Call, input projectInput) (projectSettings, error) {

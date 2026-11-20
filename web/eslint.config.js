@@ -37,8 +37,18 @@ export default defineConfig(
 		}
 	},
 	{
-		// Override or add rule settings here, such as:
-		// 'svelte/button-has-type': 'error'
-		rules: {}
+		// The page's CSP (web.go) allows no inline styles and no markup from strings.
+		files: ['**/*.svelte'],
+		rules: {
+			'svelte/no-at-html-tags': 'error',
+			'no-restricted-syntax': [
+				'error',
+				{
+					selector: "SvelteAttribute[key.name='style']",
+					message:
+						'The CSP (style-src self) blocks style attributes: use classes, or the style: directive for a computed value.'
+				}
+			]
+		}
 	}
 );

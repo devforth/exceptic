@@ -1,5 +1,5 @@
-// Package session is the login of the web UI: session cookies, the limit on
-// login attempts and the form tokens of pages.
+// Package session is the login of the web UI and the web app: session
+// cookies, the limit on login attempts and the form tokens of pages.
 package session
 
 import (
@@ -28,7 +28,8 @@ import (
 )
 
 const (
-	sessionCookie = "exceptic_session"
+	// CookieName holds the session token; the database keeps its hash.
+	CookieName = "exceptic_session"
 	// deviceCookie marks a browser the user logged in from (loginLimiter).
 	deviceCookie   = "exceptic_device"
 	deviceLifetime = 400 * 24 * time.Hour // the longest browsers keep a cookie
@@ -525,7 +526,7 @@ func (auth *Auth) setDeviceCookie(w http.ResponseWriter, r *http.Request, userna
 // startSession creates a new session and sets its cookie. A session cookie
 // the browser already had (possibly planted) is ended, never reused.
 func (auth *Auth) startSession(ctx context.Context, w http.ResponseWriter, r *http.Request, userID string, now time.Time) error {
-	if cookie, err := r.Cookie(sessionCookie); err == nil && cookie.Value != "" {
+	if cookie, err := r.Cookie(CookieName); err == nil && cookie.Value != "" {
 		if err := auth.sessions.End(ctx, secret.Hash(cookie.Value)); err != nil {
 			auth.logger.Error("delete previous session", "err", err)
 		}
@@ -545,7 +546,7 @@ func (auth *Auth) startSession(ctx context.Context, w http.ResponseWriter, r *ht
 
 // EndSession deletes the session of the request and clears its cookie.
 func (auth *Auth) EndSession(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-	if cookie, err := r.Cookie(sessionCookie); err == nil {
+	if cookie, err := r.Cookie(CookieName); err == nil {
 		if err := auth.sessions.End(ctx, secret.Hash(cookie.Value)); err != nil {
 			auth.logger.Error("delete session", "err", err)
 		}
@@ -556,7 +557,7 @@ func (auth *Auth) EndSession(ctx context.Context, w http.ResponseWriter, r *http
 
 func (auth *Auth) setSessionCookie(w http.ResponseWriter, r *http.Request, token string, expires time.Time) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookie,
+		Name:     CookieName,
 		Value:    token,
 		Path:     "/",
 		Expires:  expires,
@@ -568,16 +569,23 @@ func (auth *Auth) setSessionCookie(w http.ResponseWriter, r *http.Request, token
 	})
 }
 
-// SessionUser returns the user of the request's session; false without a
-// valid session.
-func (auth *Auth) SessionUser(r *http.Request) (store.User, bool) {
+// User returns the user of the request's session: store.ErrNotFound without
+// a valid one (no cookie, an unknown or ended session, a deleted user), any
+// other error when the session could not be checked.
+func (auth *Auth) User(r *http.Request) (store.User, error) {
 	hash := SessionHash(r)
 
 	if hash == "" {
-		return store.User{}, false
+		return store.User{}, store.ErrNotFound
 	}
 
-	user, err := auth.sessions.User(r.Context(), hash, auth.now())
+	return auth.sessions.User(r.Context(), hash, auth.now())
+}
+
+// SessionUser returns the user of the request's session; false without a
+// valid session.
+func (auth *Auth) SessionUser(r *http.Request) (store.User, bool) {
+	user, err := auth.User(r)
 
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		auth.logger.Error("check session", "err", err)
@@ -588,7 +596,7 @@ func (auth *Auth) SessionUser(r *http.Request) (store.User, bool) {
 
 // SessionHash identifies the request's session as stored ("" without one).
 func SessionHash(r *http.Request) string {
-	cookie, err := r.Cookie(sessionCookie)
+	cookie, err := r.Cookie(CookieName)
 
 	if err != nil || cookie.Value == "" {
 		return ""
@@ -600,7 +608,7 @@ func SessionHash(r *http.Request) string {
 // FormToken binds an authorization form to this session and request.
 // The session cookie is random and HttpOnly, so another site cannot forge it.
 func (auth *Auth) FormToken(r *http.Request, value string) string {
-	cookie, err := r.Cookie(sessionCookie)
+	cookie, err := r.Cookie(CookieName)
 
 	if err != nil || cookie.Value == "" {
 		return ""

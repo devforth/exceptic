@@ -174,24 +174,6 @@ func TestProjectForm(t *testing.T) {
 			t.Errorf("log level %s not checked for a new project, want every level", option.Name)
 		}
 	}
-
-	info := presenter.Info(config.Project{ID: 1, Name: "backend"}, "dsn", 4)
-
-	if !info.FromEnv || info.UnresolvedIssues != 4 {
-		t.Errorf("info = %+v", info)
-	}
-}
-
-func TestStorage(t *testing.T) {
-	storage := Storage(1500, config.Retention{MaxDatabaseBytes: 1000})
-
-	if storage.Percent != 100 || storage.Limit == "" || storage.CleanupStop != config.CleanupStopPercent {
-		t.Errorf("storage = %+v, want the percent capped at 100", storage)
-	}
-
-	if unlimited := Storage(1500, config.Retention{}); unlimited.Limit != "" || unlimited.Percent != 0 {
-		t.Errorf("no size limit: %+v", unlimited)
-	}
 }
 
 func TestCleanupResult(t *testing.T) {

@@ -3,9 +3,9 @@ package controllers
 import (
 	"net/http"
 
+	"github.com/devforth/exceptic/internal/session"
 	"github.com/devforth/exceptic/internal/ui/contracts"
 	"github.com/devforth/exceptic/internal/ui/requests"
-	"github.com/devforth/exceptic/internal/ui/session"
 )
 
 func (controller *Controllers) LoginPage(w http.ResponseWriter, r *http.Request) {

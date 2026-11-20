@@ -72,8 +72,9 @@ Needs Go (see `go.mod`), [golangci-lint](https://golangci-lint.run) v2, and for 
 ```sh
 cp .env.example .env.local   # then set ADMIN_PASSWORD and the other values
 make run                     # http://localhost:8000
-make web-dev                 # the new web app with hot reload: http://localhost:5173/next/
+make web-dev                 # the web app with hot reload: http://localhost:5173 (other pages from make run)
 make test lint web-check     # what CI runs
+make api-types               # after changing the catalog: the web app's generated types
 make docker image-size       # build the image and check its size
 ```
 

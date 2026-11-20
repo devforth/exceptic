@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -55,5 +56,25 @@ func TestLevelNames(t *testing.T) {
 		if got := ShownLevel(level); got != want {
 			t.Errorf("ShownLevel(%q) = %q, want %q", level, got, want)
 		}
+	}
+}
+
+// A project's recorded levels as explicit lists, highest first: its own,
+// else the defaults, else every level; an empty list stays empty.
+func TestRecordedLevels(t *testing.T) {
+	recording := Recording{EventLevels: []string{"error", "fatal"}}
+	none := []string{}
+	own := []string{"debug", "fatal", "error"}
+
+	events, logs := recording.RecordedLevels(nil, nil)
+
+	if !slices.Equal(events, []string{"fatal", "error"}) || !slices.Equal(logs, HighestFirst(LogLevels)) {
+		t.Errorf("defaults: %v %v", events, logs)
+	}
+
+	events, logs = recording.RecordedLevels(&own, &none)
+
+	if !slices.Equal(events, []string{"fatal", "error", "debug"}) || logs == nil || len(logs) != 0 {
+		t.Errorf("own: %v %v", events, logs)
 	}
 }

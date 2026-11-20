@@ -347,7 +347,7 @@ func TestNewProjectKeepsTheShownColor(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	service := newProjects(database, registry, config.Recording{}, "", nil)
+	service := newProjects(database, registry, &config.Config{})
 	shown := service.Color(store.Project{})
 	saved, problems, err := service.Save(ctx, url.Values{"name": {"worker"}, "color": {shown}}, store.Project{})
 
@@ -429,5 +429,29 @@ func TestSlackDuplicates(t *testing.T) {
 		if err != nil || (duplicate != nil) != test.duplicate {
 			t.Errorf("%+v: duplicate %v, %v; want %v", test.secret, duplicate, err, test.duplicate)
 		}
+	}
+}
+
+// The storage of the Projects page: the percent of the limit, capped at 100;
+// without a limit none.
+func TestStorage(t *testing.T) {
+	ctx := context.Background()
+	database := openStore(t)
+	registry, err := projects.Open(ctx, slog.New(slog.DiscardHandler), database, nil)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	full, err := newProjects(database, registry, &config.Config{Retention: config.Retention{MaxDatabaseBytes: 1}}).Storage(ctx)
+
+	if err != nil || full.Percent != 100 || full.Limit == "" || full.UsedBytes == 0 || full.CleanupStopPercent != config.CleanupStopPercent {
+		t.Errorf("storage = %+v, %v; want the percent capped at 100", full, err)
+	}
+
+	unlimited, err := newProjects(database, registry, &config.Config{}).Storage(ctx)
+
+	if err != nil || unlimited.Limit != "" || unlimited.Percent != 0 || unlimited.Used == "" {
+		t.Errorf("no size limit: %+v, %v", unlimited, err)
 	}
 }

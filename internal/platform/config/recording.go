@@ -113,6 +113,20 @@ func (recording Recording) LogLevelsFor(own *[]string) []string {
 	return ownOr(own, recording.LogLevels)
 }
 
+// RecordedLevels are the levels a project records (its own lists or the
+// defaults) as explicit lists, highest first: every level when they are nil.
+func (recording Recording) RecordedLevels(eventOwn, logOwn *[]string) (events, logs []string) {
+	return explicitLevels(recording.EventLevelsFor(eventOwn), Levels), explicitLevels(recording.LogLevelsFor(logOwn), LogLevels)
+}
+
+func explicitLevels(levels, known []string) []string {
+	if levels == nil {
+		levels = known
+	}
+
+	return InLevelOrder(levels, known)
+}
+
 // RecordedEventLevels lists the event levels recorded by default
 // (RECORD_EVENT_LEVELS), every level when all are; a new notification
 // connection starts with them.

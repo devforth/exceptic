@@ -8,48 +8,16 @@ import (
 	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/storage/projects"
 	"github.com/devforth/exceptic/internal/storage/store"
-	"github.com/devforth/exceptic/internal/ui/contracts"
 	"github.com/devforth/exceptic/internal/ui/presenters"
 )
 
-// The Projects page: each project with its DSN and recorded levels, the
-// storage used, and adding, editing and deleting projects. Projects from
-// PROJECTS keep the name and key set there.
+// The pages of a project: adding, editing and deleting it, and the cleanup
+// runs; the list of projects is the web app's. Projects from PROJECTS keep the
+// name and key set there.
 
 var projectNotices = map[string]string{
 	"created": "Project added. Put its DSN into the Sentry SDK config of the service.",
 	"saved":   "Saved.",
-	"deleted": "Project and its data deleted.",
-}
-
-func (controller *Controllers) ProjectsPage(w http.ResponseWriter, r *http.Request) {
-	counts, err := controller.projects.UnresolvedCounts(r.Context())
-
-	if err != nil {
-		controller.serverError(w, r, err)
-
-		return
-	}
-
-	used, err := controller.projects.DatabaseSize(r.Context())
-
-	if err != nil {
-		controller.serverError(w, r, err)
-
-		return
-	}
-
-	list := controller.projects.List()
-	view := contracts.ProjectsView{
-		Projects: make([]contracts.ProjectInfo, 0, len(list)), Notice: projectNotices[r.URL.Query().Get("notice")],
-		Storage: presenters.Storage(used, controller.retention),
-	}
-
-	for _, project := range list {
-		view.Projects = append(view.Projects, controller.projectViews.Info(project, controller.projects.DSN(r, project), counts[project.ID]))
-	}
-
-	controller.views.Render(w, r, http.StatusOK, "projects", view)
 }
 
 // CleanupsPage lists the runs of the cleanup by size; a run's steps open in a popup.

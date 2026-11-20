@@ -1,5 +1,175 @@
 @import 'tailwindcss';
 
+/* The design tokens: only these exist, Tailwind's defaults are reset. Dark values are
+   below; components use the tokens and never need dark: variants. Until the old UI goes
+   (step 9), the colors repeat internal/ui/views/static/app.css. */
+@theme static {
+	--color-*: initial;
+	--color-bg: #f7f7f8;
+	--color-surface: #ffffff;
+	--color-text: #1d1d22;
+	--color-muted: #6b6b76;
+	--color-border: #e3e3e8;
+	--color-accent: #4f46e5;
+	--color-accent-text: #ffffff;
+	--color-code-bg: #f1f1f4;
+	--color-current-line: #fff3c4;
+	--color-error: #c62828;
+	--color-error-bg: #fdecea;
+	--color-success: #2e7d32;
+	--color-success-bg: #e8f5e9;
+	--color-warning: #9a6700;
+	--color-warning-bg: #fff4d6;
+	--color-info: #1f5fbf;
+	--color-info-bg: #e5efff;
+	--color-debug: #555560;
+	--color-debug-bg: #ececf0;
+	--color-selected: #eef0ff;
+	/* Every second table row, an overlay over any row color. */
+	--color-stripe: rgb(0 0 0 / 0.035);
+	--color-tooltip-bg: #1d1d22;
+	--color-tooltip-text: #ffffff;
+
+	/* Derived from the colors above, so they follow dark mode. */
+	--color-focus: color-mix(in srgb, var(--color-accent) 45%, transparent);
+	--color-hover: color-mix(in srgb, var(--color-text) 6%, var(--color-surface));
+	--color-accent-hover: color-mix(in srgb, var(--color-accent) 86%, var(--color-text));
+	--color-info-hover: color-mix(in srgb, var(--color-info) 22%, var(--color-info-bg));
+	/* A shade deeper than error-bg, so an error badge shows on red rows. */
+	--color-error-badge: color-mix(in srgb, var(--color-error-bg) 90%, var(--color-error));
+
+	--font-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
+	--font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+
+	--text-*: initial;
+	--text-2xs: 11px;
+	--text-xs: 12px;
+	--text-code: 12.5px;
+	--text-label: 13px;
+	--text-sm: 14px;
+	--text-md: 15px;
+	--text-h2: 16px;
+	--text-h1: 22px;
+	--text-display: 64px;
+
+	--radius-*: initial;
+	--radius-control: 6px;
+	--radius-note: 8px;
+	--radius-popup: 10px;
+	--radius-box: 12px;
+	--radius-dialog: 14px;
+	--radius-card: 16px;
+
+	/* Dark mode switches the variables: a utility holds the value it was built with. */
+	--shadow-*: initial;
+	--shadow-sm: 0 1px 2px rgb(0 0 0 / 0.05);
+	--shadow-pop: var(--pop-shadow);
+	--shadow-card: var(--card-shadow);
+	--shadow-toast: 0 4px 20px rgb(0 0 0 / 0.15);
+
+	--container-page: 1200px;
+
+	--breakpoint-*: initial;
+	/* Under it, wide-only table columns are hidden (max-table:hidden). */
+	--breakpoint-table: 701px;
+	/* Under it, the sidebar is a bar at the top. */
+	--breakpoint-sidebar: 801px;
+}
+
+/* Read on each element: /project-colors.css sets --project-color on [data-project]. */
+@theme inline {
+	--color-project: var(--project-color, var(--color-debug));
+	/* Badge text and outline: the project color, lightened in dark mode to stay readable. */
+	--color-project-text: color-mix(
+		in srgb,
+		var(--project-color, var(--color-debug)) var(--project-text-share),
+		white
+	);
+}
+
+@layer theme {
+	:root {
+		--pop-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 4px 16px rgb(0 0 0 / 0.06);
+		--card-shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 8px 24px rgb(0 0 0 / 0.07);
+		--project-text-share: 100%;
+		color-scheme: light;
+	}
+
+	@media (prefers-color-scheme: dark) {
+		:root {
+			--color-bg: #141418;
+			--color-surface: #1c1c22;
+			--color-text: #e8e8ee;
+			--color-muted: #9a9aa6;
+			--color-border: #2e2e37;
+			--color-accent: #8b85ff;
+			--color-accent-text: #141418;
+			--color-code-bg: #24242c;
+			--color-current-line: #3d3517;
+			--color-error: #ff8a80;
+			--color-error-bg: #3b1f1f;
+			--color-success: #81c784;
+			--color-success-bg: #1d3323;
+			--color-warning: #ffd166;
+			--color-warning-bg: #3a3118;
+			--color-info: #8ab4ff;
+			--color-info-bg: #1d2a45;
+			--color-debug: #b5b5c0;
+			--color-debug-bg: #2a2a33;
+			--color-selected: #262640;
+			--color-stripe: rgb(255 255 255 / 0.04);
+			--color-tooltip-bg: #f1f1f5;
+			--color-tooltip-text: #141418;
+			--pop-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 20px rgb(0 0 0 / 0.35);
+			--card-shadow:
+				0 0 0 1px rgb(255 255 255 / 0.04), 0 1px 2px rgb(0 0 0 / 0.5), 0 8px 24px rgb(0 0 0 / 0.45);
+			--project-text-share: 60%;
+			color-scheme: dark;
+		}
+	}
+}
+
+@layer base {
+	body {
+		background-color: var(--color-bg);
+		color: var(--color-text);
+		font-family: var(--font-sans);
+		font-size: var(--text-sm);
+		line-height: 1.5;
+	}
+
+	a {
+		color: var(--color-accent);
+	}
+
+	a:hover {
+		text-decoration: underline;
+	}
+
+	code,
+	pre,
+	kbd,
+	samp {
+		font-family: var(--font-mono);
+		font-size: var(--text-code);
+	}
+}
+
+/* The focus ring of whatever is not a boxed button (those glow in their tone instead);
+   --focus-offset moves it inside where the element touches others. */
+@utility focus-ring {
+	&:focus-visible {
+		outline: 2px solid var(--color-focus);
+		outline-offset: var(--focus-offset, 2px);
+	}
+
+	@media (forced-colors: active) {
+		&:focus-visible {
+			outline-color: Highlight;
+		}
+	}
+}
+
 /* SvelteKit's announcer of page changes for screen readers, visually hidden.
    Its inline style is patched out (patches/), the CSP allows no inline styles. */
 #svelte-announcer {

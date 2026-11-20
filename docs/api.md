@@ -6,11 +6,11 @@ A JSON API under `/api/v1/` for scripts and integrations. It is closed until `AP
 curl -H "Authorization: Bearer $API_TOKEN" "https://errors.example.com/api/v1/list_issues?project=backend"
 ```
 
-The API and the [MCP tools](mcp.md) are the same endpoints with the same names, inputs and outputs, so anything an agent does can be scripted, and the other way round. A few endpoints are REST only (marked below); managing projects, notifications and users is for agents only, since it acts as a user and the API has only a token. Status changes made through the API are recorded in the issue history as "API token".
+The API and the [MCP tools](mcp.md) are the same endpoints with the same names, inputs and outputs, so anything an agent does can be scripted, and the other way round. A few endpoints are REST only (marked below); managing projects, notifications and users is for agents and the web interface only, since it acts as a user and the API has only a token. Status changes made through the API are recorded in the issue history as "API token".
 
 ## Conventions
 
-- Each endpoint is `/api/v1/<name>`. Endpoints that only read are `GET` with the input as query parameters (`?project=backend&limit=50`; a list takes repeated or comma-separated values: `issue_ids=k3x9q2mf,a7c2d4e9`). Endpoints that change data are `POST` with the input as a JSON object.
+- Each endpoint is `/api/v1/<name>`. `/api/ui/` serves the endpoints the web interface needs, with its login session; it is not for scripts. Endpoints that only read are `GET` with the input as query parameters (`?project=backend&limit=50`; a list takes repeated or comma-separated values: `issue_ids=k3x9q2mf,a7c2d4e9`). Endpoints that change data are `POST` with the input as a JSON object.
 - Errors: a status code with `{"error": "message"}`: 400 for invalid input (unknown parameters too, and `update_issue_status` with any ID not found), 401 without a valid token, 403 from an address outside `ALLOWED_IPS`, 404 for missing records and unknown endpoints, 500 for a server failure (logged).
 - Lists return `{"items": [...], "next_cursor": "..."}`. Pass `cursor=<next_cursor>` for the next page; there is no `next_cursor` on the last one. `limit` is 1–100, default 20.
 - `project` takes a project id (`1`) or name (`backend`). `level` takes one level.
@@ -22,7 +22,7 @@ The API and the [MCP tools](mcp.md) are the same endpoints with the same names, 
 
 | Endpoint | Input | |
 |---|---|---|
-| `GET list_projects` | `limit`, `cursor` | Projects: `id`, `name`, `unresolved_issues`, `dsn`. |
+| `GET list_projects` | `limit`, `cursor` | Projects: `id`, `name`, `unresolved_issues`, `dsn`, `from_env` (set by `PROJECTS`), `event_levels` and `log_levels` (recorded, highest first). |
 | `GET list_issues` | see below | Issues: `id`, `project`, `title`, `location`, `level`, `status`, `event_count`, `first_seen`, `last_seen`, `resolved_at`. |
 | `GET get_issues` | `issue_ids` (1–100) | `{"issues": [...], "missing_issue_ids": [...]}`. |
 | `GET get_issue` | `issue_id`, `event_id` | The latest (or given) event of an issue as a text prompt for a coding agent: exception, stack, request, breadcrumbs, related logs, status, event count, first and last seen. |

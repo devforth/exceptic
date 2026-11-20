@@ -55,8 +55,8 @@ func TestProjectLifecycle(t *testing.T) {
 
 	key, id := match[1], match[2]
 
-	// The DSN can be copied on the project page and in the list.
-	if !strings.Contains(page, `data-copy="project-dsn"`) || !strings.Contains(server.page("/projects"), `data-copy="dsn-`+id+`"`) {
+	// The DSN can be copied on the project page.
+	if !strings.Contains(page, `data-copy="project-dsn"`) {
 		t.Error("no DSN copy button")
 	}
 
@@ -193,9 +193,10 @@ func TestProjectColor(t *testing.T) {
 		t.Fatalf("palette color:\n%s", css)
 	}
 
-	// Kept for good, but by the browser only: a shared cache would hand the project names to anyone.
-	if cache := server.get(before[1]).Header().Get("Cache-Control"); !strings.HasPrefix(cache, "private,") || !strings.Contains(cache, "immutable") {
-		t.Errorf("Cache-Control = %q, want private and immutable", cache)
+	// By the browser only, asked again each time: a shared cache would hand
+	// the project names to anyone, and a kept copy would outlive the logout.
+	if cache := server.get(before[1]).Header().Get("Cache-Control"); cache != "private, no-cache" {
+		t.Errorf("Cache-Control = %q, want private, no-cache", cache)
 	}
 
 	if response := server.post("/projects/1", url.Values{"color": {"#ABCDEF"}}); response.Code != http.StatusSeeOther {
@@ -232,41 +233,17 @@ func TestDSNUsesPublicURL(t *testing.T) {
 	})
 	server.login()
 
-	if page := server.page("/projects"); !strings.Contains(page, "https://"+fixtures.BackendKey+"@errors.example.com/monitoring/1") {
+	if page := server.page("/projects/1"); !strings.Contains(page, "https://"+fixtures.BackendKey+"@errors.example.com/monitoring/1") {
 		t.Fatalf("DSN:\n%s", page)
 	}
 }
 
-// The Projects page shows each DSN and the storage section.
-func TestProjectsPage(t *testing.T) {
-	server := newTestServer(t, password)
-	server.ingestFixtures()
-	server.login()
-
-	projects := server.page("/projects")
-
-	if !strings.Contains(projects, "http://"+fixtures.BackendKey+"@example.com/1") {
-		t.Fatalf("projects page must show the DSN:\n%s", projects)
-	}
-
-	// The storage section: size against the limit and how it is cleaned.
-	for _, want := range []string{" of 2.0 GB", "<meter", "until the database is at 80%: old logs first, errors last"} {
-		if !strings.Contains(projects, want) {
-			t.Errorf("projects page is missing %q", want)
-		}
-	}
-}
-
-// The cleanup history is a page of its own, linked from the Projects page;
+// The cleanup history is a page of its own (the web app's Projects page links it);
 // the steps of a run open in a popup.
 func TestCleanupHistoryPage(t *testing.T) {
 	database := storetest.Open(t)
 	server := startServer(t, database, "admin", password)
 	server.login()
-
-	if page := server.page("/projects"); !strings.Contains(page, `href="/projects/cleanups"`) {
-		t.Fatal("the Projects page does not link the cleanup history")
-	}
 
 	if page := server.page("/projects/cleanups"); !strings.Contains(page, "No cleanup has run yet.") {
 		t.Fatal("the empty history says nothing")

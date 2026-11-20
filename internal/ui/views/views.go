@@ -219,26 +219,10 @@ const (
 	sidebarCollapsed = "collapsed"
 )
 
-// Stylesheet sets the color of every project, since the CSP forbids inline
-// styles; pages link it with its Version, so it is fetched again only when a
-// color changes.
-type Stylesheet struct {
-	CSS     string
-	Version string
-}
-
-// ProjectStylesheet gives each project badge (data-project="<name>") its
-// color. Names and colors are validated, so they are safe in CSS.
-func ProjectStylesheet(list config.Projects) Stylesheet {
-	var css strings.Builder
-
-	for _, project := range list {
-		fmt.Fprintf(&css, "[data-project=%q] { --project-color: %s; }\n", project.Name, project.Color)
-	}
-
-	sum := sha256.Sum256([]byte(css.String()))
-
-	return Stylesheet{CSS: css.String(), Version: hex.EncodeToString(sum[:])[:12]}
+// Projects are the projects of the pages and the URL of their colors (services.Projects).
+type Projects interface {
+	config.ProjectList
+	ColorsURL() string
 }
 
 // IssueCounter counts the unresolved issues for the menu (services.Issues does).
@@ -252,17 +236,13 @@ type ViewerOf func(r *http.Request) store.User
 // Renderer executes the parsed templates.
 type Renderer struct {
 	logger   *slog.Logger
-	projects config.ProjectList
+	projects Projects
 	issues   IssueCounter
 	viewer   ViewerOf
 	pages    map[string]page
 }
 
-func New(logger *slog.Logger, projects config.ProjectList, issues IssueCounter, viewer ViewerOf, appName string) (*Renderer, error) {
-	if appName == "" {
-		appName = config.DefaultAppName
-	}
-
+func New(logger *slog.Logger, projects Projects, issues IssueCounter, viewer ViewerOf, appName string) (*Renderer, error) {
 	pages, err := parseTemplates(appName)
 
 	if err != nil {
@@ -281,7 +261,7 @@ func (renderer *Renderer) Render(w http.ResponseWriter, r *http.Request, status 
 	}
 
 	if pageView.LoggedIn() {
-		pageView.ProjectColors = "/project-colors.css?v=" + ProjectStylesheet(renderer.projects.List()).Version
+		pageView.ProjectColors = renderer.projects.ColorsURL()
 
 		// The counter is a hint: a failed count leaves it out, not the page.
 		count, err := renderer.issues.Unresolved(r.Context())

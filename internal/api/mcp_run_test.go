@@ -14,10 +14,10 @@ import (
 // goroutines without a recover, so it would stop the whole server.
 func TestToolPanicIsRecovered(t *testing.T) {
 	handler := &MCP{logger: slog.New(slog.DiscardHandler)}
-	endpoint := Define(Endpoint{Name: "explode", ReadOnly: true}, func(context.Context, Call, struct{}) (struct{}, error) {
+	endpoint := Define(Endpoint{Name: "explode", ReadOnly: true, Transports: TransportMCP}, func(context.Context, Call, struct{}) (struct{}, error) {
 		panic("boom")
 	})
-	ctx := context.WithValue(context.Background(), callerKey{}, Call{Viewer: store.User{ID: "u1", Role: store.RoleUser}})
+	ctx := context.WithValue(context.Background(), callerKey{}, Call{Transport: TransportMCP, Viewer: store.User{ID: "u1", Role: store.RoleUser}})
 
 	result, err := handler.run(endpoint)(ctx, &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{}})
 

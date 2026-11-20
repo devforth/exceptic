@@ -14,23 +14,13 @@ import (
 	"github.com/devforth/exceptic/internal/ui/lists"
 )
 
-// Projects presents projects: the table of the Projects page and the form.
+// Projects presents the form of a project.
 type Projects struct {
 	Recording config.Recording // the global levels to record
 	// FromEnv: the project comes from PROJECTS (only its color and levels change).
 	FromEnv func(projectID int) bool
 	// Color is the color a project shows (services.Projects.Color).
 	Color func(project store.Project) string
-}
-
-// Info is a row of the projects table.
-func (presenter Projects) Info(project config.Project, dsn string, unresolvedIssues int) contracts.ProjectInfo {
-	return contracts.ProjectInfo{
-		ID: project.ID, Name: project.Name, DSN: dsn, UnresolvedIssues: unresolvedIssues,
-		FromEnv:     presenter.FromEnv(project.ID),
-		EventLevels: config.InLevelOrder(presenter.Recording.EventLevelsFor(project.EventLevels), config.Levels),
-		LogLevels:   presenter.Recording.LogLevelsFor(project.LogLevels),
-	}
 }
 
 // Form fills the form from a project (empty for a new one).
@@ -42,21 +32,6 @@ func (presenter Projects) Form(project store.Project) contracts.ProjectView {
 		Color:  presenter.Color(project),
 		Errors: map[string]string{},
 	}
-}
-
-// Storage shows how much the database holds (used bytes) and how the
-// cleanup keeps it under the limit.
-func Storage(used int64, settings config.Retention) contracts.StorageInfo {
-	info := contracts.StorageInfo{
-		Used: config.FormatSize(used), CleanupStop: config.CleanupStopPercent,
-	}
-
-	if settings.MaxDatabaseBytes > 0 {
-		info.Limit = config.FormatSize(settings.MaxDatabaseBytes)
-		info.Percent = int(min(100, used*100/settings.MaxDatabaseBytes))
-	}
-
-	return info
 }
 
 // Cleanups shows the runs of the cleanup; projectName names a project by id.

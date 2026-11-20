@@ -22,6 +22,7 @@ import (
 	"github.com/devforth/exceptic/internal/services"
 	"github.com/devforth/exceptic/internal/storage/database"
 	"github.com/devforth/exceptic/internal/storage/store"
+	"github.com/devforth/exceptic/web"
 )
 
 // version is set at build time: -ldflags "-X main.version=..."
@@ -135,7 +136,16 @@ func run() error {
 		return err
 	}
 
-	application, err := app.New(ctx, app.Options{Settings: settings, Logger: logger, Store: db, Factory: factory, Version: version})
+	// The web app is embedded at build time; a build without Node has none.
+	spa, err := web.New()
+
+	if errors.Is(err, web.ErrNotBuilt) {
+		logger.Warn("web app not built: only the pages of the old UI are served", "build", "make web")
+	} else if err != nil {
+		return err
+	}
+
+	application, err := app.New(ctx, app.Options{Settings: settings, Logger: logger, Store: db, Factory: factory, Version: version, Web: spa})
 
 	if err != nil {
 		return err

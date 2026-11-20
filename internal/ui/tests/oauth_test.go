@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/devforth/exceptic/internal/session"
 )
 
 const verifier = "01234567890123456789012345678901234567890123456789"
@@ -118,7 +120,7 @@ func TestOAuthAuthorizationFlow(t *testing.T) {
 	}
 
 	for _, cookie := range response.Result().Cookies() {
-		if cookie.Name == "exceptic_session" {
+		if cookie.Name == session.CookieName {
 			server.cookie = cookie
 		}
 	}

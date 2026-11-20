@@ -20,6 +20,7 @@ import (
 
 	"github.com/devforth/exceptic/internal/api"
 
+	"github.com/devforth/exceptic/internal/storage/database"
 	"github.com/devforth/exceptic/internal/storage/storetest"
 
 	"github.com/devforth/exceptic/internal/fixtures"
@@ -31,9 +32,10 @@ const (
 )
 
 type restServer struct {
-	t       *testing.T
-	app     *app.App
-	handler http.Handler
+	t        *testing.T
+	app      *app.App
+	handler  http.Handler
+	database *database.Store
 }
 
 func newRESTServer(t *testing.T, allowedIPs ...string) *restServer {
@@ -56,7 +58,7 @@ func newRESTServer(t *testing.T, allowedIPs ...string) *restServer {
 
 	settings.AllowedIPs = allowed
 
-	built, err := app.New(context.Background(), app.Options{Settings: settings, Logger: logger, Store: database, Version: "test"})
+	built, err := app.New(context.Background(), app.Options{Settings: settings, Logger: logger, Store: database, Version: "test", Web: fixtures.WebApp(t)})
 
 	if err != nil {
 		t.Fatal(err)
@@ -65,7 +67,7 @@ func newRESTServer(t *testing.T, allowedIPs ...string) *restServer {
 	// Its pipeline stores what the server accepts; it stops before the store closes (cleanups run last added first).
 	t.Cleanup(built.Start())
 
-	return &restServer{t: t, app: built, handler: built.Handler}
+	return &restServer{t: t, app: built, handler: built.Handler, database: database}
 }
 
 // ingestFixtures sends every recorded SDK request to the server.
@@ -192,23 +194,37 @@ func TestAccessControl(t *testing.T) {
 	if code := request("10.1.1.1:1", "/api/v1/no-such-route", false); code != http.StatusUnauthorized {
 		t.Fatalf("unknown route without token: %d", code)
 	}
+
+	// The web app's API: behind the allowlist too, then its login, never the token.
+	if code := request("203.0.113.7:1", "/api/ui/no-such-route", false); code != http.StatusForbidden {
+		t.Fatalf("web app API from other ip: %d", code)
+	}
+
+	if code := request("10.1.1.1:1", "/api/ui/no-such-route", true); code != http.StatusUnauthorized {
+		t.Fatalf("web app API without a session: %d", code)
+	}
 }
 
-// Every endpoint of the catalog is served, reads as GET and changes as POST;
-// the other method gets the JSON 404 of unknown API addresses.
+// Every REST endpoint of the catalog is served, reads as GET and changes as
+// POST; the other method, and an endpoint of other transports, get the JSON
+// 404 of unknown API addresses.
 func TestRoutesFollowTheCatalog(t *testing.T) {
 	server := newRESTServer(t)
 
 	for _, endpoint := range api.Endpoints(nil, nil) {
-		if endpoint.AgentsOnly {
-			if response := server.do(http.MethodPost, api.RESTPrefix+endpoint.Name, ""); !strings.Contains(response.Body.String(), "unknown API endpoint") {
-				t.Errorf("agent-only %s is a REST route: %d", endpoint.Name, response.Code)
+		if !endpoint.Serves(api.TransportREST) {
+			_, path, _ := strings.Cut(api.Route(api.TransportREST, endpoint), " ")
+
+			for _, method := range []string{http.MethodGet, http.MethodPost} {
+				if response := server.do(method, path, ""); !strings.Contains(response.Body.String(), "unknown API endpoint") {
+					t.Errorf("%s of %s is a REST route: %d", endpoint.Name, endpoint.Transports, response.Code)
+				}
 			}
 
 			continue
 		}
 
-		route := api.Route(endpoint)
+		route := api.Route(api.TransportREST, endpoint)
 		method, path, _ := strings.Cut(route, " ")
 
 		if want := map[bool]string{true: http.MethodGet, false: http.MethodPost}[endpoint.ReadOnly]; method != want {

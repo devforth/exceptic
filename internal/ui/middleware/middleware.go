@@ -4,11 +4,12 @@ package middleware
 
 import (
 	"net/http"
+	"net/netip"
 	"net/url"
-	"strings"
 
+	"github.com/devforth/exceptic/internal/server"
+	"github.com/devforth/exceptic/internal/session"
 	"github.com/devforth/exceptic/internal/ui/requests"
-	"github.com/devforth/exceptic/internal/ui/session"
 )
 
 // RequireLogin sends anonymous visitors to the login page; the user goes
@@ -111,26 +112,24 @@ func redirect(w http.ResponseWriter, r *http.Request, target string) {
 // SameOrigin rejects state-changing requests sent from other sites (CSRF).
 // Browsers always send Origin with POST; a request without it is not from a
 // browser form on another site, so it is allowed.
-func SameOrigin(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if origin := r.Header.Get("Origin"); origin != "" {
-			parsed, err := url.Parse(origin)
-
-			if err != nil || !strings.EqualFold(parsed.Host, r.Host) {
+func SameOrigin(trustedProxies []netip.Prefix) func(http.HandlerFunc) http.HandlerFunc {
+	return func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Origin") != "" && !server.SameOrigin(r, trustedProxies) {
 				http.Error(w, "cross-site request rejected", http.StatusForbidden)
 
 				return
 			}
-		}
 
-		next(w, r)
+			next(w, r)
+		}
 	}
 }
 
 // The caching of a URL with ?v=<content hash>, which never changes content,
 // and of one without, which the browser must revalidate.
 const (
-	CacheVersioned   = "max-age=31536000, immutable"
+	cacheVersioned   = "max-age=31536000, immutable"
 	CacheUnversioned = "no-cache"
 )
 
@@ -140,23 +139,13 @@ const (
 func StaticCache(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Has("v") {
-			w.Header().Set("Cache-Control", "public, "+CacheVersioned)
+			w.Header().Set("Cache-Control", "public, "+cacheVersioned)
 		} else {
 			w.Header().Set("Cache-Control", CacheUnversioned)
 		}
 
 		next.ServeHTTP(w, r)
 	})
-}
-
-// ContentSecurityPolicy is the policy of every page. formTargets are other
-// origins a form of the page may send the browser to (the OAuth consent
-// page returns to the agent): browsers apply form-action to redirects too.
-func ContentSecurityPolicy(formTargets ...string) string {
-	formAction := strings.TrimSpace("'self' " + strings.Join(formTargets, " "))
-
-	return "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; form-action " +
-		formAction + "; base-uri 'none'"
 }
 
 // SecurityHeaders: scripts and styles only from our own /static/ (no inline
@@ -167,10 +156,7 @@ func ContentSecurityPolicy(formTargets ...string) string {
 func SecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		header := w.Header()
-		header.Set("Content-Security-Policy", ContentSecurityPolicy())
-		header.Set("X-Content-Type-Options", "nosniff")
-		header.Set("Referrer-Policy", "same-origin")
-		header.Set("X-Frame-Options", "DENY")
+		server.SecurityHeaders(header, server.ContentSecurityPolicy(nil))
 		header.Set("Cache-Control", "no-store")
 		header.Add("Vary", "HX-Request")
 		next.ServeHTTP(w, r)

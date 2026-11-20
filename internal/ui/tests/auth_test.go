@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/devforth/exceptic/internal/session"
 	"github.com/devforth/exceptic/internal/storage/storetest"
 
 	"github.com/devforth/exceptic/internal/platform/config"
-	"github.com/devforth/exceptic/web"
 )
 
 func TestLogin(t *testing.T) {
@@ -186,7 +186,7 @@ func TestDeviceCookieFollowsPassword(t *testing.T) {
 
 	login := cookies(server.post("/login", url.Values{"username": {"admin"}, "password": {password}}, from(100)...))
 	old := login["exceptic_device"]
-	server.cookie = login["exceptic_session"]
+	server.cookie = login[session.CookieName]
 
 	const changed = "changed password 123"
 
@@ -266,11 +266,12 @@ func TestLoginReplacesSession(t *testing.T) {
 }
 
 // Every dashboard route asks for a login, pages and actions alike; only the
-// login itself and static files are open.
+// login itself and static files are open. The web app's pages (/projects)
+// hold no data: its requests ask for the login (TestUIRequiresSession).
 func TestDashboardNeedsLogin(t *testing.T) {
 	server := newTestServer(t, password)
 
-	for _, path := range []string{"/", "/issues", "/issues/1", "/logs", "/projects", "/projects/1", "/notifications", "/notifications/log", "/notifications/1", "/project-colors.css"} {
+	for _, path := range []string{"/", "/issues", "/issues/1", "/logs", "/projects/1", "/notifications", "/notifications/log", "/notifications/1", "/project-colors.css"} {
 		if response := server.get(path); response.Code != http.StatusSeeOther || !strings.HasPrefix(response.Header().Get("Location"), "/login") {
 			t.Errorf("GET %s: %d %q", path, response.Code, response.Header().Get("Location"))
 		}
@@ -320,7 +321,8 @@ func TestAllowedIPsCoverEveryRoute(t *testing.T) {
 		"/", "/login", "/logout", "/account", "/issues", "/logs", "/projects", "/projects/cleanups", "/notifications", "/users",
 		"/agents", "/static/app.js", "/project-colors.css", "/no-such-page", "/mcp", "/oauth/authorize", "/oauth/token",
 		"/oauth/register", "/.well-known/oauth-authorization-server", "/.well-known/oauth-protected-resource/mcp",
-		"/.well-known/openid-configuration", "/api/v1/list_issues", "/api/unknown", web.Base + "/", web.Base + "/issues",
+		"/.well-known/openid-configuration", "/api/v1/list_issues", "/api/unknown", "/no-such-page/deeper", "/_app/immutable/x.js",
+		"/api/ui/list_projects", "/api/ui/update_issue_status", "/api/ui/nope",
 	}
 
 	for _, path := range paths {
@@ -389,7 +391,7 @@ func TestDeviceCookieOnlyAfterSuccess(t *testing.T) {
 		response := server.post("/login", url.Values{"username": {"admin"}, "password": {password}}, "X-Forwarded-Proto", proto)
 		named := cookies(response)
 
-		for _, name := range []string{"exceptic_session", "exceptic_device"} {
+		for _, name := range []string{session.CookieName, "exceptic_device"} {
 			if cookie := named[name]; cookie == nil || cookie.Secure != secure {
 				t.Errorf("%s over %s: %+v, want Secure %v", name, proto, cookie, secure)
 			}

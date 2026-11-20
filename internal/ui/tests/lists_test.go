@@ -472,10 +472,6 @@ func TestBadgeLinks(t *testing.T) {
 	if strings.Contains(logs, `<input type="checkbox" name="project" value="backend" > <a`) || !strings.Contains(logs, `value="backend" > <span class="project"`) {
 		t.Error("badges in checkboxes must be labels")
 	}
-
-	if page := server.page("/projects"); !strings.Contains(page, `<a class="project" data-project="frontend" href="/issues?project=frontend"`) {
-		t.Error("projects table")
-	}
 }
 
 func TestLogsPage(t *testing.T) {

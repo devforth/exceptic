@@ -79,7 +79,7 @@ var fetchSkill = Define(Endpoint{
 	Description: "Detailed guidance by name: " + strings.Join(skillNames(), ", ") +
 		". Only when the server instructions do not settle the task; reuse a skill already loaded.",
 	ReadOnly:   true,
-	AgentsOnly: true,
+	Transports: TransportMCP,
 	Choices:    map[string][]string{"name": skillNames()},
 }, readSkill)
 

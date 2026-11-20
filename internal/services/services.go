@@ -25,6 +25,8 @@ type Dependencies struct {
 // All are the services the UI pages and the agents' tools (package api)
 // share, so both apply the same rules.
 type All struct {
+	// AppName names the server to its users (APP_NAME).
+	AppName      string
 	Issues       *Issues
 	Projects     *Projects
 	Connections  *Connections
@@ -41,8 +43,9 @@ func New(dependencies Dependencies) *All {
 	connections := newConnections(dependencies.Logger, database, dependencies.Factory, dependencies.Registry, settings)
 
 	return &All{
+		AppName:      settings.AppName,
 		Issues:       newIssues(database),
-		Projects:     newProjects(database, dependencies.Registry, settings.Recording, settings.Notifications.PublicURL, settings.TrustedProxies),
+		Projects:     newProjects(database, dependencies.Registry, settings),
 		Connections:  connections,
 		Deliveries:   newDeliveries(database),
 		Verification: newVerification(dependencies.Logger, database, dependencies.Factory, connections),

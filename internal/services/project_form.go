@@ -73,20 +73,7 @@ func chosenLevels(values, known, defaults []string) *[]string {
 func (service *Projects) FormValues(project store.Project) url.Values {
 	form := url.Values{"name": {project.Name}, "color": {project.Color}}
 
-	form["event_level"] = recordedLevels(project.EventLevels, service.recording.EventLevels, config.Levels)
-	form["log_level"] = recordedLevels(project.LogLevels, service.recording.LogLevels, config.LogLevels)
+	form["event_level"], form["log_level"] = service.recording.RecordedLevels(project.EventLevels, project.LogLevels)
 
 	return form
-}
-
-// recordedLevels: the project's own levels, or the defaults (nil: all).
-func recordedLevels(own *[]string, defaults, known []string) []string {
-	switch {
-	case own != nil:
-		return append([]string{}, *own...)
-	case defaults != nil:
-		return append([]string{}, defaults...)
-	default:
-		return append([]string{}, known...)
-	}
 }
