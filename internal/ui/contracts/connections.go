@@ -40,7 +40,7 @@ type ConnectionView struct {
 	Email        services.EmailStep
 	ChatID       string // shown; the bot token never is
 	SlackChannel string // the channel of a Slack bot
-	// The stored secrets, masked (helpers.MaskSecret) so the form can say
+	// The stored secrets, masked (textutil.MaskSecret) so the form can say
 	// what is saved without showing it; empty when none is stored. An empty
 	// field keeps the stored value.
 	SavedWebhook       string

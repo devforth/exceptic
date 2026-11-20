@@ -6,9 +6,9 @@ import (
 	"net/url"
 	"slices"
 
+	"github.com/devforth/exceptic/internal/platform/textutil"
 	"github.com/devforth/exceptic/internal/storage/store"
 	"github.com/devforth/exceptic/internal/ui/contracts"
-	"github.com/devforth/exceptic/internal/ui/helpers"
 )
 
 // AgentsInput is what the MCP page shows.
@@ -40,7 +40,7 @@ func Agents(input AgentsInput) contracts.AgentsView {
 		ClaudeCommand: "claude mcp add --transport http " + input.ServerName + " " + input.Endpoint,
 		CodexCommand:  "codex mcp add " + input.ServerName + " --url " + input.Endpoint,
 		ProjectConfig: projectConfig(input.ServerName, input.Endpoint),
-		PersonalToken: input.Token, PersonalTokenPreview: helpers.MaskSecret(input.Token),
+		PersonalToken: input.Token, PersonalTokenPreview: textutil.MaskSecret(input.Token),
 	}
 
 	if input.Token != "" {

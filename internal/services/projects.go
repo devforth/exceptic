@@ -69,6 +69,17 @@ func (service *Projects) Colors() Stylesheet {
 	return Stylesheet{CSS: css.String(), Version: hex.EncodeToString(sum[:])[:12]}
 }
 
+// ColorsByName is the shown color of every project, by name.
+func (service *Projects) ColorsByName() map[string]string {
+	colors := map[string]string{}
+
+	for _, project := range service.List() {
+		colors[project.Name] = project.Color
+	}
+
+	return colors
+}
+
 // ColorsURL is where pages link the stylesheet of the current colors.
 func (service *Projects) ColorsURL() string {
 	return ProjectColorsPath + "?v=" + service.Colors().Version

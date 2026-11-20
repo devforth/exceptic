@@ -14,8 +14,11 @@ import (
 
 	"github.com/google/jsonschema-go/jsonschema"
 
+	"github.com/devforth/exceptic/docs"
 	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/server"
+	"github.com/devforth/exceptic/internal/services"
+	"github.com/devforth/exceptic/internal/storage/store"
 )
 
 // typescriptFile is the web app's view of the catalog, generated from it.
@@ -67,30 +70,40 @@ func typescriptCatalog(endpoints []Endpoint) (string, error) {
 	file.WriteString("/** An RFC 3339 time in UTC. */\nexport type IsoTime = string;\n\n")
 	fmt.Fprintf(&file, "/** Where the web app's requests go. */\nexport const apiPrefix = %s;\n\n", quote(server.UIAPIPrefix))
 	fmt.Fprintf(&file, "/** The largest page of a list. */\nexport const maxLimit = %d;\n\n", MaxLimit)
+
+	for _, write := range []func(*strings.Builder, []Endpoint) error{writeEndpoints, writePlainRequests, writeErrorBody} {
+		if err := write(&file, endpoints); err != nil {
+			return "", err
+		}
+	}
+
+	writeChoices(&file, endpoints)
+	writeLevels(&file)
+
+	if err := writeRules(&file); err != nil {
+		return "", err
+	}
+
+	return file.String(), nil
+}
+
+func writeEndpoints(file *strings.Builder, endpoints []Endpoint) error {
 	file.WriteString("/** Inputs and outputs of every request the web app may make. */\nexport interface Endpoints {\n")
 
 	for _, endpoint := range endpoints {
 		input, err := typescriptType(endpoint.InputSchema, "\t\t")
 
 		if err != nil {
-			return "", fmt.Errorf("%s input: %w", endpoint.Name, err)
+			return fmt.Errorf("%s input: %w", endpoint.Name, err)
 		}
 
-		output := "string"
+		output, err := typescriptOutput(endpoint.output, "\t\t")
 
-		if endpoint.output != reflect.TypeFor[Text]() {
-			schema, err := jsonschema.ForType(endpoint.output, outputSchemas)
-
-			if err != nil {
-				return "", fmt.Errorf("%s output: %w", endpoint.Name, err)
-			}
-
-			if output, err = typescriptType(schema, "\t\t"); err != nil {
-				return "", fmt.Errorf("%s output: %w", endpoint.Name, err)
-			}
+		if err != nil {
+			return fmt.Errorf("%s output: %w", endpoint.Name, err)
 		}
 
-		fmt.Fprintf(&file, "\t%s: {\n\t\tin: %s;\n\t\tout: %s;\n\t};\n", endpoint.Name, input, output)
+		fmt.Fprintf(file, "\t%s: {\n\t\tin: %s;\n\t\tout: %s;\n\t};\n", endpoint.Name, input, output)
 	}
 
 	file.WriteString("}\n\n/** How each request is sent, and what the app must know before offering it. */\nexport const endpoints = {\n")
@@ -102,43 +115,174 @@ func typescriptCatalog(endpoints []Endpoint) (string, error) {
 			method = "GET"
 		}
 
-		fmt.Fprintf(&file, "\t%s: { method: '%s', text: %t, admin: %t, destructive: %t, confirm: %t },\n",
+		fmt.Fprintf(file, "\t%s: { method: '%s', text: %t, admin: %t, destructive: %t, confirm: %t },\n",
 			endpoint.Name, method, endpoint.output == reflect.TypeFor[Text](), endpoint.Admin, endpoint.Destructive, endpoint.Confirm)
 	}
 
-	file.WriteString("} as const;\n\n/** The values input fields take. */\nexport const choices = {\n")
+	file.WriteString("} as const;\n\n")
+
+	return nil
+}
+
+// writePlainRequests: the requests that are no endpoint (PlainRequests).
+func writePlainRequests(file *strings.Builder, _ []Endpoint) error {
+	file.WriteString("/** Inputs and outputs of the plain requests: logins and credentials, which no endpoint handles. */\nexport interface PlainRequests {\n")
+
+	for _, request := range PlainRequests {
+		input, err := typescriptOutput(request.input, "\t\t")
+
+		if err != nil {
+			return fmt.Errorf("%s input: %w", request.Name, err)
+		}
+
+		output, err := typescriptOutput(request.output, "\t\t")
+
+		if err != nil {
+			return fmt.Errorf("%s output: %w", request.Name, err)
+		}
+
+		fmt.Fprintf(file, "\t%s: {\n\t\tin: %s;\n\t\tout: %s;\n\t};\n", request.Name, input, output)
+	}
+
+	file.WriteString("}\n\n/** How each plain request is sent. */\nexport const plainRequests = {\n")
+
+	for _, request := range PlainRequests {
+		fmt.Fprintf(file, "\t%s: { method: '%s' },\n", request.Name, request.Method)
+	}
+
+	file.WriteString("} as const;\n\n")
+
+	return nil
+}
+
+func writeErrorBody(file *strings.Builder, _ []Endpoint) error {
+	body, err := typescriptOutput(reflect.TypeFor[ErrorBody](), "")
+
+	if err != nil {
+		return fmt.Errorf("error body: %w", err)
+	}
+
+	fmt.Fprintf(file, "/** The answer to a refused request: fields by input name, the record that already exists. */\nexport type ErrorBody = %s;\n\n", body)
+
+	return nil
+}
+
+// typescriptOutput is the type of a Go value as JSON: Text is a string, NoContent nothing.
+func typescriptOutput(goType reflect.Type, indent string) (string, error) {
+	switch goType {
+	case reflect.TypeFor[Text]():
+		return "string", nil
+	case reflect.TypeFor[NoContent]():
+		return "void", nil
+	}
+
+	schema, err := jsonschema.ForType(goType, outputSchemas)
+
+	if err != nil {
+		return "", err
+	}
+
+	return typescriptType(schema, indent)
+}
+
+func writeChoices(file *strings.Builder, endpoints []Endpoint) {
+	file.WriteString("/** The values input fields take. */\nexport const choices = {\n")
 
 	for _, endpoint := range endpoints {
 		if len(endpoint.Choices) == 0 {
 			continue
 		}
 
-		fmt.Fprintf(&file, "\t%s: {\n", endpoint.Name)
+		fmt.Fprintf(file, "\t%s: {\n", endpoint.Name)
 
 		for _, field := range slices.Sorted(maps.Keys(endpoint.Choices)) {
-			fmt.Fprintf(&file, "\t\t%s: %s,\n", field, quoteList(endpoint.Choices[field]))
+			fmt.Fprintf(file, "\t\t%s: %s,\n", field, quoteList(endpoint.Choices[field]))
 		}
 
 		file.WriteString("\t},\n")
 	}
 
 	file.WriteString("} as const;\n\n")
-	fmt.Fprintf(&file, "/** Event and log levels, highest first, as the app lists them. */\nexport const levels = {\n\tevent: %s,\n\tlog: %s\n} as const;\n\n",
+}
+
+func writeLevels(file *strings.Builder) {
+	fmt.Fprintf(file, "/** Event and log levels, highest first, as the app lists them. */\nexport const levels = {\n\tevent: %s,\n\tlog: %s\n} as const;\n\n",
 		quoteList(config.HighestFirst(config.Levels)), quoteList(config.HighestFirst(config.LogLevels)))
-	file.WriteString("/** The color group a level is shown in. */\nexport const shownLevel = {\n")
+	file.WriteString("/** The color group a level is shown in, the other names SDKs use included. */\nexport const shownLevel = {\n")
 
 	var known []string
 
-	for _, level := range append(slices.Clone(config.Levels), config.LogLevels...) {
+	for _, level := range slices.Concat(config.Levels, config.LogLevels, slices.Sorted(maps.Keys(config.EventLevelAliases))) {
 		if !slices.Contains(known, level) {
 			known = append(known, level)
-			fmt.Fprintf(&file, "\t%s: %s,\n", level, quote(config.ShownLevel(level)))
+			fmt.Fprintf(file, "\t%s: %s,\n", level, quote(config.ShownLevel(level)))
 		}
 	}
 
-	file.WriteString("} as const;\n")
+	file.WriteString("} as const;\n\n")
+}
 
-	return file.String(), nil
+// writeRules: the values the server's rules use, so the app never repeats them.
+func writeRules(file *strings.Builder) error {
+	file.WriteString("/** The limits of form fields, as the server checks them; a pattern must match the whole value. */\nexport const limits = {\n")
+
+	limits := reflect.ValueOf(config.Limits)
+
+	for index := range limits.NumField() {
+		name, _, _ := strings.Cut(limits.Type().Field(index).Tag.Get("json"), ",")
+
+		switch value := limits.Field(index).Interface().(type) {
+		case int:
+			fmt.Fprintf(file, "\t%s: %d,\n", name, value)
+		case string:
+			fmt.Fprintf(file, "\t%s: %s,\n", name, quote(value))
+		default:
+			return fmt.Errorf("limit %s: unsupported type %T", name, value)
+		}
+	}
+
+	file.WriteString("} as const;\n\n/** Issue statuses in the order of the status filter, with what each means. */\nexport const issueStatuses = [\n")
+
+	for _, status := range store.IssueStatuses {
+		fmt.Fprintf(file, "\t{ name: %s, meaning: %s },\n", quote(status), quote(store.StatusMeanings[status]))
+	}
+
+	fmt.Fprintf(file, "] as const;\n\n/** The most issues one action takes. */\nexport const maxActionIssues = %d;\n\n", services.MaxActionIssues)
+	file.WriteString("/** What each role may do. */\nexport const roleSummaries = {\n")
+
+	for _, role := range slices.Sorted(maps.Keys(store.RoleSummaries)) {
+		fmt.Fprintf(file, "\t%s: %s,\n", role, quote(store.RoleSummaries[role]))
+	}
+
+	settings, err := docs.Settings()
+
+	if err != nil {
+		return err
+	}
+
+	file.WriteString("} as const;\n\n/** The help of the settings pages: docs/ui.md by section and field label, docs/configuration.md by variable. */\nexport const help = {\n\tfields: {\n")
+
+	fields := docs.Fields()
+
+	for _, section := range slices.Sorted(maps.Keys(fields)) {
+		fmt.Fprintf(file, "\t\t%s: {\n", quote(section))
+
+		for _, label := range slices.Sorted(maps.Keys(fields[section])) {
+			fmt.Fprintf(file, "\t\t\t%s: %s,\n", quote(label), quote(fields[section][label]))
+		}
+
+		file.WriteString("\t\t},\n")
+	}
+
+	file.WriteString("\t},\n\tsettings: {\n")
+
+	for _, name := range slices.Sorted(maps.Keys(settings)) {
+		fmt.Fprintf(file, "\t\t%s: %s,\n", name, quote(settings[name]))
+	}
+
+	file.WriteString("\t}\n} as const;\n")
+
+	return nil
 }
 
 // supportedKeywords are what typescriptType turns into types or comments (description, default; minimum and maximum it leaves to the server); any other fails the test.
@@ -303,10 +447,13 @@ func isFalse(schema *jsonschema.Schema) bool {
 	return err == nil && string(encoded) == "false"
 }
 
+// quote is text as a single-quoted string: Go's escapes, " left as it is
+// (strconv.Quote escapes every one, so each \" is one) and ' escaped.
 func quote(text string) string {
 	quoted := strconv.Quote(text)
+	inner := strings.ReplaceAll(quoted[1:len(quoted)-1], `\"`, `"`)
 
-	return "'" + strings.ReplaceAll(quoted[1:len(quoted)-1], `'`, `\'`) + "'"
+	return "'" + strings.ReplaceAll(inner, `'`, `\'`) + "'"
 }
 
 func quoteList(values []string) string {

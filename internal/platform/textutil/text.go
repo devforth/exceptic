@@ -2,6 +2,8 @@
 package textutil
 
 import (
+	"bytes"
+	"encoding/json"
 	"regexp"
 	"strings"
 )
@@ -96,3 +98,45 @@ func EmailLocalPart(address string) string {
 
 	return local
 }
+
+// IndentJSON indents JSON for display; anything else is returned as is.
+func IndentJSON(raw json.RawMessage) string {
+	var buffer bytes.Buffer
+
+	if err := json.Indent(&buffer, raw, "", "  "); err != nil {
+		return string(raw)
+	}
+
+	return buffer.String()
+}
+
+// MaskSecret shows enough of a stored secret to recognize it, not to use
+// it: the start up to the last "/" or ":" of its first part (the webhook
+// host and path, the bot id), the type and ids of a Slack token, and the
+// last 4 characters. Empty stays empty.
+func MaskSecret(secret string) string {
+	runes := []rune(secret)
+
+	if len(runes) == 0 {
+		return ""
+	}
+
+	if len(runes) <= 8 {
+		return "…"
+	}
+
+	prefix := 0
+	slackIDs := len(slackTokenIDs.FindString(secret))
+
+	// Up to the last separator in the first half, so the secret part stays hidden;
+	// "-" also appears in random text, so it counts only in the ids of a Slack token.
+	for index, char := range runes[:len(runes)/2] {
+		if char == '/' || char == ':' || (char == '-' && index < slackIDs) {
+			prefix = index + 1
+		}
+	}
+
+	return string(runes[:prefix]) + "…" + string(runes[len(runes)-4:])
+}
+
+var slackTokenIDs = regexp.MustCompile(`^xox[a-z]-(?:[0-9]+-)*`)

@@ -302,14 +302,47 @@ func jsonType(schema *jsonschema.Schema) string {
 // ErrNotFound: the issue or event asked for does not exist.
 var ErrNotFound = errors.New("not found")
 
-// InputError is a mistake in the input, reported to the client as it is.
-type InputError struct{ message string }
+// InputError is a mistake in the input, reported to the client as it is:
+// over HTTP also the problem of each input field and the record that
+// already exists (ErrorBody); MCP gets the message, which names them too.
+type InputError struct {
+	message   string
+	fields    map[string]string
+	duplicate *DuplicateOutput
+}
 
 func (err InputError) Error() string { return err.message }
 
+// ErrorBody is the answer to a refused request over HTTP (REST and the web
+// app): fields by input name, so a form shows each next to its field.
+type ErrorBody struct {
+	Error     string            `json:"error"`
+	Fields    map[string]string `json:"fields,omitempty"`
+	Duplicate *DuplicateOutput  `json:"duplicate,omitempty"`
+}
+
+// DuplicateOutput is the record that already does what the input asks for.
+type DuplicateOutput struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+func (err InputError) body() ErrorBody {
+	return ErrorBody{Error: err.message, Fields: err.fields, Duplicate: err.duplicate}
+}
+
 // Invalid is an InputError.
 func Invalid(format string, args ...any) error {
-	return InputError{fmt.Sprintf(format, args...)}
+	return InputError{message: fmt.Sprintf(format, args...)}
+}
+
+// duplicateError: the connection duplicate already sends where the input
+// asks (what is said of it: "sends there").
+func duplicateError(duplicate services.Duplicate, what string) error {
+	return InputError{
+		message:   fmt.Sprintf("connection %s (%s) already %s: update it instead", duplicate.ID, duplicate.Name, what),
+		duplicate: &DuplicateOutput{ID: duplicate.ID, Name: duplicate.Name},
+	}
 }
 
 // problemsError reports the field errors of a form as one InputError
@@ -322,13 +355,17 @@ func problemsError(problems map[string]string, fields map[string]string) error {
 
 	var lines []string
 
+	named := make(map[string]string, len(problems))
+
 	for field, problem := range problems {
-		lines = append(lines, cmp.Or(fields[field], field)+": "+problem)
+		name := cmp.Or(fields[field], field)
+		named[name] = problem
+		lines = append(lines, name+": "+problem)
 	}
 
 	slices.Sort(lines)
 
-	return InputError{strings.Join(lines, "; ")}
+	return InputError{message: strings.Join(lines, "; "), fields: named}
 }
 
 // Outcome sorts an error for the transports: an input mistake or a missing

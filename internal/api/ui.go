@@ -6,6 +6,7 @@ import (
 	"mime"
 	"net/http"
 	"net/netip"
+	"slices"
 
 	"github.com/devforth/exceptic/internal/server"
 	"github.com/devforth/exceptic/internal/storage/store"
@@ -22,6 +23,7 @@ type SessionUsers interface {
 type UI struct {
 	logger         *slog.Logger
 	endpoints      []Endpoint
+	plain          map[string]http.Handler
 	sessions       SessionUsers
 	publicURL      string
 	trustedProxies []netip.Prefix
@@ -31,8 +33,17 @@ type UI struct {
 // uiPolicy: the answers are data, never a page to render or frame.
 const uiPolicy = "default-src 'none'; frame-ancestors 'none'; sandbox"
 
-func NewUI(logger *slog.Logger, endpoints []Endpoint, sessions SessionUsers, publicURL string, trustedProxies []netip.Prefix) *UI {
-	handler := &UI{logger: logger, endpoints: endpoints, sessions: sessions, publicURL: publicURL, trustedProxies: trustedProxies}
+// NewUI serves endpoints, and plain: the handlers of PlainRequests by name,
+// each checking the session itself, behind the same checks of the request.
+// A name of no plain request panics, a programming error found at startup.
+func NewUI(logger *slog.Logger, endpoints []Endpoint, plain map[string]http.Handler, sessions SessionUsers, publicURL string, trustedProxies []netip.Prefix) *UI {
+	for name := range plain {
+		if !slices.ContainsFunc(PlainRequests, func(request PlainRequest) bool { return request.Name == name }) {
+			panic("web app request " + name + " is not one of api.PlainRequests")
+		}
+	}
+
+	handler := &UI{logger: logger, endpoints: endpoints, plain: plain, sessions: sessions, publicURL: publicURL, trustedProxies: trustedProxies}
 
 	// Any other name or method: after the same checks, as a refused endpoint answers.
 	handler.unknown = handler.guard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -46,9 +57,17 @@ func NewUI(logger *slog.Logger, endpoints []Endpoint, sessions SessionUsers, pub
 
 // Register adds the routes, each wrapped with protect (the IP allowlist).
 func (handler *UI) Register(router *http.ServeMux, protect func(http.Handler) http.Handler) {
-	register(router, handler.logger, TransportUI, handler.endpoints, func(next http.Handler) http.Handler {
+	guarded := func(next http.Handler) http.Handler {
 		return protect(handler.guard(next))
-	}, handler.caller)
+	}
+
+	register(router, handler.logger, TransportUI, handler.endpoints, guarded, handler.caller)
+
+	for _, request := range PlainRequests {
+		if plain, ok := handler.plain[request.Name]; ok {
+			router.Handle(request.Method+" "+server.UIAPIPrefix+request.Name, guarded(plain))
+		}
+	}
 }
 
 // ServeHTTP answers the addresses under server.UIAPIPrefix that are no route.

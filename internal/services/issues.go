@@ -90,6 +90,10 @@ func (issues *Issues) SelectedEvent(ctx context.Context, issue store.Issue, even
 	return event, err
 }
 
+// MaxActionIssues is the most issues one action takes: one page of the
+// largest size, with room to spare; more would only hold the database long.
+const MaxActionIssues = 1000
+
 // The actions ApplyAction runs on issues.
 const (
 	ActionResolve = "resolve"

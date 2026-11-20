@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -127,8 +128,11 @@ func fail(logger *slog.Logger, transport Transport, w http.ResponseWriter, r *ht
 		server.JSONError(w, http.StatusInternalServerError, "internal error")
 	case notFound:
 		server.JSONError(w, http.StatusNotFound, message)
-	default:
-		server.JSONError(w, http.StatusBadRequest, message)
+	default: // an InputError
+		var input InputError
+
+		errors.As(err, &input)
+		server.WriteJSON(w, http.StatusBadRequest, input.body())
 	}
 }
 

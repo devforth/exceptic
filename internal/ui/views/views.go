@@ -26,7 +26,6 @@ import (
 	"github.com/devforth/exceptic/internal/platform/textutil"
 	"github.com/devforth/exceptic/internal/sentry"
 	"github.com/devforth/exceptic/internal/storage/store"
-	"github.com/devforth/exceptic/internal/ui/contracts"
 	"github.com/devforth/exceptic/internal/ui/helpers"
 	"github.com/devforth/exceptic/internal/ui/lists"
 )
@@ -57,7 +56,7 @@ var templateFuncs = template.FuncMap{
 	"fullTime":     func(value time.Time) string { return value.UTC().Format("2006-01-02 15:04:05.000 UTC") },
 	"levelClass":   helpers.LevelClass,
 	"cleanLog":     helpers.CleanLog,
-	"prettyJSON":   helpers.PrettyJSON,
+	"prettyJSON":   textutil.IndentJSON,
 	"handled":      helpers.Handled,
 	"parseRequest": sentry.ParseRequest,
 	"short":        helpers.Short,
@@ -83,7 +82,7 @@ var templateFuncs = template.FuncMap{
 		return deleteButton{URL: "/notifications/" + id + "/delete", Name: name, Label: label,
 			Confirm: "Delete the connection " + name + "? Its queued messages are dropped; a confirmed address stays confirmed."}
 	},
-	"limits":   func() contracts.FieldLimits { return contracts.Limits },
+	"limits":   func() config.FieldLimits { return config.Limits },
 	"chatTest": func(url, needs string) map[string]string { return map[string]string{"URL": url, "Needs": needs} },
 	"copyButton": func(target, label, title, copied string) map[string]string {
 		return map[string]string{"Target": target, "Label": label, "Title": title, "Copied": copied}

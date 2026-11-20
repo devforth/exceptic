@@ -6,10 +6,10 @@ import (
 	"strings"
 
 	"github.com/devforth/exceptic/internal/platform/config"
+	"github.com/devforth/exceptic/internal/platform/textutil"
 	"github.com/devforth/exceptic/internal/services"
 	"github.com/devforth/exceptic/internal/storage/store"
 	"github.com/devforth/exceptic/internal/ui/contracts"
-	"github.com/devforth/exceptic/internal/ui/helpers"
 	"github.com/devforth/exceptic/internal/ui/lists"
 )
 
@@ -138,9 +138,9 @@ func (presenter Connections) Form(connection store.Connection) contracts.Connect
 	}
 
 	if chat := presenter.chat(connection); chat.Readable {
-		view.ChatID, view.SavedTelegramToken = chat.Telegram.ChatID, helpers.MaskSecret(chat.Telegram.BotToken)
+		view.ChatID, view.SavedTelegramToken = chat.Telegram.ChatID, textutil.MaskSecret(chat.Telegram.BotToken)
 		view.SlackChannel = chat.Slack.Channel
-		view.SavedWebhook, view.SavedSlackToken = helpers.MaskSecret(chat.Slack.WebhookURL), helpers.MaskSecret(chat.Slack.BotToken)
+		view.SavedWebhook, view.SavedSlackToken = textutil.MaskSecret(chat.Slack.WebhookURL), textutil.MaskSecret(chat.Slack.BotToken)
 	}
 
 	return view

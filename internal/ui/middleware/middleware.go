@@ -91,11 +91,11 @@ func returnAfterLogin(r *http.Request) string {
 
 	for _, page := range []string{r.Header.Get("HX-Current-URL"), r.Referer()} {
 		if parsed, err := url.Parse(page); page != "" && err == nil {
-			return requests.SafeNext(parsed.RequestURI())
+			return server.SafeNext(parsed.RequestURI())
 		}
 	}
 
-	return requests.SafeNext("")
+	return server.SafeNext("")
 }
 
 func redirect(w http.ResponseWriter, r *http.Request, target string) {

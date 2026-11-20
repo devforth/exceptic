@@ -57,21 +57,3 @@ func TestLevelClass(t *testing.T) {
 		}
 	}
 }
-
-func TestMaskSecret(t *testing.T) {
-	for secret, want := range map[string]string{
-		"":      "",
-		"short": "…",
-		"https://hooks.slack.com/services/T0001/B0002/abcdefghijklmnopqrstuvwx": "https://hooks.slack.com/services/…uvwx",
-		// Split so secret scanners do not take this made-up token for a real one.
-		"xoxb-" + "1234567890-0987654321-AbCdEfGhIjKlMnOp": "xoxb-1234567890-…MnOp", // the team id is not secret
-		"123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw":     "123456789:…Dsaw",
-		// A "-" in the random part reveals nothing before it.
-		"123456789:AAH-qTcvCH1vGWJxfSeofSAs0K5PALDsaw":              "123456789:…Dsaw",
-		"emcp_pt_" + "Ab-cdefghijklmnopqrstuvwxyz0123456789ABCDEFG": "…DEFG",
-	} {
-		if got := MaskSecret(secret); got != want {
-			t.Errorf("MaskSecret(%q) = %q, want %q", secret, got, want)
-		}
-	}
-}

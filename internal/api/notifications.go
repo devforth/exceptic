@@ -155,7 +155,7 @@ func emailStep(step services.EmailStep) (emailStepOutput, error) {
 
 	switch {
 	case step.Duplicate != nil:
-		return output, Invalid("connection %s (%s) already sends to this address: update it instead", step.Duplicate.ID, step.Duplicate.Name)
+		return output, duplicateError(*step.Duplicate, "sends to this address")
 	case step.Error != "":
 		return output, Invalid("%s", step.Error)
 	case output.Confirmed:
@@ -288,7 +288,7 @@ func (handler *handlers) saveConnection(ctx context.Context, call Call, form url
 	}
 
 	if saved.Duplicate != nil {
-		return connectionOutput{}, Invalid("connection %s (%s) already sends there: update it instead", saved.Duplicate.ID, saved.Duplicate.Name)
+		return connectionOutput{}, duplicateError(*saved.Duplicate, "sends there")
 	}
 
 	if err := problemsError(saved.Problems, connectionFormFields); err != nil {
