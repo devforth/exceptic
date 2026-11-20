@@ -59,5 +59,10 @@ describe('Dialog', () => {
 		await userEvent.click(dialog);
 
 		expect(dialog.open).toBe(true);
+
+		// A browser may close a modal on its own (a close watcher): it opens again.
+		dialog.close();
+
+		expect(dialog.open).toBe(true);
 	});
 });

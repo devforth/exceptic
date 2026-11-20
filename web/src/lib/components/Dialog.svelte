@@ -48,6 +48,17 @@ its buttons in `actions` at the bottom; onopen runs once it is shown (to move th
 		if (event.target === dialog) dismiss();
 	}
 
+	// The browser may close a modal on its own (a close watcher); one that must stay opens again.
+	function closed() {
+		if (open && !dismissible) {
+			dialog.showModal();
+
+			return;
+		}
+
+		open = false;
+	}
+
 	function cancel(event: Event) {
 		if (!dismissible) event.preventDefault();
 	}
@@ -55,7 +66,7 @@ its buttons in `actions` at the bottom; onopen runs once it is shown (to move th
 
 <dialog
 	bind:this={dialog}
-	onclose={() => (open = false)}
+	onclose={closed}
 	oncancel={cancel}
 	onclick={closeOutside}
 	aria-label={title}

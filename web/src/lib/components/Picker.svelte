@@ -8,6 +8,7 @@ to choose (one option and none chosen).
 	import type { Snippet } from 'svelte';
 	import { toggled } from '#lib/selection.ts';
 	import { controlClasses } from './field.ts';
+	import { popupClasses } from './surface.ts';
 	import Icon from './Icon.svelte';
 
 	type Props = {
@@ -60,9 +61,7 @@ to choose (one option and none chosen).
 			{selected.length ? `${label}: ${selected.length}` : all}
 			<Icon name="expand" size={16} />
 		</summary>
-		<div
-			class="absolute z-20 mt-1 min-w-48 rounded-popup border border-border bg-surface p-1 shadow-pop"
-		>
+		<div class={[popupClasses, 'absolute z-20 mt-1 min-w-48']}>
 			<label class={optionClasses}>
 				<input type="checkbox" checked={selected.length === 0} onchange={() => onchange([])} />
 				{all}

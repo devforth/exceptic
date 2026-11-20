@@ -402,7 +402,7 @@ Every component with its variants, on sample data. Served only by the dev server
 				<Badge {tone} label={tone} />
 			{/each}
 		</Row>
-		<Row caption="project tone (its color from /project-colors.css), as a link">
+		<Row caption="project tone (its color from the session), as a link">
 			<Badge tone="project" label="backend" />
 			<Badge tone="project" label="frontend" />
 			<Badge tone="project" label="worker" href="#badges" title="Issues of worker" />

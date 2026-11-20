@@ -82,7 +82,7 @@
 	--breakpoint-sidebar: 801px;
 }
 
-/* Read on each element: /project-colors.css sets --project-color on [data-project]. */
+/* Read on each element: Badge sets --project-color from the session (the style: directive). */
 @theme inline {
 	--color-project: var(--project-color, var(--color-debug));
 	/* Badge text and outline: the project color, lightened in dark mode to stay readable. */

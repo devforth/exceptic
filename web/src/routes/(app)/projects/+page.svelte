@@ -51,7 +51,8 @@
 	async function remove(project: Project) {
 		await post('delete_project', { project: String(project.id) });
 		toast.show(deleted);
-		await invalidateAll();
+		// The delete is done: a failed reload of the list is not a failed delete.
+		void invalidateAll();
 	}
 
 	// Rename: a dialog with the name; the server checks it (a refused name stays in the dialog).

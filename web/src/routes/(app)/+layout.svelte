@@ -5,18 +5,14 @@
 
 	let { data, children }: LayoutProps = $props();
 
-	// The unresolved count changes while the user works: recount on every page, not on the first.
+	// The unresolved count changes while the user works: recount on every page, not on the
+	// first, nor when a page only changes its address (a tab, shallow).
 	afterNavigate((navigation) => {
-		if (navigation.type !== 'enter') {
+		if (navigation.type !== 'enter' && !navigation.shallow) {
 			void invalidate('app:session');
 		}
 	});
 </script>
-
-<svelte:head>
-	<!-- The project colors: a stylesheet, since the CSP allows no inline styles. -->
-	<link rel="stylesheet" href={data.session.project_colors_url} />
-</svelte:head>
 
 <div class="flex min-h-screen max-sidebar:flex-col">
 	<Sidebar session={data.session} />

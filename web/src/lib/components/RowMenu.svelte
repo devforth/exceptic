@@ -8,12 +8,15 @@ there is no room below), so a table's scroll box does not cut it.
 -->
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { ApiError } from '#lib/api/client.ts';
 	import { movedIndex } from '#lib/roving.ts';
+	import { toast } from '#lib/toast.svelte.ts';
 	import Button from './Button.svelte';
 	import type { ConfirmedAction, Confirmation } from './confirm.ts';
 	import ConfirmDialog from './ConfirmDialog.svelte';
 	import Icon from './Icon.svelte';
 	import type { MenuItem } from './menu.ts';
+	import { popupClasses } from './surface.ts';
 
 	type Props = {
 		/** What the actions are for, e.g. "Actions for backend": the button's and menu's name. */
@@ -43,7 +46,8 @@ there is no room below), so a table's scroll box does not cut it.
 		const box = toggleBox.getBoundingClientRect();
 
 		top = box.bottom + gap;
-		right = Math.max(margin, innerWidth - box.right);
+		// The viewport without the scrollbar: position: fixed measures from its edge.
+		right = Math.max(margin, document.documentElement.clientWidth - box.right);
 		open = true;
 		await tick();
 
@@ -101,7 +105,12 @@ there is no room below), so a table's scroll box does not cut it.
 			asked = { confirm: item.confirm, action: item.action };
 			asking = true;
 		} else {
-			await item.action();
+			try {
+				await item.action();
+			} catch (failure) {
+				// Without a confirmation there is no dialog to show it in.
+				toast.show(failure instanceof ApiError ? failure.message : 'Something went wrong.');
+			}
 		}
 	}
 
@@ -128,7 +137,7 @@ there is no room below), so a table's scroll box does not cut it.
 	});
 
 	const itemClasses =
-		'flex w-full cursor-pointer items-center gap-2.5 rounded-control px-2.5 py-[7px] text-left whitespace-nowrap no-underline outline-none hover:no-underline';
+		'flex w-full cursor-pointer items-center gap-2.5 rounded-control px-2.5 py-[7px] text-left whitespace-nowrap no-underline hover:no-underline focus-ring [--focus-offset:-2px]';
 </script>
 
 {#snippet content(item: MenuItem)}
@@ -154,7 +163,7 @@ there is no room below), so a table's scroll box does not cut it.
 		aria-label={label}
 		tabindex="-1"
 		data-popup
-		class="fixed z-40 min-w-[200px] rounded-popup border border-border bg-surface p-1 text-text shadow-pop forced-colors:border"
+		class={[popupClasses, 'fixed z-40 min-w-[200px] text-text']}
 		style:top="{top}px"
 		style:right="{right}px"
 		onkeydown={keydown}
