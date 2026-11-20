@@ -2,6 +2,7 @@ package api
 
 import (
 	"cmp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -56,28 +57,23 @@ func parseOffset(cursor string) (int, error) {
 	return int(offset), nil
 }
 
-// projectIDs resolves a project given by name or ID as a filter: none when empty.
-func projectIDs(projects config.Projects, nameOrID string) ([]int, error) {
-	if nameOrID = strings.TrimSpace(nameOrID); nameOrID == "" {
-		return nil, nil
+// projectIDs resolves projects given by name or ID as a filter: none when empty.
+func projectIDs(projects config.Projects, namesOrIDs []string) ([]int, error) {
+	var ids []int
+
+	for _, nameOrID := range namesOrIDs {
+		project, ok := projects.Find(strings.TrimSpace(nameOrID))
+
+		if !ok {
+			return nil, Invalid("unknown project %q (see list_projects)", nameOrID)
+		}
+
+		if !slices.Contains(ids, project.ID) {
+			ids = append(ids, project.ID)
+		}
 	}
 
-	project, ok := projects.Find(nameOrID)
-
-	if !ok {
-		return nil, Invalid("unknown project %q (see list_projects)", nameOrID)
-	}
-
-	return []int{project.ID}, nil
-}
-
-// levels is a level filter (checked by the schema): none when empty.
-func levels(level string) []string {
-	if level == "" {
-		return nil
-	}
-
-	return []string{level}
+	return ids, nil
 }
 
 func parseTime(name, value string) (time.Time, error) {

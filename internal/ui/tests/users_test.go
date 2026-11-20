@@ -80,7 +80,7 @@ func TestRoles(t *testing.T) {
 	}
 
 	// The menu shows only what the role allows.
-	menu := user.page("/logs")
+	menu := user.page("/agents")
 
 	for _, hidden := range []string{`href="/notifications"`, `href="/users"`} {
 		if strings.Contains(menu, hidden) {

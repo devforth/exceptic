@@ -241,7 +241,7 @@ func TestIssues(t *testing.T) {
 
 	var all issuePage
 
-	server.decode("list_issues", map[string]any{"project": "backend", "limit": 100}, &all)
+	server.decode("list_issues", map[string]any{"project": []string{"backend"}, "limit": 100}, &all)
 
 	if len(all.Items) < 2 || all.NextCursor != "" {
 		t.Fatalf("backend issues: %+v", all)
@@ -256,8 +256,8 @@ func TestIssues(t *testing.T) {
 	// Pages follow next_cursor without gaps or repeats.
 	var first, second issuePage
 
-	server.decode("list_issues", map[string]any{"project": "backend", "limit": 1}, &first)
-	server.decode("list_issues", map[string]any{"project": "backend", "limit": 1, "cursor": first.NextCursor}, &second)
+	server.decode("list_issues", map[string]any{"project": []string{"backend"}, "limit": 1}, &first)
+	server.decode("list_issues", map[string]any{"project": []string{"backend"}, "limit": 1, "cursor": first.NextCursor}, &second)
 
 	if first.NextCursor == "" || len(second.Items) != 1 || second.Items[0].ID != all.Items[1].ID {
 		t.Fatalf("pages: %+v then %+v, want the second of %+v", first, second, all.Items)
@@ -368,14 +368,14 @@ func TestLogs(t *testing.T) {
 		} `json:"items"`
 	}
 
-	server.decode("list_logs", map[string]any{"project": "backend", "limit": 100}, &logs)
+	server.decode("list_logs", map[string]any{"project": []string{"backend"}, "limit": 100}, &logs)
 
 	if len(logs.Items) == 0 {
 		t.Fatal("no backend logs")
 	}
 
 	traceID := logs.Items[0].TraceID
-	server.decode("list_logs", map[string]any{"trace_id": traceID, "level": logs.Items[0].Level}, &logs)
+	server.decode("list_logs", map[string]any{"trace_id": traceID, "level": []string{logs.Items[0].Level}}, &logs)
 
 	for _, item := range logs.Items {
 		if item.TraceID != traceID {
@@ -384,7 +384,7 @@ func TestLogs(t *testing.T) {
 	}
 
 	// Log levels are the log names (warn), not the event ones (warning).
-	if _, isError := server.try("list_logs", map[string]any{"level": "warning"}); !isError {
+	if _, isError := server.try("list_logs", map[string]any{"level": []string{"warning"}}); !isError {
 		t.Error("the event level name accepted for logs")
 	}
 }
@@ -767,7 +767,7 @@ func TestSchemasListTheChoices(t *testing.T) {
 
 	for tool, arguments := range map[string]map[string]any{
 		"list_issues": {"sort": "title"},
-		"list_logs":   {"level": "warning"},
+		"list_logs":   {"level": []string{"warning"}},
 		"fetch_skill": {"name": "../instructions.md"},
 	} {
 		if text, isError := server.try(tool, arguments); !isError {
@@ -777,8 +777,8 @@ func TestSchemasListTheChoices(t *testing.T) {
 
 	// An optional field left empty means its default.
 	for tool, arguments := range map[string]map[string]any{
-		"list_issues":     {"status": "", "level": "", "sort": "", "date_by": ""},
-		"list_logs":       {"level": ""},
+		"list_issues":     {"status": "", "level": []string{}, "sort": "", "date_by": ""},
+		"list_logs":       {"level": []string{}},
 		"list_deliveries": {"status": ""},
 	} {
 		if text, isError := server.try(tool, arguments); isError {

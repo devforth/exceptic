@@ -51,12 +51,6 @@ func TestCleanListQuery(t *testing.T) {
 	if query.Get("sort") != "first_seen" || query.Get("to") != "2026-11-10" {
 		t.Errorf("valid sort or date dropped: %v", query)
 	}
-
-	logs := CleanListQuery(url.Values{"trace_id": {" abc "}, "sort": {"first_seen"}, "status": {"resolved"}, "level": {"warn"}}, LogListParams, testProjects)
-
-	if logs.Get("trace_id") != "abc" || logs.Has("sort") || logs.Has("status") || logs.Get("level") != "warn" {
-		t.Errorf("log list query = %v, want trace_id and the log level warn only", logs)
-	}
 }
 
 // A reversed range is swapped in the query, so the chip and the links show

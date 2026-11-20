@@ -38,7 +38,7 @@ type Pager struct {
 	PrevURL        string
 	NextURL        string
 	Links          []PageLink
-	Target         string // the element htmx replaces ("issue-list", "log-list")
+	Target         string // the element htmx replaces ("issue-list", "delivery-list")
 	Form           string // the filter form the page size belongs to ("issue-filters", "log-filters")
 }
 
@@ -50,7 +50,6 @@ type ListFragment struct {
 
 var (
 	IssueList    = ListFragment{Target: "issue-list", Form: "issue-filters"}
-	LogList      = ListFragment{Target: "log-list", Form: "log-filters"}
 	DeliveryList = ListFragment{Target: "delivery-list", Form: "delivery-filters"}
 )
 

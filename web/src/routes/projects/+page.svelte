@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { levels } from '#lib/api/catalog.gen.ts';
 	import { ApiError, post, type Item } from '#lib/api/client.ts';
@@ -145,7 +146,7 @@
 				{/if}
 				<Button
 					icon="logs"
-					href={withQuery(oldUI.logs, { project: project.name })}
+					href={withQuery(resolve('/logs'), { project: project.name })}
 					title="Logs of {project.name}"
 				/>
 				{#if canAdminister && !project.from_env}

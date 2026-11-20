@@ -78,21 +78,3 @@ func (data IssueData) LastChange() *store.StatusChange {
 
 	return &data.History[0]
 }
-
-type LogsData struct {
-	Projects lists.Picker
-	Query    string
-	Dates    lists.DateRange
-	TraceID  string
-	Levels   lists.Picker
-	Filter   lists.FilterLinks
-	Logs     []LogRow
-	Pager    lists.Pager
-}
-
-type LogRow struct {
-	store.LogRecord
-	ProjectName string
-	// Issue is the error raised in the same request, if any.
-	Issue *store.LogIssue
-}

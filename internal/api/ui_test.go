@@ -443,3 +443,92 @@ func TestGetStorage(t *testing.T) {
 		t.Fatalf("%d %s", response.Code, response.Body)
 	}
 }
+
+// The Logs page: several projects and levels at once, numbered pages, the
+// count and the level choices, and the issue a log belongs to.
+func TestUILogs(t *testing.T) {
+	server := newRESTServer(t)
+	server.ingestFixtures()
+
+	user := server.webUser(store.RoleUser, false)
+
+	type logRow struct {
+		Body  string `json:"body"`
+		Level string `json:"level"`
+		Issue *struct {
+			ID string `json:"id"`
+		} `json:"issue"`
+	}
+
+	type logs struct {
+		Items []logRow `json:"items"`
+	}
+
+	read := func(name, query string, result any) {
+		t.Helper()
+
+		response := user.call(http.MethodGet, name+query, "")
+
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s%s: %d %s", name, query, response.Code, response.Body)
+		}
+
+		if err := json.Unmarshal(response.Body.Bytes(), result); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var all, both, second, pair logs
+
+	read("list_logs", "?limit=100", &all)
+	read("list_logs", "?limit=100&project=backend&project=frontend", &both)
+
+	if len(all.Items) < 3 || len(both.Items) != len(all.Items) {
+		t.Fatalf("every log %d, of both projects %d", len(all.Items), len(both.Items))
+	}
+
+	var count struct {
+		Count int `json:"count"`
+	}
+
+	read("count_logs", "?project=backend,frontend", &count)
+
+	if count.Count != len(all.Items) {
+		t.Errorf("count %d, want %d", count.Count, len(all.Items))
+	}
+
+	read("list_logs", "?limit=2", &pair)
+	read("list_logs", "?limit=1&offset=1", &second)
+
+	if len(second.Items) != 1 || second.Items[0].Body != pair.Items[1].Body {
+		t.Errorf("offset 1 gave %+v, want the second of %+v", second.Items, pair.Items)
+	}
+
+	if response := user.call(http.MethodGet, "list_logs?offset=1&cursor=5", ""); response.Code != http.StatusBadRequest {
+		t.Errorf("offset with cursor: %d", response.Code)
+	}
+
+	var warnAndInfo logs
+
+	read("list_logs", "?limit=100&level=warn&level=info", &warnAndInfo)
+
+	if len(warnAndInfo.Items) == 0 || slices.ContainsFunc(warnAndInfo.Items, func(item logRow) bool { return item.Level != "warn" && item.Level != "info" }) {
+		t.Errorf("levels warn and info: %+v", warnAndInfo.Items)
+	}
+
+	var levels struct {
+		Levels []string `json:"levels"`
+	}
+
+	read("list_log_levels", "", &levels)
+
+	for _, item := range all.Items {
+		if !slices.Contains(levels.Levels, item.Level) {
+			t.Errorf("level %s of a log is not a choice: %v", item.Level, levels.Levels)
+		}
+	}
+
+	if !slices.ContainsFunc(all.Items, func(item logRow) bool { return item.Issue != nil && item.Issue.ID != "" }) {
+		t.Error("no log names its issue")
+	}
+}

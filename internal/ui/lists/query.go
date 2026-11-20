@@ -22,11 +22,8 @@ import (
 // every line helps nobody.
 const maxSearchLength = 200
 
-// The level lists of the filters, highest first.
-var (
-	EventLevels = config.HighestFirst(config.Levels)
-	LogLevels   = config.HighestFirst(config.LogLevels)
-)
+// EventLevels are the levels of the issue filter, highest first.
+var EventLevels = config.HighestFirst(config.Levels)
 
 // ListParams are the parameters a list understands.
 type ListParams struct {
@@ -43,7 +40,6 @@ var (
 	IssueListParams = ListParams{
 		projects: true, levels: EventLevels, single: []string{"query"}, statuses: true, sort: true, dates: true,
 	}
-	LogListParams = ListParams{projects: true, levels: LogLevels, single: []string{"query", "trace_id"}, dates: true}
 )
 
 // DeliveryStatuses are the statuses the delivery log filters by.

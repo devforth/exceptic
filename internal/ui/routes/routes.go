@@ -33,7 +33,6 @@ func Register(router *http.ServeMux, protect func(http.Handler) http.Handler, co
 		"GET /issues/{issueID}":         controller.IssuePage,
 		"POST /issues/{issueID}/action": controller.IssueAction, // deleting needs an admin (services.Issues)
 		"POST /issues/bulk":             controller.BulkIssueAction,
-		"GET /logs":                     controller.LogsPage,
 		"GET /projects/cleanups":        controller.CleanupsPage,
 
 		"GET /agents":                       controller.AgentsPage,

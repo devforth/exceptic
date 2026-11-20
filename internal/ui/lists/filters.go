@@ -82,14 +82,6 @@ var issueFilterFields = []filterField{
 	}},
 }
 
-var logFilterFields = []filterField{
-	{key: "project", label: "Project", badges: KindProject},
-	{key: "level", label: "Level", badges: KindLevel},
-	{key: "query", label: "Search"},
-	{key: "trace_id", label: "Trace"},
-	{label: "Dates", dates: true},
-}
-
 type ActiveFilter struct {
 	Label, Value string
 	RemoveURL    string // the list without this filter
@@ -177,8 +169,6 @@ func (links FilterLinks) badgeChips(field filterField) []ActiveFilter {
 
 // IssueFilters and LogFilters are the active filters of each list, for templates.
 func (links FilterLinks) IssueFilters() ActiveFilters { return links.active(issueFilterFields) }
-
-func (links FilterLinks) LogFilters() ActiveFilters { return links.active(logFilterFields) }
 
 // datesChip shows the date range as one chip ("2026-11-01 – 2026-11-10"),
 // and × removes both ends.

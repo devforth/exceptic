@@ -13,7 +13,7 @@ The API and the [MCP tools](mcp.md) are the same endpoints with the same names, 
 - Each endpoint is `/api/v1/<name>`. `/api/ui/` serves the endpoints the web interface needs, with its login session; it is not for scripts. Endpoints that only read are `GET` with the input as query parameters (`?project=backend&limit=50`; a list takes repeated or comma-separated values: `issue_ids=k3x9q2mf,a7c2d4e9`). Endpoints that change data are `POST` with the input as a JSON object.
 - Errors: a status code with `{"error": "message"}`: 400 for invalid input (unknown parameters too, and `update_issue_status` with any ID not found), 401 without a valid token, 403 from an address outside `ALLOWED_IPS`, 404 for missing records and unknown endpoints, 500 for a server failure (logged).
 - Lists return `{"items": [...], "next_cursor": "..."}`. Pass `cursor=<next_cursor>` for the next page; there is no `next_cursor` on the last one. `limit` is 1–100, default 20.
-- `project` takes a project id (`1`) or name (`backend`). `level` takes one level.
+- `project` takes project ids (`1`) or names (`backend`), `level` levels; each takes several values (`?project=backend&project=frontend`), and none means every one.
 - Issues have IDs of 8 random lowercase letters and digits (`k3x9q2mf`); a project keeps the number in its DSN.
 - Times are RFC 3339 in UTC, e.g. `2026-11-11T10:00:00Z`.
 - Free text (titles, log lines) is returned as stored; the MCP tools return it with IPs, hosts, emails and credentials replaced, since it goes to a model provider. `get_issue` and `get_event` return that redacted prompt to every caller; `get_event_payload` has the event as stored.
@@ -28,7 +28,7 @@ The API and the [MCP tools](mcp.md) are the same endpoints with the same names, 
 | `GET get_issue` | `issue_id`, `event_id` | The latest (or given) event of an issue as a text prompt for a coding agent: exception, stack, request, breadcrumbs, related logs, status, event count, first and last seen. |
 | `GET list_issue_events` | `issue_id`, `limit`, `cursor` | Events of an issue, newest first: `event_id`, `timestamp`, `level`, `environment`, `release`, `trace_id`. |
 | `GET get_event` | `project`, `event_id` | Like `get_issue`, for an event ID (32 hex characters, with or without dashes). |
-| `GET list_logs` | `project`, `level`, `query` (text in the line), `trace_id`, `since`, `until`, `limit`, `cursor` | Logs, newest first: `time`, `project`, `level`, `body`, `trace_id`. |
+| `GET list_logs` | `project`, `level`, `query` (text in the line), `trace_id`, `since`, `until`, `limit`, `cursor` or `offset` (logs to skip, for numbered pages) | Logs, newest first: `time`, `project`, `level`, `body`, `trace_id`, `issue` (`id` and `title` of the error raised in the same request, when there is one). |
 | `POST update_issue_status` | `issue_ids` (1–100), `status` | Set `resolved`, `ignored` or `unresolved` on all of them or none; returns the updated issues. |
 | `GET get_event_payload` | `project`, `event_id` | REST only. The event with its JSON as stored in `payload`: without credentials and the parts that do not help a fix ([What is stored](sdk.md#what-is-stored)); `thinned` marks an old event reduced as [Retention](configuration.md#retention) says. |
 | `GET list_trace` | `trace_id` | REST only. Events (without payloads) and logs, with their attributes, of one trace, up to 100 of each. |

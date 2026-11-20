@@ -91,7 +91,8 @@ func Endpoints(projects config.ProjectList, all *services.All) []Endpoint {
 		}, handler.deleteIssue),
 
 		// The web app only: its menu (open with a temporary password, so the app
-		// can send the user to choose one) and the storage of the Projects page.
+		// can send the user to choose one), the storage of the Projects page and
+		// the counts and choices of the Logs page.
 		Define(Endpoint{
 			Name:                      "get_session",
 			Description:               "The logged-in user, the app name, the unresolved issue count and the project colors stylesheet.",
@@ -100,6 +101,19 @@ func Endpoints(projects config.ProjectList, all *services.All) []Endpoint {
 			OpenWithTemporaryPassword: true,
 		}, handler.getSession),
 
+		Define(Endpoint{
+			Name:        "count_logs",
+			Description: "How many logs match the filters of list_logs, up to a limit (more says it was reached).",
+			ReadOnly:    true,
+			Transports:  TransportUI,
+			Choices:     map[string][]string{"level": config.LogLevels},
+		}, handler.countLogs),
+		Define(Endpoint{
+			Name:        "list_log_levels",
+			Description: "The log levels some stored log has, highest first: the choices of the level filter.",
+			ReadOnly:    true,
+			Transports:  TransportUI,
+		}, handler.listLogLevels),
 		Define(Endpoint{
 			Name:        "get_storage",
 			Description: "How much the database holds, its size limit (MAX_DATABASE_SIZE) and where the cleanup stops.",

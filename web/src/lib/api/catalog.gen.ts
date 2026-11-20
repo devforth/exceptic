@@ -24,6 +24,26 @@ export interface Endpoints {
 			message: string;
 		};
 	};
+	count_logs: {
+		in: {
+			/** Project names or IDs; every project when empty. */
+			project?: string[] | null;
+			/** Log levels; every level when empty. */
+			level?: ('trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal')[] | null;
+			/** Text in the log line. */
+			query?: string;
+			/** Only logs of this trace (see get_issue). */
+			trace_id?: string;
+			/** RFC 3339 time: only logs at or after it. */
+			since?: string;
+			/** RFC 3339 time: only logs before it. */
+			until?: string;
+		};
+		out: {
+			count: number;
+			more?: boolean;
+		};
+	};
 	create_connection: {
 		in: {
 			/** email, telegram or slack. */
@@ -345,12 +365,12 @@ export interface Endpoints {
 	};
 	list_issues: {
 		in: {
-			/** Project name or ID; every project when empty. */
-			project?: string;
+			/** Project names or IDs; every project when empty. */
+			project?: string[] | null;
 			/** Issue status, unresolved by default; all for every status. */
 			status?: '' | 'unresolved' | 'resolved' | 'ignored' | 'all';
-			/** Issue level; every level when empty. */
-			level?: '' | 'debug' | 'info' | 'warning' | 'error' | 'fatal';
+			/** Issue levels; every level when empty. */
+			level?: ('debug' | 'info' | 'warning' | 'error' | 'fatal')[] | null;
 			/** Text in the issue title or location. */
 			query?: string;
 			/** RFC 3339 time, e.g. 2026-11-11T10:00:00Z: only issues with an event at or after it. */
@@ -382,12 +402,18 @@ export interface Endpoints {
 			next_cursor?: string;
 		};
 	};
+	list_log_levels: {
+		in: Record<string, never>;
+		out: {
+			levels: string[] | null;
+		};
+	};
 	list_logs: {
 		in: {
-			/** Project name or ID; every project when empty. */
-			project?: string;
-			/** Log level; every level when empty. */
-			level?: '' | 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
+			/** Project names or IDs; every project when empty. */
+			project?: string[] | null;
+			/** Log levels; every level when empty. */
+			level?: ('trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal')[] | null;
 			/** Text in the log line. */
 			query?: string;
 			/** Only logs of this trace (see get_issue). */
@@ -400,15 +426,21 @@ export interface Endpoints {
 			limit?: number;
 			/** next_cursor of the previous page. */
 			cursor?: string;
+			/** Logs to skip, newest first, for numbered pages; next_cursor is faster. Not with cursor. */
+			offset?: number;
 		};
 		out: {
-			items: {
+			items: ({
 				time: IsoTime;
 				project: string;
 				level: string;
 				body: string;
 				trace_id?: string;
-			}[] | null;
+				issue?: {
+					id: string;
+					title: string;
+				} | null;
+			})[] | null;
 			next_cursor?: string;
 		};
 	};
@@ -621,6 +653,7 @@ export interface Endpoints {
 /** How each request is sent, and what the app must know before offering it. */
 export const endpoints = {
 	confirm_email: { method: 'POST', text: false, admin: true, destructive: false, confirm: false },
+	count_logs: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	create_connection: { method: 'POST', text: false, admin: true, destructive: false, confirm: true },
 	create_project: { method: 'POST', text: false, admin: true, destructive: false, confirm: false },
 	create_user: { method: 'POST', text: false, admin: true, destructive: false, confirm: true },
@@ -641,6 +674,7 @@ export const endpoints = {
 	list_deliveries: { method: 'GET', text: false, admin: true, destructive: false, confirm: false },
 	list_issue_events: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	list_issues: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
+	list_log_levels: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	list_logs: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	list_projects: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	list_users: { method: 'GET', text: false, admin: true, destructive: false, confirm: false },
@@ -657,6 +691,9 @@ export const endpoints = {
 
 /** The values input fields take. */
 export const choices = {
+	count_logs: {
+		level: ['trace', 'debug', 'info', 'warn', 'error', 'fatal'],
+	},
 	create_connection: {
 		levels: ['debug', 'info', 'warning', 'error', 'fatal'],
 	},

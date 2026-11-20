@@ -25,21 +25,3 @@ func IssueRows(issues []store.Issue, projectName ProjectName) []contracts.IssueR
 func IssueRow(issue store.Issue, projectName ProjectName) contracts.IssueRow {
 	return contracts.IssueRow{Issue: issue, ProjectName: projectName(issue.ProjectID)}
 }
-
-// LogRows labels each log with its project and the issue raised in the
-// same request (issues, by log id).
-func LogRows(logs []store.LogRecord, issues map[int64]store.LogIssue, projectName ProjectName) []contracts.LogRow {
-	rows := make([]contracts.LogRow, 0, len(logs))
-
-	for _, record := range logs {
-		row := contracts.LogRow{LogRecord: record, ProjectName: projectName(record.ProjectID)}
-
-		if issue, ok := issues[record.ID]; ok {
-			row.Issue = &issue
-		}
-
-		rows = append(rows, row)
-	}
-
-	return rows
-}

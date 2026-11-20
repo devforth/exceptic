@@ -74,34 +74,6 @@ func TestPagination(t *testing.T) {
 	}
 }
 
-func TestLogPagination(t *testing.T) {
-	server := newTestServer(t, password)
-	server.login()
-
-	var items []string
-
-	// Different words, so the cap on a repeated message keeps them all.
-	for index := range 25 {
-		items = append(items, fmt.Sprintf(`{"timestamp":1731400000.%03d,"level":"info","body":"paged log %d %s"}`, index, index, strings.Repeat("x", index+1)))
-	}
-
-	server.sendEnvelope(fixtures.BackendEnvelopeURL, []byte(`{}`+"\n"+`{"type":"log","item_count":25,"content_type":"application/vnd.sentry.items.log+json"}`+"\n"+`{"items":[`+strings.Join(items, ",")+`]}`))
-
-	first := server.page("/logs")
-
-	if !strings.Contains(first, `<form class="filters" id="log-filters"`) || !strings.Contains(first, `form="log-filters">`) {
-		t.Error("the log page size does not belong to the log filters")
-	}
-
-	if !strings.Contains(first, "1–20 of 25") || !strings.Contains(first, "paged log 24 ") || strings.Contains(first, "paged log 4 ") {
-		t.Fatal("first page of logs")
-	}
-
-	if second := server.page("/logs?page=2"); !strings.Contains(second, "21–25 of 25") || !strings.Contains(second, "paged log 0 ") {
-		t.Fatal("second page of logs")
-	}
-}
-
 // A hand-edited URL: unknown or invalid values are dropped before anything
 // else, so they neither filter nor show up as chips or in links.
 func TestHandEditedListURL(t *testing.T) {
@@ -162,16 +134,6 @@ func TestHTMXFragments(t *testing.T) {
 	if len(issueIDs(body)) != 4 {
 		t.Fatalf("frontend filter: %d issues, want 4", len(issueIDs(body)))
 	}
-
-	logs := httptest.NewRequest(http.MethodGet, "/logs?query=pino", nil)
-	logs.Header.Set("HX-Request", "true")
-	logs.Header.Set("HX-Target", "log-list")
-
-	body = server.send(logs).Body.String()
-
-	if strings.Contains(body, "<html") || !strings.Contains(body, "pino") {
-		t.Fatalf("log search fragment:\n%s", body)
-	}
 }
 
 func TestListFilters(t *testing.T) {
@@ -202,17 +164,6 @@ func TestListFilters(t *testing.T) {
 
 	if ids := issueIDs(server.page("/issues?status=all&from=" + tomorrow)); len(ids) != 0 {
 		t.Fatalf("from tomorrow: %d issues, want 0", len(ids))
-	}
-
-	// Log times come from the SDK: the fixtures were recorded on 2026-11-10.
-	logs := server.page("/logs?from=2026-11-10")
-
-	if !strings.Contains(logs, "full-screen") || !strings.Contains(logs, `href="/logs?from=2026-11-10&amp;project=backend"`) {
-		t.Fatalf("logs page: missing full-screen button or project filter link:\n%s", logs)
-	}
-
-	if strings.Contains(server.page("/logs?to=2000-01-01"), `class="log-text"`) {
-		t.Fatal("logs before 2000 must be empty")
 	}
 }
 
@@ -261,14 +212,6 @@ func TestSeveralProjectsFilter(t *testing.T) {
 		t.Error("picker summaries")
 	}
 
-	// The log list filters by several levels too.
-	logs := server.page("/logs?level=warn&level=info")
-
-	if !strings.Contains(logs, `<a class="badge level-warning"`) || !strings.Contains(logs, `<a class="badge level-info"`) ||
-		strings.Contains(logs, `<a class="badge level-error"`) || strings.Contains(logs, `<a class="badge level-debug"`) {
-		t.Error("logs filtered by warn and info show other levels or miss these")
-	}
-
 	// Levels work the same way.
 	levels := server.page("/issues?level=error&level=info&status=all")
 	errorOnly := server.page("/issues?level=error&status=all")
@@ -299,7 +242,6 @@ func TestLevelFiltersOfferLevelsInUse(t *testing.T) {
 		offered map[string]bool
 	}{
 		{"/issues?status=all", map[string]bool{"error": true, "warning": true, "info": true, "fatal": false, "debug": false}},
-		{"/logs", map[string]bool{"error": true, "warn": true, "info": true, "fatal": false, "debug": false, "trace": false}},
 	} {
 		page := server.page(list.path)
 
@@ -367,12 +309,6 @@ func TestActiveFilterChips(t *testing.T) {
 
 	if strings.Contains(server.page("/issues"), `class="active-filters"`) {
 		t.Error("no chips without filters")
-	}
-
-	logs := server.page("/logs?level=warn&trace_id=abc")
-
-	if !strings.Contains(logs, "Trace: <strong>abc</strong>") || !strings.Contains(logs, `<a class="clear-filters" href="/logs">Clear all</a>`) {
-		t.Errorf("logs chips:\n%s", logs)
 	}
 }
 
@@ -462,31 +398,9 @@ func TestBadgeLinks(t *testing.T) {
 		t.Error("the status icon of a badge must be hidden from screen readers")
 	}
 
-	logs := server.page("/logs?query=a")
-
-	if !strings.Contains(logs, `<a class="badge level-warning" href="/logs?level=warn&amp;query=a"`) && !strings.Contains(logs, `href="/logs?level=info&amp;query=a"`) {
-		t.Error("in the log list a level badge filters the log list")
-	}
-
 	// Labels inside checkboxes are not links.
-	if strings.Contains(logs, `<input type="checkbox" name="project" value="backend" > <a`) || !strings.Contains(logs, `value="backend" > <span class="project"`) {
+	if list := server.page("/issues"); strings.Contains(list, `<input type="checkbox" name="project" value="backend" > <a`) || !strings.Contains(list, `value="backend" > <span class="project"`) {
 		t.Error("badges in checkboxes must be labels")
-	}
-}
-
-func TestLogsPage(t *testing.T) {
-	server := newTestServer(t, password)
-	server.ingestFixtures()
-	server.login()
-
-	logs := server.page("/logs")
-
-	if strings.Contains(logs, "\x1b[") {
-		t.Fatal("ANSI color codes must be removed from log lines")
-	}
-
-	if !strings.Contains(server.page("/logs?level=warn"), "slow query") {
-		t.Fatal("level filter")
 	}
 }
 

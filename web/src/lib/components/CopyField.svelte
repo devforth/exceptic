@@ -4,6 +4,7 @@ A value to copy (a DSN, a command): read-only, selected on focus, with its copy 
 -->
 <script lang="ts">
 	import CopyButton from './CopyButton.svelte';
+	import { fieldClasses } from './field.ts';
 
 	type Props = {
 		value: string;
@@ -19,7 +20,7 @@ A value to copy (a DSN, a command): read-only, selected on focus, with its copy 
 
 <div class="flex min-w-0 items-center gap-1.5">
 	<input
-		class="h-9 min-w-0 flex-1 rounded-control border border-border bg-code-bg px-2 font-mono text-code text-text focus-visible:border-accent focus-visible:outline-none"
+		class={[fieldClasses, 'min-w-0 flex-1 bg-code-bg font-mono text-code']}
 		{value}
 		readonly
 		aria-label={label}

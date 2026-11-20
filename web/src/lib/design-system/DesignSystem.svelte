@@ -9,18 +9,27 @@ Every component with its variants, on sample data. Served only by the dev server
 	import type { BadgeTone } from '#lib/components/badge.ts';
 	import Button from '#lib/components/Button.svelte';
 	import type { ButtonVariant } from '#lib/components/button.ts';
+	import ActiveFilters from '#lib/components/ActiveFilters.svelte';
 	import Card from '#lib/components/Card.svelte';
 	import CopyButton from '#lib/components/CopyButton.svelte';
 	import CopyField from '#lib/components/CopyField.svelte';
+	import DateRange from '#lib/components/DateRange.svelte';
+	import Dialog from '#lib/components/Dialog.svelte';
+	import FilterBar from '#lib/components/FilterBar.svelte';
 	import EmptyState from '#lib/components/EmptyState.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import LevelBadge from '#lib/components/LevelBadge.svelte';
+	import LogBody from '#lib/components/LogBody.svelte';
 	import NavLink from '#lib/components/NavLink.svelte';
 	import NotFound from '#lib/components/NotFound.svelte';
 	import Notice from '#lib/components/Notice.svelte';
 	import type { NoticeTone } from '#lib/components/notice.ts';
 	import PageHeading from '#lib/components/PageHeading.svelte';
+	import Pager from '#lib/components/Pager.svelte';
+	import Picker from '#lib/components/Picker.svelte';
+	import SearchField from '#lib/components/SearchField.svelte';
 	import Table from '#lib/components/Table.svelte';
+	import Time from '#lib/components/Time.svelte';
 	import UsageBar from '#lib/components/UsageBar.svelte';
 	import type { TableColumn } from '#lib/components/table.ts';
 	import { icons, type IconName } from '#lib/icons.ts';
@@ -128,6 +137,16 @@ Every component with its variants, on sample data. Served only by the dev server
 		{ key: 'category', label: 'Category' },
 		{ key: 'message', label: 'Message' }
 	];
+
+	// Samples of the filter components: they change only this page's state.
+	let sampleProjects: string[] = $state(['backend']);
+	let sampleSearch = $state('');
+	let sampleDays = $state({ from: '', to: '' });
+	let samplePage = $state(2);
+	let samplePerPage = $state(20);
+	let sampleDialog = $state(false);
+	const sampleLog =
+		'{"level":"error","msg":"Payment failed","err":"Error: card declined\\n    at charge (pay.js:12)\\n    at handler (api.js:40)"}';
 </script>
 
 <div id="exceptic-design-system">
@@ -213,6 +232,74 @@ Every component with its variants, on sample data. Served only by the dev server
 				<p>Database: <b>1.2 GB</b> of 2.0 GB</p>
 				<UsageBar percent={60} label="Database size against its limit" />
 			</Card>
+		</Row>
+	</Section>
+
+	<Section title="Filters" id="filters">
+		<Row caption="FilterBar with a Picker (option snippet: badges), SearchField and DateRange" wide>
+			<FilterBar label="Sample filters">
+				<Picker
+					label="Projects"
+					all="All projects"
+					options={['backend', 'frontend']}
+					selected={sampleProjects}
+					onchange={(selected: string[]) => (sampleProjects = selected)}
+				>
+					{#snippet option(name: string)}<Badge tone="project" label={name} />{/snippet}
+				</Picker>
+				<SearchField
+					value={sampleSearch}
+					label="Search text"
+					onchange={(value: string) => (sampleSearch = value)}
+				/>
+				<DateRange
+					from={sampleDays.from}
+					to={sampleDays.to}
+					onchange={(from: string, to: string) => (sampleDays = { from, to })}
+				/>
+			</FilterBar>
+		</Row>
+		<Row caption="ActiveFilters: a chip per field, each value removable" wide>
+			<ActiveFilters
+				chips={[
+					{
+						label: 'Project',
+						values: sampleProjects.map((name) => ({
+							text: name,
+							kind: 'project' as const,
+							remove: '#filters'
+						}))
+					},
+					{
+						label: 'Level',
+						values: [{ text: 'error', kind: 'level' as const, remove: '#filters' }]
+					},
+					{ label: 'Search', values: [{ text: 'timeout', remove: '#filters' }] }
+				]}
+				clear="#filters"
+			/>
+		</Row>
+		<Row caption="Pager: the rows shown, the pages, the page size" wide>
+			<Pager
+				page={samplePage}
+				perPage={samplePerPage}
+				total={134}
+				href={() => '#filters'}
+				onperpage={(perPage: number) => ((samplePerPage = perPage), (samplePage = 1))}
+			/>
+		</Row>
+	</Section>
+
+	<Section title="Log line, time and dialog" id="log">
+		<Row caption="LogBody: cut with Expand when long, Full screen with JSON fields as lines" wide>
+			<LogBody text={sampleLog} />
+		</Row>
+		<Row caption="Time: the distance, the exact time in the tooltip">
+			<Time at="2026-11-20T10:00:00Z" />
+		</Row>
+		<Row caption="Dialog">
+			<Button onclick={() => (sampleDialog = true)}>Open a dialog</Button>
+			<Dialog title="A dialog" bind:open={sampleDialog}><p>Its content scrolls inside.</p></Dialog>
 		</Row>
 	</Section>
 

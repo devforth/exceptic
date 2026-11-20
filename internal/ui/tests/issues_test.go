@@ -300,10 +300,10 @@ func TestLogsLinkedByRequestNotByTrace(t *testing.T) {
 		t.Fatal("a log of another request in the same trace must not be shown")
 	}
 
-	// The logs page links each log to the issue of its request.
-	logs := server.page("/logs")
+	// Each log names the issue of its own request (what the Logs page links).
+	logs := server.page("/api/ui/list_logs?query=request")
 
-	if !strings.Contains(logs, `href="/issues/`+orderIssue+`">Issue: Error: Order 298 has no items`) {
+	if !strings.Contains(logs, `"body":"log of the order request","trace_id":"`+trace+`","issue":{"id":"`+orderIssue+`","title":"Error: Order 298 has no items"}`) {
 		t.Fatalf("log not linked to its issue:\n%s", logs)
 	}
 }

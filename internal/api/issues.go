@@ -16,16 +16,16 @@ import (
 )
 
 type listIssuesInput struct {
-	Project string `json:"project,omitempty" jsonschema:"Project name or ID; every project when empty."`
-	Status  string `json:"status,omitempty" jsonschema:"Issue status, unresolved by default; all for every status."`
-	Level   string `json:"level,omitempty" jsonschema:"Issue level; every level when empty."`
-	Query   string `json:"query,omitempty" jsonschema:"Text in the issue title or location."`
-	Since   string `json:"since,omitempty" jsonschema:"RFC 3339 time, e.g. 2026-11-11T10:00:00Z: only issues with an event at or after it."`
-	Until   string `json:"until,omitempty" jsonschema:"RFC 3339 time: only issues with an event before it."`
-	DateBy  string `json:"date_by,omitempty" jsonschema:"What since/until apply to; by default any event of the issue, its first or last seen time included."`
-	Sort    string `json:"sort,omitempty" jsonschema:"Order, last_seen by default: a field newest or most first, with _asc the reverse; project A to Z, project_desc the reverse."`
-	Limit   int    `json:"limit,omitempty" jsonschema:"Issues per page."`
-	Cursor  string `json:"cursor,omitempty" jsonschema:"next_cursor of the previous page."`
+	Project []string `json:"project,omitempty" jsonschema:"Project names or IDs; every project when empty."`
+	Status  string   `json:"status,omitempty" jsonschema:"Issue status, unresolved by default; all for every status."`
+	Level   []string `json:"level,omitempty" jsonschema:"Issue levels; every level when empty."`
+	Query   string   `json:"query,omitempty" jsonschema:"Text in the issue title or location."`
+	Since   string   `json:"since,omitempty" jsonschema:"RFC 3339 time, e.g. 2026-11-11T10:00:00Z: only issues with an event at or after it."`
+	Until   string   `json:"until,omitempty" jsonschema:"RFC 3339 time: only issues with an event before it."`
+	DateBy  string   `json:"date_by,omitempty" jsonschema:"What since/until apply to; by default any event of the issue, its first or last seen time included."`
+	Sort    string   `json:"sort,omitempty" jsonschema:"Order, last_seen by default: a field newest or most first, with _asc the reverse; project A to Z, project_desc the reverse."`
+	Limit   int      `json:"limit,omitempty" jsonschema:"Issues per page."`
+	Cursor  string   `json:"cursor,omitempty" jsonschema:"next_cursor of the previous page."`
 }
 
 // statusFilters are the values of list_issues' status: "all" lists every status.
@@ -104,7 +104,7 @@ func (handler *handlers) issueFilter(input listIssuesInput) (store.IssueFilter, 
 		filter.Status = input.Status
 	}
 
-	filter.Levels = levels(input.Level)
+	filter.Levels = input.Level
 
 	if filter.SeenSince, err = parseTime("since", input.Since); err != nil {
 		return filter, err

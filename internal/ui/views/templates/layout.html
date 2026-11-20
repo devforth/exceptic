@@ -32,7 +32,7 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20L12 3Z M12 10v4 M12 17h.01"/></svg><span>Issues</span>
           {{with .UnresolvedIssues}}<b class="nav-count" aria-label="{{.}} unresolved">{{if gt . 999}}999+{{else}}{{.}}{{end}}</b>{{end}}
         </a>
-        <a href="/logs" title="Logs" {{if eq .Section "logs"}}class="active" aria-current="page"{{end}}>
+        <a href="/logs" title="Logs">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16 M4 12h16 M4 18h10"/></svg><span>Logs</span>
         </a>
       </div>
