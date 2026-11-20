@@ -1,5 +1,16 @@
 # syntax=docker/dockerfile:1
 
+# The single-page app: static files, the same for every platform.
+FROM --platform=$BUILDPLATFORM node:24-alpine AS web
+WORKDIR /web
+RUN corepack enable
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
+COPY web/patches patches
+RUN pnpm install --frozen-lockfile
+COPY web/ ./
+RUN pnpm build
+
+
 FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 WORKDIR /src
 
@@ -7,6 +18,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+COPY --from=web /web/dist/spa web/dist/spa
 ARG TARGETOS TARGETARCH
 ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \

@@ -3,6 +3,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/devforth/exceptic/internal/storage/database"
 	"github.com/devforth/exceptic/internal/storage/projects"
 	"github.com/devforth/exceptic/internal/ui"
+	"github.com/devforth/exceptic/web"
 )
 
 // Options are what a server is built from: main fills them from the
@@ -70,6 +72,18 @@ func New(ctx context.Context, options Options) (*App, error) {
 		return nil, err
 	}
 
+	// The single-page app is embedded at build time; without Node a build has none.
+	var spa server.Routes
+
+	switch webApp, err := web.New(); {
+	case errors.Is(err, web.ErrNotBuilt):
+		logger.Warn("web app not built, "+web.Base+"/ is not served", "build", "make web")
+	case err != nil:
+		return nil, err
+	default:
+		spa = webApp
+	}
+
 	app := &App{Registry: registry, OAuth: authorization, Services: all, options: options}
 	app.notifier = notify.New(notify.Options{
 		Store: db, Channels: options.Factory, Logger: logger,
@@ -89,6 +103,7 @@ func New(ctx context.Context, options Options) (*App, error) {
 		MCP:            api.NewMCP(logger, db, endpoints, authorization, settings.AppName, options.Version),
 		OAuth:          authorization,
 		UI:             webUI,
+		Web:            spa,
 		APIToken:       settings.APIToken,
 		AllowedIPs:     settings.AllowedIPs,
 		TrustedProxies: settings.TrustedProxies,

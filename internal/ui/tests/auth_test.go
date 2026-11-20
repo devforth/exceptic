@@ -12,6 +12,7 @@ import (
 	"github.com/devforth/exceptic/internal/storage/storetest"
 
 	"github.com/devforth/exceptic/internal/platform/config"
+	"github.com/devforth/exceptic/web"
 )
 
 func TestLogin(t *testing.T) {
@@ -319,7 +320,7 @@ func TestAllowedIPsCoverEveryRoute(t *testing.T) {
 		"/", "/login", "/logout", "/account", "/issues", "/logs", "/projects", "/projects/cleanups", "/notifications", "/users",
 		"/agents", "/static/app.js", "/project-colors.css", "/no-such-page", "/mcp", "/oauth/authorize", "/oauth/token",
 		"/oauth/register", "/.well-known/oauth-authorization-server", "/.well-known/oauth-protected-resource/mcp",
-		"/.well-known/openid-configuration", "/api/v1/list_issues", "/api/unknown",
+		"/.well-known/openid-configuration", "/api/v1/list_issues", "/api/unknown", web.Base + "/", web.Base + "/issues",
 	}
 
 	for _, path := range paths {

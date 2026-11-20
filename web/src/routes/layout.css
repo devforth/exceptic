@@ -1,0 +1,7 @@
+@import 'tailwindcss';
+
+/* SvelteKit's announcer of page changes for screen readers, visually hidden.
+   Its inline style is patched out (patches/), the CSP allows no inline styles. */
+#svelte-announcer {
+	@apply sr-only;
+}

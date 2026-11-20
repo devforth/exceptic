@@ -67,12 +67,13 @@ Or copy the folder to `~/.claude/skills/` (Claude Code) or `~/.agents/skills/` (
 
 ## Development
 
-Needs Go (see `go.mod`) and [golangci-lint](https://golangci-lint.run) v2.
+Needs Go (see `go.mod`), [golangci-lint](https://golangci-lint.run) v2, and for the new web app (`web/`, SvelteKit) Node 24 with pnpm (`corepack enable`).
 
 ```sh
 cp .env.example .env.local   # then set ADMIN_PASSWORD and the other values
 make run                     # http://localhost:8000
-make test lint               # what CI runs
+make web-dev                 # the new web app with hot reload: http://localhost:5173/next/
+make test lint web-check     # what CI runs
 make docker image-size       # build the image and check its size
 ```
 

@@ -5,6 +5,9 @@ data
 testdata
 tools
 bin
+web/node_modules
+web/.svelte-kit
+web/dist/spa
 .env
 .env.*
 # the UI quotes these docs as field hints (package docs embeds them)

@@ -2,7 +2,7 @@ IMAGE ?= devforth/exceptic
 VERSION ?= dev
 MAX_IMAGE_MB ?= 50
 
-.PHONY: test lint fix build run backup docker image-size
+.PHONY: test lint fix build web web-deps web-check web-dev run backup docker image-size
 
 test:
 	go test -race ./...
@@ -16,8 +16,23 @@ fix:
 	golangci-lint fmt
 	golangci-lint run --fix
 
-build:
+build: web
 	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o bin/exceptic ./cmd/exceptic
+
+# The single-page app (web/, Node and pnpm): built into web/dist/spa, which Go embeds.
+web: web-deps
+	cd web && pnpm build
+
+web-deps:
+	cd web && pnpm install --frozen-lockfile
+
+# Types (svelte-check), formatting (prettier) and eslint.
+web-check: web-deps
+	cd web && pnpm check && pnpm lint
+
+# The app with hot reload at http://localhost:5173/next/; every other address goes to `make run`.
+web-dev: web-deps
+	cd web && pnpm dev
 
 # Loads .env and then .env.local (both optional, gitignored; see .env.example).
 # Values from the files override the shell, so one-off variables like

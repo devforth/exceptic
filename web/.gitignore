@@ -1,0 +1,11 @@
+node_modules
+/.svelte-kit
+# the build, embedded by web.go; dist/.gitkeep stays so Go builds without it
+/dist/spa/
+
+# Env
+.env
+.env.*
+
+# Vite
+vite.config.ts.timestamp-*

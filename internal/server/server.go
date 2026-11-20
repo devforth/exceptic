@@ -32,7 +32,9 @@ type Options struct {
 	MCP   Routes
 	OAuth Routes
 	// UI adds the web interface; it handles its own login, the server adds the IP allowlist.
-	UI             Routes
+	UI Routes
+	// Web adds the single-page app (package web) that replaces the UI; the server adds the IP allowlist.
+	Web            Routes
 	APIToken       string
 	AllowedIPs     []netip.Prefix
 	TrustedProxies []netip.Prefix
@@ -68,6 +70,10 @@ func (server *Server) Handler() http.Handler {
 
 	if server.UI != nil {
 		server.UI.Register(router, server.protectUI)
+	}
+
+	if server.Web != nil {
+		server.Web.Register(router, server.protectUI)
 	}
 
 	return server.logRequests(router)
