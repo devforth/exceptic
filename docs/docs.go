@@ -40,6 +40,42 @@ func Field(section, label string) (string, error) {
 	return lookup(fields, section, label, "ui.md")
 }
 
+// Fields are what ui.md says of every field, by section and label, for the
+// web app's generated help.
+func Fields() map[string]map[string]string {
+	result := map[string]map[string]string{}
+
+	for name, text := range fields {
+		section, label, _ := strings.Cut(name, "/")
+
+		if result[section] == nil {
+			result[section] = map[string]string{}
+		}
+
+		result[section][label] = text
+	}
+
+	return result
+}
+
+// Settings are what configuration.md says of every environment variable, by
+// name, for the web app's generated help; an error when a name is described twice.
+func Settings() (map[string]string, error) {
+	result := map[string]string{}
+
+	for name, text := range settings {
+		_, variable, _ := strings.Cut(name, "/")
+
+		if _, ok := result[variable]; ok {
+			return nil, fmt.Errorf("docs/configuration.md describes %s twice", variable)
+		}
+
+		result[variable] = text
+	}
+
+	return result, nil
+}
+
 func lookup(texts map[string]string, section, key, file string) (string, error) {
 	if text, ok := texts[section+"/"+key]; ok {
 		return text, nil

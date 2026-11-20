@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/devforth/exceptic/internal/api"
+	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/platform/secret"
 	"github.com/devforth/exceptic/internal/session"
 	"github.com/devforth/exceptic/internal/storage/store"
@@ -287,6 +288,24 @@ func TestUICrossSite(t *testing.T) {
 	}
 }
 
+// A refused form names each field by its input name, so the page shows the
+// error next to it.
+func TestUIFormErrors(t *testing.T) {
+	server := newRESTServer(t)
+	admin := server.webUser(store.RoleAdmin, false)
+	response := admin.call(http.MethodPost, "create_project", `{"name":"Not Valid"}`)
+
+	var body api.ErrorBody
+
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil || response.Code != http.StatusBadRequest {
+		t.Fatalf("%d %s", response.Code, response.Body)
+	}
+
+	if body.Fields["name"] == "" || !strings.Contains(body.Error, "name: "+body.Fields["name"]) {
+		t.Errorf("fields %v, error %q", body.Fields, body.Error)
+	}
+}
+
 // Changes are recorded as the user, from the web app.
 func TestUIActsAsTheUser(t *testing.T) {
 	server := newRESTServer(t)
@@ -338,11 +357,12 @@ type sessionAnswer struct {
 		ID                 string `json:"id"`
 		MustChangePassword bool   `json:"must_change_password"`
 	} `json:"user"`
-	DisplayName      string `json:"display_name"`
-	CanAdminister    bool   `json:"can_administer"`
-	AppName          string `json:"app_name"`
-	UnresolvedIssues int    `json:"unresolved_issues"`
-	ProjectColorsURL string `json:"project_colors_url"`
+	DisplayName      string            `json:"display_name"`
+	CanAdminister    bool              `json:"can_administer"`
+	AppName          string            `json:"app_name"`
+	UnresolvedIssues int               `json:"unresolved_issues"`
+	ProjectColorsURL string            `json:"project_colors_url"`
+	ProjectColors    map[string]string `json:"project_colors"`
 }
 
 // The web app's menu: who is logged in, what they may do, the counter and the colors.
@@ -370,6 +390,12 @@ func TestGetSession(t *testing.T) {
 			session.AppName != server.app.Services.AppName || session.UnresolvedIssues != unresolved ||
 			session.ProjectColorsURL != server.app.Services.Projects.ColorsURL() {
 			t.Errorf("%s: %+v", role, session)
+		}
+
+		for _, project := range server.app.Services.Projects.List() {
+			if color := session.ProjectColors[project.Name]; color != project.Color || !config.ValidColor(color) {
+				t.Errorf("%s: color of %s %q, want %q", role, project.Name, color, project.Color)
+			}
 		}
 	}
 

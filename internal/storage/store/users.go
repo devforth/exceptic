@@ -59,14 +59,17 @@ func (user User) CanAccessAgentsOf(owner User) bool {
 	return owner.ID == user.ID || user.CanManage(owner)
 }
 
-// AssignableRoles are the roles user may give: there is one superadmin, so
-// never that one.
+// AssignableRoles are the roles an administrator may give: there is one
+// superadmin, so never that one.
+var AssignableRoles = []string{RoleAdmin, RoleUser}
+
+// AssignableRoles are the roles user may give.
 func (user User) AssignableRoles() []string {
 	if !user.CanAdminister() {
 		return nil
 	}
 
-	return []string{RoleAdmin, RoleUser}
+	return slices.Clone(AssignableRoles)
 }
 
 // CanAssign reports whether user may give role.

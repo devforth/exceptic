@@ -11,6 +11,8 @@ type sessionOutput struct {
 	UnresolvedIssues int    `json:"unresolved_issues"`
 	// ProjectColorsURL is the stylesheet of the project colors (inline styles are blocked).
 	ProjectColorsURL string `json:"project_colors_url"`
+	// ProjectColors: the shown color of every project by name, #rrggbb.
+	ProjectColors map[string]string `json:"project_colors"`
 }
 
 type storageOutput struct {
@@ -42,5 +44,6 @@ func (handler *handlers) getSession(ctx context.Context, call Call, _ noInput) (
 	return sessionOutput{
 		User: userView(call.Viewer), DisplayName: call.Viewer.DisplayName(), CanAdminister: call.Viewer.CanAdminister(),
 		AppName: handler.services.AppName, UnresolvedIssues: unresolved, ProjectColorsURL: handler.services.Projects.ColorsURL(),
+		ProjectColors: handler.services.Projects.ColorsByName(),
 	}, nil
 }

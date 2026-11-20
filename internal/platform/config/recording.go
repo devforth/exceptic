@@ -146,20 +146,18 @@ func ownOr(own *[]string, defaults []string) []string {
 	return defaults
 }
 
-// EventLevel maps a level to one of Levels: "critical" is fatal, "warn"
-// warning, "log" info, "trace" debug (so log levels map too), anything else
-// unknown counts as error. Ingest stores events with it, so the database
-// and everything reading it know only these names.
+// EventLevelAliases are the other names SDKs give event levels (log levels
+// among them), each with the one of Levels it means.
+var EventLevelAliases = map[string]string{"critical": "fatal", "warn": "warning", "log": "info", "trace": "debug"}
+
+// EventLevel maps a level to one of Levels through EventLevelAliases;
+// anything else unknown counts as error. Ingest stores events with it, so
+// the database and everything reading it know only these names.
 func EventLevel(level string) string {
-	switch level = strings.ToLower(level); level {
-	case "critical":
-		return "fatal"
-	case "warn":
-		return "warning"
-	case "log":
-		return "info"
-	case "trace":
-		return "debug"
+	level = strings.ToLower(level)
+
+	if alias, ok := EventLevelAliases[level]; ok {
+		return alias
 	}
 
 	if slices.Contains(Levels, level) {

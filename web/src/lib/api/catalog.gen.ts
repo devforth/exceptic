@@ -118,8 +118,8 @@ export interface Endpoints {
 			username: string;
 			/** Display name. */
 			name?: string;
-			/** admin or user. */
-			role: string;
+			/** The role. */
+			role: 'admin' | 'user';
 		};
 		out: {
 			user: {
@@ -260,6 +260,7 @@ export interface Endpoints {
 			app_name: string;
 			unresolved_issues: number;
 			project_colors_url: string;
+			project_colors: Record<string, string>;
 		};
 	};
 	get_storage: {
@@ -636,8 +637,8 @@ export interface Endpoints {
 			user_id: string;
 			/** Display name. */
 			name?: string | null;
-			/** admin or user. */
-			role?: string | null;
+			/** The role. */
+			role?: '' | 'admin' | 'user';
 		};
 		out: {
 			id: string;
@@ -689,6 +690,69 @@ export const endpoints = {
 	update_user: { method: 'POST', text: false, admin: true, destructive: false, confirm: true },
 } as const;
 
+/** Inputs and outputs of the plain requests: logins and credentials, which no endpoint handles. */
+export interface PlainRequests {
+	login_state: {
+		in: {
+			next?: string;
+		};
+		out: {
+			app_name: string;
+			disabled: boolean;
+			redirect?: string;
+		};
+	};
+	login: {
+		in: {
+			username: string;
+			password: string;
+			next?: string;
+		};
+		out: {
+			next: string;
+		};
+	};
+	logout: {
+		in: Record<string, never>;
+		out: void;
+	};
+	change_password: {
+		in: {
+			current_password: string;
+			password: string;
+			confirm_password: string;
+		};
+		out: void;
+	};
+	personal_token: {
+		in: Record<string, never>;
+		out: {
+			token: string;
+			preview: string;
+			setup_prompt: string;
+		};
+	};
+}
+
+/** How each plain request is sent. */
+export const plainRequests = {
+	login_state: { method: 'GET' },
+	login: { method: 'POST' },
+	logout: { method: 'POST' },
+	change_password: { method: 'POST' },
+	personal_token: { method: 'POST' },
+} as const;
+
+/** The answer to a refused request: fields by input name, the record that already exists. */
+export type ErrorBody = {
+	error: string;
+	fields?: Record<string, string>;
+	duplicate?: {
+		id: string;
+		name: string;
+	} | null;
+};
+
 /** The values input fields take. */
 export const choices = {
 	count_logs: {
@@ -700,6 +764,9 @@ export const choices = {
 	create_project: {
 		event_levels: ['debug', 'info', 'warning', 'error', 'fatal'],
 		log_levels: ['trace', 'debug', 'info', 'warn', 'error', 'fatal'],
+	},
+	create_user: {
+		role: ['admin', 'user'],
 	},
 	list_deliveries: {
 		status: ['pending', 'sent', 'failed'],
@@ -723,6 +790,9 @@ export const choices = {
 		event_levels: ['debug', 'info', 'warning', 'error', 'fatal'],
 		log_levels: ['trace', 'debug', 'info', 'warn', 'error', 'fatal'],
 	},
+	update_user: {
+		role: ['admin', 'user'],
+	},
 } as const;
 
 /** Event and log levels, highest first, as the app lists them. */
@@ -731,7 +801,7 @@ export const levels = {
 	log: ['fatal', 'error', 'warn', 'info', 'debug', 'trace']
 } as const;
 
-/** The color group a level is shown in. */
+/** The color group a level is shown in, the other names SDKs use included. */
 export const shownLevel = {
 	debug: 'debug',
 	info: 'info',
@@ -740,4 +810,93 @@ export const shownLevel = {
 	fatal: 'error',
 	trace: 'debug',
 	warn: 'warning',
+	critical: 'error',
+	log: 'info',
+} as const;
+
+/** The limits of form fields, as the server checks them; a pattern must match the whole value. */
+export const limits = {
+	connectionName: 100,
+	username: 64,
+	usernamePattern: '[A-Za-z0-9._@\\-]+',
+	displayName: 100,
+	minPassword: 12,
+	maxPassword: 256,
+	projectName: 64,
+	projectNamePattern: '[a-z][a-z0-9_\\-]*|[0-9][a-z0-9_\\-]*[a-z_\\-][a-z0-9_\\-]*',
+	verificationCode: 6,
+	telegramToken: '\\d+:[A-Za-z0-9_\\-]{20,}',
+	telegramChat: '-?\\d+|@[A-Za-z0-9_]{5,}',
+	slackToken: 'xoxb-[A-Za-z0-9\\-]{10,}',
+	slackChannel: '#?[A-Za-z0-9._\\-]{1,80}',
+} as const;
+
+/** Issue statuses in the order of the status filter, with what each means. */
+export const issueStatuses = [
+	{ name: 'unresolved', meaning: 'still happening or not looked at yet' },
+	{ name: 'resolved', meaning: 'fixed, reopens if the error happens again' },
+	{ name: 'ignored', meaning: 'no notifications, stays ignored' },
+] as const;
+
+/** The most issues one action takes. */
+export const maxActionIssues = 1000;
+
+/** What each role may do. */
+export const roleSummaries = {
+	admin: 'projects, notifications, users and deleting issues',
+	superadmin: 'everything',
+	user: 'issue statuses, logs, project DSNs and their own coding agents',
+} as const;
+
+/** The help of the settings pages: docs/ui.md by section and field label, docs/configuration.md by variable. */
+export const help = {
+	fields: {
+		'Notifications': {
+			'Active': 'Off: nothing is sent, and messages waiting for a retry fail.',
+			'Channel ID': 'The channel the Slack bot posts to (C0123456789, at the bottom of the channel details). Invite the bot to it first.',
+			'Chat ID': 'The chat the bot writes to: a number (negative for groups; supergroups and channels start with -100) or @channel_name of a public channel. To find the number, write a message in the chat and press Find chat ID: it is chat.id in the answer.',
+			'Email address': 'Gets a 6-digit code first; the connection sends nothing until the code is entered. An address confirmed before is accepted at once.',
+			'Include Open issue link': 'Adds a link to the issue page (needs PUBLIC_URL). Off by default for chats, which people outside the team may read.',
+			'Incoming webhook URL': 'A Slack incoming webhook; it posts to the channel chosen when it was created. Mattermost and Rocket.Chat webhooks work too. Stored encrypted.',
+			'Levels': 'Levels that are sent. Events of other levels are still stored, they only do not notify.',
+			'Projects': 'Projects whose issues are sent. All projects includes the ones added later.',
+			'Slack bot token': 'Optional, instead of the webhook: a bot token (xoxb-…) with the chat:write scope. The bot posts each error and puts the prompt for a coding agent in a thread under it. A new token replaces a saved webhook, and a new webhook without a token replaces a saved bot and its channel. Stored encrypted.',
+			'Telegram bot token': 'The token @BotFather gives for your bot. The bot must be a member of the chat. Stored encrypted.',
+			'Type': 'Email needs a mail server (SMTP_HOST); Telegram and Slack need only the tokens entered below.',
+		},
+		'Projects': {
+			'Color': 'Marks the project\'s badge in lists and the header of its emails.',
+			'DSN': 'The address the app\'s Sentry SDK sends errors and logs to. The key in it only allows sending to this project, so it can be in browser code.',
+			'Errors and messages': 'Event levels to store. Events of other levels are dropped when they arrive: not stored, no notifications. Unchanged, the project follows RECORD_EVENT_LEVELS.',
+			'Logs': 'Log levels to store; others are dropped when they arrive. Unchanged, the project follows RECORD_LOG_LEVELS.',
+		},
+	},
+	settings: {
+		ADMIN_PASSWORD: '12 to 256 characters. Needed for the first start; later changes are ignored (change the password in the UI, or see forgotten password). Until it is set, nobody can log in.',
+		ADMIN_USERNAME: 'The superadmin, created at the first start only: up to 64 letters, digits and . _ @ -.',
+		ALLOWED_IPS: 'Addresses or networks (203.0.113.7,10.0.0.0/8) allowed to open the UI, REST API and MCP; others get 403, and LOG_LEVEL=debug logs the address the server saw. Ingest and /health stay open. In Docker the host itself, and with "8000:8000" every IPv6 client, reach the container from the compose network\'s gateway, so never let the list cover it (no 172.16.0.0/12 or 192.168.0.0/16); behind a proxy the client address comes from TRUSTED_PROXIES.',
+		ALLOWED_ORIGINS: 'Browser origins allowed to send events (CORS), e.g. https://app.example.com,https://admin.example.com. Backend SDKs send no origin and are always allowed.',
+		API_TOKEN: 'Token of the REST API, at least 32 characters (openssl rand -hex 32). Without it the REST API is closed. MCP does not use it.',
+		APP_NAME: 'Shown in the UI, emails and notifications, and to coding agents, who register the MCP server under it in lowercase with dashes (Acme Errors → acme-errors). Up to 60 characters.',
+		DATA_DIR: 'Where the database (leveldb) lives, and secret.key when SECRET_KEY is not set. Keep it on a volume.',
+		EMAIL_FROM: 'Sender address; required with SMTP_HOST.',
+		GOMEMLIMIT: 'The memory the server aims to stay under: the Go runtime collects garbage harder as it nears it. A soft limit, not a cap. Takes MiB, GiB.',
+		LOG_FORMAT: 'auto: readable colored lines in a terminal, logfmt otherwise (e.g. docker logs). Or pretty, text, json. NO_COLOR turns colors off.',
+		LOG_LEVEL: 'debug, info, warn, error. debug also logs every request and every rejected envelope.',
+		MAX_DATABASE_SIZE: 'Once the database reaches it, the least useful data is deleted until the database is at 80%. Takes KB, MB, GB, at least 500MB; 0 turns the limit off, and nothing is deleted or thinned. Envelopes waiting to be stored may take 20% of it (of 2GB when it is off); beyond that new ones get 429 until the queue drains.',
+		NOTIFY_KEEP_FAILED: 'Failed messages are deleted after this.',
+		NOTIFY_KEEP_SENT: 'Delivered messages are deleted from the delivery log after this.',
+		NOTIFY_RETRY_FOR: 'A message that cannot be delivered is retried (2s, 10s, 30s, … then hourly) this long, then marked failed.',
+		PORT: 'Port to listen on.',
+		PROJECTS: 'Optional: id:name:public_key,..., e.g. 1:backend:<key>,2:frontend:<key>. The id is from 1 to 4294967295, the key is 16–64 letters or digits (openssl rand -hex 16). Written to the database at every start; such projects can only change their color and levels in the UI. One removed from the list stays, DSN included, and can then be edited or deleted on the Projects page. Projects can also be added in the UI.',
+		PUBLIC_URL: 'The address users and SDKs reach the server at, e.g. https://errors.example.com (a path prefix is kept). Used for links in notifications, the DSNs on the Projects page and the MCP address. Without it, DSNs use the address the UI was opened with and notifications have no links.',
+		RATE_LIMIT_PER_MINUTE: 'Envelopes with events or logs per project per minute (spans and other dropped items do not count); over it SDKs get 429 and back off. 0 = no limit.',
+		RECORD_EVENT_LEVELS: 'Event levels to store: fatal, error, warning, info, debug, or all/none. Others are dropped on arrival and never notify. A project can choose its own on the Projects page.',
+		RECORD_LOG_LEVELS: 'Log levels to store: fatal, error, warn, info, debug, trace, or all/none.',
+		SECRET_KEY: 'At least 32 characters (openssl rand -hex 32). Encrypts Telegram tokens and Slack webhooks and tokens in the database. Without it a key is generated at the first start into DATA_DIR/secret.key; that protects a leaked copy of the database (DATA_DIR/leveldb) but not a copy of the whole data directory, so on a server set it and keep it outside. Do not lose or change it: stored chats stop working (enter their tokens again). To move a generated key out, set SECRET_KEY to the contents of secret.key, then delete the file.',
+		SESSION_LIFETIME: 'How long a login to the UI lasts (12h, 7d); it is not extended by use, so then you log in again.',
+		SMTP_HOST: 'Mail server, without the port (that is SMTP_PORT); required for email.',
+		SMTP_PORT: 'Port 465 uses TLS from the start, others STARTTLS when the server offers it; without it mail goes unencrypted, and a login (SMTP_USERNAME) is refused unless the server is localhost.',
+		TRUSTED_PROXIES: 'Reverse proxies (addresses or networks) whose X-Forwarded-For and X-Forwarded-Proto are believed. Name only the proxy\'s own address (in Docker, the gateway of the compose network for a proxy on the host; see Deployment). Needed behind a proxy: for the client address (ALLOWED_IPS, login limits) and to know the page is HTTPS (secure cookies, DSNs).',
+	}
 } as const;

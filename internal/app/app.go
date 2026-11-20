@@ -103,7 +103,7 @@ func New(ctx context.Context, options Options) (*App, error) {
 		OAuth:          authorization,
 		UI:             webUI,
 		Web:            spa,
-		UIAPI:          api.NewUI(logger, endpoints, auth, settings.Notifications.PublicURL, settings.TrustedProxies),
+		UIAPI:          api.NewUI(logger, endpoints, nil, auth, settings.Notifications.PublicURL, settings.TrustedProxies),
 		APIToken:       settings.APIToken,
 		AllowedIPs:     settings.AllowedIPs,
 		TrustedProxies: settings.TrustedProxies,

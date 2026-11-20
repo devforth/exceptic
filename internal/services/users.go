@@ -74,7 +74,12 @@ func (users *Users) List(ctx context.Context) ([]store.User, error) {
 	return users.store.ListUsers(ctx)
 }
 
+// Get is the user id; an id of another shape is not found without a lookup.
 func (users *Users) Get(ctx context.Context, id string) (store.User, error) {
+	if !store.ValidID(id) {
+		return store.User{}, store.ErrNotFound
+	}
+
 	return users.store.GetUser(ctx, id)
 }
 
@@ -183,7 +188,7 @@ func (users *Users) setTemporaryPassword(ctx context.Context, id string, revokeA
 // manageable returns user id when the viewer may change them (ErrForbidden
 // otherwise).
 func (users *Users) manageable(ctx context.Context, viewer store.User, id string) (store.User, error) {
-	target, err := users.store.GetUser(ctx, id)
+	target, err := users.Get(ctx, id)
 
 	if err == nil && !viewer.CanManage(target) {
 		err = ErrForbidden

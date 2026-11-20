@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { isHttpError } from '@sveltejs/kit';
-import { ApiError, get, listAll, pageError, post, query } from './client.ts';
+import { ApiError, get, listAll, pageError, post, query, send } from './client.ts';
 
 const fetchMock = vi.fn<typeof fetch>();
 const assign = vi.fn();
@@ -79,6 +79,50 @@ describe('requests', () => {
 		expect(assign).not.toHaveBeenCalled();
 	});
 
+	it('names the refused fields and the record that already exists', async () => {
+		const body = {
+			error: 'name: taken',
+			fields: { name: 'taken' },
+			duplicate: { id: 'c0nnect1', name: 'alerts' }
+		};
+
+		fetchMock.mockResolvedValue(answer(400, body));
+
+		const failure = await post('create_project', { name: 'backend' }).catch(
+			(caught: unknown) => caught
+		);
+
+		expect(failure).toBeInstanceOf(ApiError);
+		expect(failure).toMatchObject({
+			status: 400,
+			message: 'name: taken',
+			fields: body.fields,
+			duplicate: body.duplicate
+		});
+	});
+
+	it('sends a plain request on its method, and an empty answer is nothing', async () => {
+		fetchMock.mockResolvedValue(answer(200, { app_name: 'Exceptic', disabled: false }));
+
+		expect(await send('login_state', { next: '/logs' })).toEqual({
+			app_name: 'Exceptic',
+			disabled: false
+		});
+		expect(fetchMock).toHaveBeenLastCalledWith('/api/ui/login_state?next=%2Flogs', {
+			credentials: 'same-origin'
+		});
+
+		fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+
+		expect(await send('logout')).toBeUndefined();
+		expect(fetchMock).toHaveBeenLastCalledWith('/api/ui/logout', {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: { 'Content-Type': 'application/json' },
+			body: '{}'
+		});
+	});
+
 	it('walks every page of a list', async () => {
 		fetchMock
 			.mockResolvedValueOnce(answer(200, { items: [{ id: 1 }], next_cursor: '1' }))
@@ -155,5 +199,23 @@ describe('an ended session', () => {
 			new back.ApiError(401, 'login required')
 		);
 		expect(assign).toHaveBeenCalledOnce();
+	});
+
+	it('is not a wrong password at the login, which the form shows', async () => {
+		fetchMock.mockImplementation(() =>
+			Promise.resolve(answer(401, { error: 'Wrong username or password.' }))
+		);
+
+		const page = await loadPage();
+
+		await expect(
+			page.send('login', { username: 'root', password: 'wrong-password' })
+		).rejects.toEqual(new page.ApiError(401, 'Wrong username or password.'));
+		expect(assign).not.toHaveBeenCalled();
+
+		// Any other plain request: the session ended.
+		void page.send('personal_token');
+
+		await vi.waitFor(() => expect(assign).toHaveBeenCalledOnce());
 	});
 });

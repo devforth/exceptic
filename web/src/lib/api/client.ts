@@ -1,7 +1,15 @@
-// The web app's requests to the catalog (/api/ui/<name>), typed by catalog.gen.ts.
+// The web app's requests to the catalog and its plain requests (/api/ui/<name>), typed by catalog.gen.ts.
 import { error } from '@sveltejs/kit';
 import { oldUI, withQuery } from '#lib/nav.ts';
-import { apiPrefix, endpoints, maxLimit, type Endpoints } from './catalog.gen.ts';
+import {
+	apiPrefix,
+	endpoints,
+	maxLimit,
+	plainRequests,
+	type Endpoints,
+	type ErrorBody,
+	type PlainRequests
+} from './catalog.gen.ts';
 
 export type Name = keyof Endpoints;
 export type In<N extends Name> = Endpoints[N]['in'];
@@ -18,16 +26,29 @@ export type ListName = {
 	[N in GetName]: Out<N> extends { items: unknown; next_cursor?: string } ? N : never;
 }[GetName];
 
-/** The input may be left out when every field is optional. */
-type Args<N extends Name> = Record<never, never> extends In<N> ? [input?: In<N>] : [input: In<N>];
+/** Logins and credentials, which no endpoint handles. */
+export type PlainName = keyof PlainRequests;
 
-/** A refused request: status and the server's message. 404 also stands for "not allowed". */
+/** The input may be left out when every field is optional. */
+type Args<Input> = Record<never, never> extends Input ? [input?: Input] : [input: Input];
+
+/**
+ * A refused request: status and the server's message. 404 also stands for "not allowed".
+ * A refused form names the problem of each field by its input name, and a record that
+ * already does what was asked (duplicate).
+ */
 export class ApiError extends Error {
+	readonly fields?: Record<string, string>;
+	readonly duplicate?: { id: string; name: string };
+
 	constructor(
 		readonly status: number,
-		message: string
+		message: string,
+		body?: Omit<ErrorBody, 'error'>
 	) {
 		super(message);
+		this.fields = body?.fields;
+		this.duplicate = body?.duplicate ?? undefined;
 	}
 }
 
@@ -40,12 +61,23 @@ export function pageError(failure: unknown): never {
 	throw failure;
 }
 
-export function get<N extends GetName>(name: N, ...[input]: Args<N>): Promise<Out<N>> {
+export function get<N extends GetName>(name: N, ...[input]: Args<In<N>>): Promise<Out<N>> {
 	return request(name, input ?? {});
 }
 
-export function post<N extends PostName>(name: N, ...[input]: Args<N>): Promise<Out<N>> {
+export function post<N extends PostName>(name: N, ...[input]: Args<In<N>>): Promise<Out<N>> {
 	return request(name, input ?? {});
+}
+
+// Their 401 answers the form (a wrong password), not an ended session.
+const loginRequests: readonly PlainName[] = ['login', 'login_state'];
+
+/** A plain request: a login or a credential. */
+export function send<N extends PlainName>(
+	name: N,
+	...[input]: Args<PlainRequests[N]['in']>
+): Promise<PlainRequests[N]['out']> {
+	return call(name, plainRequests[name].method, false, input ?? {}, loginRequests.includes(name));
 }
 
 /** Every item of a paged list, page by page. */
@@ -66,8 +98,20 @@ export async function listAll<N extends ListName>(name: N, input?: In<N>): Promi
 	return items;
 }
 
-async function request<N extends Name>(name: N, input: object): Promise<Out<N>> {
+function request<N extends Name>(name: N, input: object): Promise<Out<N>> {
 	const { method, text } = endpoints[name];
+
+	return call(name, method, text, input, false);
+}
+
+/** loginAnswer: a 401 is the answer to show, not a reason to go to the login. */
+async function call<Output>(
+	name: string,
+	method: 'GET' | 'POST',
+	text: boolean,
+	input: object,
+	loginAnswer: boolean
+): Promise<Output> {
 	const init: RequestInit =
 		method === 'GET'
 			? { credentials: 'same-origin' }
@@ -79,17 +123,21 @@ async function request<N extends Name>(name: N, input: object): Promise<Out<N>> 
 				};
 	const response = await fetch(apiPrefix + name + (method === 'GET' ? query(input) : ''), init);
 
-	if (response.status === 401) {
+	if (response.status === 401 && !loginAnswer) {
 		return toLogin();
 	}
 
 	if (!response.ok) {
-		const body = (await response.json().catch(() => null)) as { error?: string } | null;
+		const body = (await response.json().catch(() => null)) as Partial<ErrorBody> | null;
 
-		throw new ApiError(response.status, body?.error ?? response.statusText);
+		throw new ApiError(response.status, body?.error ?? response.statusText, body ?? undefined);
 	}
 
-	return (text ? await response.text() : await response.json()) as Out<N>;
+	if (response.status === 204) {
+		return undefined as Output;
+	}
+
+	return (text ? await response.text() : await response.json()) as Output;
 }
 
 /** A read's input as the REST transport takes it: a list as repeated names, nothing for an empty value. */

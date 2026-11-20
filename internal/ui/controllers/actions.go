@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/devforth/exceptic/internal/server"
 	"github.com/devforth/exceptic/internal/services"
 	"github.com/devforth/exceptic/internal/ui/requests"
 )
@@ -53,7 +54,7 @@ func (controller *Controllers) BulkIssueAction(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	redirectAfterPost(w, r, requests.SafeNext(r.PostFormValue("return")))
+	redirectAfterPost(w, r, server.SafeNext(r.PostFormValue("return")))
 }
 
 // runAction applies the action and writes an error response if it fails.

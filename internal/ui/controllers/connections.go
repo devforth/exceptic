@@ -6,9 +6,9 @@ import (
 	"net/http"
 
 	"github.com/devforth/exceptic/internal/platform/config"
+	"github.com/devforth/exceptic/internal/server"
 	"github.com/devforth/exceptic/internal/services"
 	"github.com/devforth/exceptic/internal/storage/store"
-	"github.com/devforth/exceptic/internal/ui/requests"
 )
 
 // Notification connections: where alerts go (an email address, a Telegram
@@ -168,7 +168,7 @@ func (controller *Controllers) RetryConnection(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	target := requests.SafeNext(r.PostFormValue("return"))
+	target := server.SafeNext(r.PostFormValue("return"))
 
 	if r.PostFormValue("return") == "" {
 		target = fmt.Sprintf("/notifications/%s", connection.ID)

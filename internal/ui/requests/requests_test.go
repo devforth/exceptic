@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/devforth/exceptic/internal/services"
 )
 
 func postForm(form url.Values) *http.Request {
@@ -29,33 +31,13 @@ func TestReadBulkIssues(t *testing.T) {
 		t.Errorf("bad id: problem = %q", problem)
 	}
 
-	many := make([]string, maxBulkIssues+1)
+	many := make([]string, services.MaxActionIssues+1)
 
 	for index := range many {
 		many[index] = fmt.Sprint(index + 1)
 	}
 
 	if _, problem := ReadBulkIssues(postForm(url.Values{"issue": many})); problem == "" {
-		t.Errorf("%d issues accepted, want the limit of %d", len(many), maxBulkIssues)
-	}
-}
-
-func TestSafeNext(t *testing.T) {
-	for next, want := range map[string]string{
-		"/logs?level=error":    "/logs?level=error",
-		"":                     "/issues",
-		"https://example.com/": "/issues",
-		"//example.com/":       "/issues",
-		"/\\example.com":       "/issues",
-		// Browsers drop tabs and newlines and read a backslash as a slash.
-		"/\t/example.com":  "/issues",
-		"/\n/example.com":  "/issues",
-		"/\t\\example.com": "/issues",
-		"/issues?q=a b":    "/issues",
-		"/issues?q=a%20b":  "/issues?q=a%20b",
-	} {
-		if got := SafeNext(next); got != want {
-			t.Errorf("SafeNext(%q) = %q, want %q", next, got, want)
-		}
+		t.Errorf("%d issues accepted, want the limit of %d", len(many), services.MaxActionIssues)
 	}
 }

@@ -32,3 +32,15 @@ func TestField(t *testing.T) {
 		}
 	}
 }
+
+func TestFieldsAndSettings(t *testing.T) {
+	if text := Fields()["Notifications"]["Chat ID"]; !strings.HasPrefix(text, "The chat the bot writes to") {
+		t.Errorf("Chat ID: %q", text)
+	}
+
+	settings, err := Settings()
+
+	if err != nil || settings["NOTIFY_KEEP_SENT"] != "Delivered messages are deleted from the delivery log after this." {
+		t.Errorf("NOTIFY_KEEP_SENT: %q %v", settings["NOTIFY_KEEP_SENT"], err)
+	}
+}

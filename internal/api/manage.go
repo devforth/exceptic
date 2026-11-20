@@ -72,11 +72,13 @@ func (handler *handlers) management() []Endpoint {
 			Name:        "create_user",
 			Description: "Add a user with a role (admin or user). Returns a temporary password, shown only this once, that the user must change at the first login: give it to the user privately.",
 			Admin:       true, Transports: ActsAsUser, Confirm: true,
+			Choices: map[string][]string{"role": store.AssignableRoles},
 		}, handler.createUser),
 		Define(Endpoint{
 			Name:        "update_user",
 			Description: "Change another user's name or role (admin or user); fields not given keep their values. Not the superadmin, not yourself (update_account_name).",
 			Idempotent:  true, Admin: true, Transports: ActsAsUser, Confirm: true,
+			Choices: map[string][]string{"role": store.AssignableRoles},
 		}, handler.updateUser),
 		Define(Endpoint{
 			Name:        "reset_user_password",
@@ -337,7 +339,7 @@ func (handler *handlers) listUsers(ctx context.Context, _ Call, _ noInput) (Page
 type createUserInput struct {
 	Username string `json:"username" jsonschema:"Login name: letters, digits and . _ @ -."`
 	Name     string `json:"name,omitempty" jsonschema:"Display name."`
-	Role     string `json:"role" jsonschema:"admin or user."`
+	Role     string `json:"role" jsonschema:"The role."`
 }
 
 type passwordOutput struct {
@@ -375,7 +377,7 @@ type userInput struct {
 type updateUserInput struct {
 	UserID string  `json:"user_id" jsonschema:"id from list_users."`
 	Name   *string `json:"name,omitempty" jsonschema:"Display name."`
-	Role   *string `json:"role,omitempty" jsonschema:"admin or user."`
+	Role   *string `json:"role,omitempty" jsonschema:"The role."`
 }
 
 func (handler *handlers) updateUser(ctx context.Context, call Call, input updateUserInput) (userOutput, error) {
