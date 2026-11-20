@@ -107,11 +107,11 @@ func TestBackLinks(t *testing.T) {
 	server.login()
 
 	for path, want := range map[string]string{
-		"/issues/" + issueIDs(server.page("/issues"))[0]: `<a href="/issues" data-back`,
-		"/projects/1":        `<a href="/projects" data-back`,
-		"/projects/cleanups": `<a href="/projects" data-back`,
-		"/notifications/new": `<a href="/notifications" data-back`,
-		"/notifications/log": `<a href="/notifications" data-back`,
+		"/issues/" + server.unresolvedIDs()[0]: `<a href="/issues" data-back`,
+		"/projects/1":                          `<a href="/projects" data-back`,
+		"/projects/cleanups":                   `<a href="/projects" data-back`,
+		"/notifications/new":                   `<a href="/notifications" data-back`,
+		"/notifications/log":                   `<a href="/notifications" data-back`,
 	} {
 		if !strings.Contains(server.page(path), want) {
 			t.Errorf("%s: missing %s", path, want)
@@ -132,7 +132,7 @@ func TestMenuGroupsAndCounter(t *testing.T) {
 	server.ingestFixtures()
 
 	page := server.page("/agents")
-	ids := issueIDs(server.page("/issues"))
+	ids := server.unresolvedIDs()
 	counter := fmt.Sprintf(`<b class="nav-count" aria-label="%d unresolved">%d</b>`, len(ids), len(ids))
 
 	if !strings.Contains(page, counter) {

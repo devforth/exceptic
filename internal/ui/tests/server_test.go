@@ -5,6 +5,7 @@ package tests
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"slices"
 
 	"github.com/devforth/exceptic/internal/app"
@@ -247,6 +248,30 @@ var (
 
 // issueIDs lists the issues linked from a page, each once and in order (a
 // list row links its issue from the title and from the open button).
+// unresolvedIDs lists the unresolved issues the way the web app reads them
+// (/api/ui/list_issues), as the user of the server's session.
+func (server *testServer) unresolvedIDs() []string {
+	server.t.Helper()
+
+	var page struct {
+		Items []struct {
+			ID string `json:"id"`
+		} `json:"items"`
+	}
+
+	if err := json.Unmarshal([]byte(server.page("/api/ui/list_issues?limit=100")), &page); err != nil {
+		server.t.Fatal(err)
+	}
+
+	ids := make([]string, 0, len(page.Items))
+
+	for _, item := range page.Items {
+		ids = append(ids, item.ID)
+	}
+
+	return ids
+}
+
 func issueIDs(html string) []string {
 	var ids []string
 

@@ -146,7 +146,7 @@
 				{/if}
 				<Button
 					icon="logs"
-					href={withQuery(resolve('/logs'), { project: project.name })}
+					href={withQuery(resolve('/(app)/logs'), { project: project.name })}
 					title="Logs of {project.name}"
 				/>
 				{#if canAdminister && !project.from_env}

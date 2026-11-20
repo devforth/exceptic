@@ -101,7 +101,7 @@ func TestUsersCannotDeleteIssues(t *testing.T) {
 	server.login()
 
 	_, user := server.createUser("dev", store.RoleUser)
-	id := issueIDs(user.page("/issues"))[0]
+	id := user.unresolvedIDs()[0]
 
 	for _, page := range []string{user.page("/issues"), user.page("/issues/" + id)} {
 		if strings.Contains(page, `value="delete"`) {
@@ -337,7 +337,7 @@ func TestStatusHistory(t *testing.T) {
 	server.login()
 
 	_, user := server.createUser("dev", store.RoleUser)
-	id := issueIDs(server.page("/issues"))[0]
+	id := server.unresolvedIDs()[0]
 
 	// The name field starts with the current name: the username until one is set.
 	if page := user.page("/account"); !strings.Contains(page, `<input name="name" value="dev"`) {

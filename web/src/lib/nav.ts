@@ -23,7 +23,7 @@ export function withQuery(path: string, params: Record<string, string>): string 
 }
 
 /** The routes of the app that are in the menu. */
-type AppRoute = '/projects' | '/logs';
+type AppRoute = '/(app)/projects' | '/(app)/logs';
 
 export type NavEntry = {
 	id: string;
@@ -43,14 +43,14 @@ export const navGroups: NavGroup[] = [
 		label: 'Monitoring',
 		entries: [
 			{ id: 'issues', label: 'Issues', icon: 'issues', href: oldUI.issues, countsUnresolved: true },
-			{ id: 'logs', label: 'Logs', icon: 'logs', route: '/logs' }
+			{ id: 'logs', label: 'Logs', icon: 'logs', route: '/(app)/logs' }
 		]
 	},
 	{
 		id: 'settings',
 		label: 'Settings',
 		entries: [
-			{ id: 'projects', label: 'Projects', icon: 'projects', route: '/projects' },
+			{ id: 'projects', label: 'Projects', icon: 'projects', route: '/(app)/projects' },
 			{
 				id: 'notifications',
 				label: 'Notifications',

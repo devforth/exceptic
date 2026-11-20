@@ -143,7 +143,10 @@
 					<Button variant="link" href={oldUI.issue(log.issue.id)}>Issue: {log.issue.title}</Button>
 				{/if}
 				{#if log.trace_id}
-					<Button variant="link" href={withQuery(resolve('/logs'), { trace_id: log.trace_id })}>
+					<Button
+						variant="link"
+						href={withQuery(resolve('/(app)/logs'), { trace_id: log.trace_id })}
+					>
 						trace {log.trace_id.slice(0, 8)}
 					</Button>
 				{/if}

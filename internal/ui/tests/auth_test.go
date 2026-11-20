@@ -230,7 +230,7 @@ func TestCrossSiteRequestsRejected(t *testing.T) {
 	server.ingestFixtures()
 	server.login()
 
-	id := issueIDs(server.page("/issues"))[0]
+	id := server.unresolvedIDs()[0]
 
 	response := server.post("/issues/"+id+"/action", url.Values{"action": {"resolve"}}, "Origin", "https://evil.test")
 
