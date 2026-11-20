@@ -150,7 +150,9 @@ func (lane Lane) Run(ctx context.Context, logger *slog.Logger) {
 
 		switch {
 		case ctx.Err() != nil:
-		case errors.Is(current.err, context.DeadlineExceeded) || (current.err == nil && passCtx.Err() != nil):
+		// Stopped at its time limit: the deadline, not the cancel every pass's
+		// context gets once it returns.
+		case errors.Is(current.err, context.DeadlineExceeded) || (current.err == nil && errors.Is(passCtx.Err(), context.DeadlineExceeded)):
 			next[index] = time.Now() // goes on soon, after the passes due before it
 		case current.err != nil:
 			failed(index, current.err)

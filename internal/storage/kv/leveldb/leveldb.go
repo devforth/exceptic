@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -159,7 +160,12 @@ func (engine *levelEngine) CompactRange(lower, upper []byte) error {
 	return engine.db.CompactRange(util.Range{Start: lower, Limit: upper})
 }
 
-// Size sums the database files in use; in memory, the keys and values.
+// infoLogs are goleveldb's text logs of its own work (compactions); they are
+// not data, and their size rises and falls as they rotate.
+var infoLogs = []string{"LOG", "LOG.old"}
+
+// Size sums the database files in use (tables, the journal, the manifest);
+// in memory, the keys and values.
 func (engine *levelEngine) Size() (int64, error) {
 	if engine.dir == "" {
 		var total int64
@@ -191,7 +197,7 @@ func (engine *levelEngine) Size() (int64, error) {
 			return err
 		}
 
-		if entry.IsDir() {
+		if entry.IsDir() || slices.Contains(infoLogs, entry.Name()) {
 			return nil
 		}
 

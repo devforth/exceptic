@@ -59,3 +59,31 @@ func TestOpenLocked(t *testing.T) {
 		t.Fatalf("second open: %v, want kv.ErrLocked", err)
 	}
 }
+
+// The size is the data: goleveldb's text logs, which rotate on their own, are not counted.
+func TestSizeLeavesOutInfoLogs(t *testing.T) {
+	dir := t.TempDir()
+	engine, err := Open(dir)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() { _ = engine.Close() }()
+
+	before, err := engine.Size()
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range infoLogs {
+		if err := os.WriteFile(filepath.Join(dir, name), make([]byte, 1<<20), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if after, err := engine.Size(); err != nil || after != before {
+		t.Fatalf("size %d after the logs grew, want %d (%v)", after, before, err)
+	}
+}

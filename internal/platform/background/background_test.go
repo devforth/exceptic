@@ -162,6 +162,23 @@ func TestStuckJobDoesNotStopTheLane(t *testing.T) {
 	}
 }
 
+// A pass that ends in time waits for its schedule: only one stopped at its
+// limit goes on soon (a pass's context is always ended once it returns).
+func TestPassInTimeKeepsItsSchedule(t *testing.T) {
+	var passes atomic.Int32
+
+	quick := Job{Name: "compact", AtStart: true, First: time.Hour, Every: time.Hour, Timeout: time.Minute,
+		Run: func(context.Context) error { passes.Add(1); return nil }}
+	stop := Start(context.Background(), slog.New(slog.DiscardHandler), Lane{Name: "database", Jobs: []Job{quick}})
+
+	time.Sleep(100 * time.Millisecond)
+	stop()
+
+	if count := passes.Load(); count != 1 {
+		t.Fatalf("%d passes within 100ms of a job due hourly, want 1", count)
+	}
+}
+
 // A pass that stops at its time limit (a resumable cleanup) goes on soon, not at its next schedule.
 func TestJobAtItsLimitGoesOnSoon(t *testing.T) {
 	var passes sync.WaitGroup
