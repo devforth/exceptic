@@ -73,7 +73,7 @@ func (database *Store) Lane(maxBytes int64, logger *slog.Logger) background.Lane
 		{Name: "size check", AtStart: true, First: config.CleanupInterval, Every: config.CleanupInterval, Timeout: config.SizeCheckTimeout,
 			Wake: database.CleanupWake(), Note: fmt.Sprintf("after %s written", config.FormatSize(config.CleanupWritten)),
 			Run: func(ctx context.Context) error { return database.CheckSize(ctx, maxBytes, logger) }},
-		{Name: "project purge", AtStart: true, First: config.ProjectPurgeAt, Every: config.OutboxCleanupInterval, Timeout: config.ProjectPurgeTimeout,
+		{Name: "project purge", AtStart: true, First: config.ProjectPurgeAt, Every: config.ProjectPurgeInterval, Timeout: config.ProjectPurgeTimeout,
 			Note: "the data of deleted projects", Run: database.PurgeProjects},
 	}}
 }

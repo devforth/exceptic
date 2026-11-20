@@ -75,6 +75,56 @@ func TestLaneRunsOneAtATime(t *testing.T) {
 	}
 }
 
+// Wakes that come while the lane is busy add one pass of the woken job, not one per wake.
+func TestWakesWhileBusyAddOnePass(t *testing.T) {
+	busyWake, checkWake, markerWake := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	busyStarted, release, checked, markerDone := make(chan struct{}), make(chan struct{}), make(chan struct{}, 10), make(chan struct{})
+
+	var checks atomic.Int32
+
+	lane := Lane{Name: "database", Jobs: []Job{
+		{Name: "busy", First: time.Hour, Every: time.Hour, Wake: busyWake,
+			Run: func(context.Context) error { close(busyStarted); <-release; return nil }},
+		{Name: "check", First: time.Hour, Every: time.Hour, Wake: checkWake,
+			Run: func(context.Context) error { checks.Add(1); checked <- struct{}{}; return nil }},
+		{Name: "marker", First: time.Hour, Every: time.Hour, Wake: markerWake,
+			Run: func(context.Context) error { close(markerDone); return nil }},
+	}}
+	stop := Start(context.Background(), slog.New(slog.DiscardHandler), lane)
+
+	defer stop()
+
+	busyWake <- struct{}{}
+
+	<-busyStarted
+
+	// Wake has no buffer: the fourth send returns once the third is forwarded.
+	for range 4 {
+		checkWake <- struct{}{}
+	}
+
+	close(release)
+
+	select {
+	case <-checked:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the wakes ran no pass")
+	}
+
+	// Runs after whatever passes of check are still waiting.
+	markerWake <- struct{}{}
+
+	select {
+	case <-markerDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the marker's wake ran no pass")
+	}
+
+	if count := checks.Load(); count != 1 {
+		t.Fatalf("%d passes for wakes that came during one busy pass, want 1", count)
+	}
+}
+
 func TestDescribe(t *testing.T) {
 	job := Job{Name: "size check", AtStart: true, First: 10 * time.Minute, Every: 10 * time.Minute, Note: "after 50 MB written"}
 
@@ -84,16 +134,18 @@ func TestDescribe(t *testing.T) {
 }
 
 // A pass that ignores its time limit is left running: the lane goes on with
-// the other jobs and skips the stuck one until it returns.
+// the other jobs and skips the stuck one until it returns, so stuck passes never pile up.
 func TestStuckJobDoesNotStopTheLane(t *testing.T) {
 	timeoutGrace = 10 * time.Millisecond
 
 	t.Cleanup(func() { timeoutGrace = time.Second })
 
+	var stuckPasses atomic.Int32
+
 	release := make(chan struct{})
 	record := &recorder{}
 	stuck := Job{Name: "stuck", AtStart: true, First: 20 * time.Millisecond, Every: 20 * time.Millisecond, Timeout: 20 * time.Millisecond,
-		Run: func(context.Context) error { <-release; return nil }}
+		Run: func(context.Context) error { stuckPasses.Add(1); <-release; return nil }}
 	lane := Lane{Name: "database", Jobs: []Job{stuck, record.job("check", false, 30*time.Millisecond, 30*time.Millisecond, 0)}}
 	stop := Start(context.Background(), slog.New(slog.DiscardHandler), lane)
 
@@ -103,6 +155,10 @@ func TestStuckJobDoesNotStopTheLane(t *testing.T) {
 
 	if passes := len(record.list()) / 2; passes < 4 {
 		t.Fatalf("the lane waited for the stuck job: %d passes of the other", passes)
+	}
+
+	if count := stuckPasses.Load(); count != 1 {
+		t.Fatalf("%d passes of the stuck job at once, want 1", count)
 	}
 }
 

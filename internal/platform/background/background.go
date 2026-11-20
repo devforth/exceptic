@@ -1,5 +1,6 @@
 // Package background runs the server's periodic jobs on lanes: the jobs of a
-// lane run one at a time, lanes side by side.
+// lane run one at a time, lanes side by side. A pass that does not stop at its
+// time limit is left running beside the lane, at most one per job.
 package background
 
 import (
@@ -8,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -162,7 +164,10 @@ func (lane Lane) Run(ctx context.Context, logger *slog.Logger) {
 	}
 
 	started := time.Now()
+	// At most one waiting pass per job however often it is woken: a job is
+	// in woken only while its flag is set, so the buffer never fills.
 	woken := make(chan int, len(lane.Jobs))
+	waiting := make([]atomic.Bool, len(lane.Jobs))
 
 	for index, job := range lane.Jobs {
 		if next[index].IsZero() {
@@ -176,9 +181,8 @@ func (lane Lane) Run(ctx context.Context, logger *slog.Logger) {
 					case <-ctx.Done():
 						return
 					case <-job.Wake:
-						select {
-						case woken <- index:
-						default: // a pass is already waiting
+						if waiting[index].CompareAndSwap(false, true) {
+							woken <- index
 						}
 					}
 				}
@@ -205,6 +209,7 @@ func (lane Lane) Run(ctx context.Context, logger *slog.Logger) {
 		case <-ctx.Done():
 			return
 		case index := <-woken:
+			waiting[index].Store(false)
 			run(index)
 		case now := <-timer.C:
 			for index, job := range lane.Jobs {
