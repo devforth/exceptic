@@ -24,6 +24,8 @@ A short label: a level or state filled in its tone, or a project outlined in its
 		info: `${filled} bg-info-bg text-info`,
 		debug: `${filled} bg-debug-bg text-debug`,
 		plain: `${filled} bg-code-bg text-text`,
+		success: `${filled} bg-success-bg text-success`,
+		muted: `${filled} bg-debug-bg text-muted`,
 		project:
 			'border border-project-text px-[7px] align-[1px] text-project-text first-letter:uppercase'
 	};

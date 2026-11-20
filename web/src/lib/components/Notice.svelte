@@ -1,6 +1,7 @@
 <!--
 @component
-A tinted note with a bar in its tone: a success, a warning or an error.
+A tinted note with a bar in its tone: information (a neutral note), a success, a warning or an
+error.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -12,6 +13,7 @@ A tinted note with a bar in its tone: a success, a warning or an error.
 	let { tone, children }: Props = $props();
 
 	const tones: Record<NoticeTone, { box: string; icon: string }> = {
+		info: { box: 'bg-code-bg before:bg-muted', icon: 'text-muted' },
 		success: { box: 'bg-success-bg before:bg-success', icon: 'text-success' },
 		warning: { box: 'bg-warning-bg before:bg-warning', icon: 'text-warning' },
 		error: { box: 'bg-error-bg before:bg-error', icon: 'text-error' }

@@ -2,12 +2,27 @@
 @component
 A table of rows: the columns name what each shows, the cell snippet draws a row's cell.
 Every second row is shaded. Without rows it shows the empty snippet in an EmptyState.
-`scroll` keeps it in a box of its own height with the header in view.
+- `scroll` keeps it in a box of its own height with the header in view; `compact` is denser.
+- `sort`: columns with a `sort` link their heading to the list sorted by them (aria-sort).
+- `selected` (bindable, needs rowKey): a checkbox per row and one for all (mixed when some are
+  checked); it empties when the rows change.
+- `rowTone` tints a row (error, success, faded) and `rowTitle` is its tooltip; `selectedKey`
+  marks the row shown elsewhere on the page; `headerless` keeps the headings for screen
+  readers only.
 -->
 <script lang="ts" generics="Row, Key extends string">
 	import type { Snippet } from 'svelte';
-	import type { TableColumn } from './table.ts';
 	import EmptyState from './EmptyState.svelte';
+	import Icon from './Icon.svelte';
+	import {
+		columnSort,
+		type RowTone,
+		type SortDirection,
+		type TableColumn,
+		type TableSort
+	} from './table.ts';
+
+	type RowKey = string | number;
 
 	type Props = {
 		columns: TableColumn<Key>[];
@@ -16,9 +31,17 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 		empty?: Snippet;
 		/** Its accessible name. */
 		label?: string;
-		rowKey?: (row: Row) => string | number;
+		rowKey?: (row: Row) => RowKey;
 		compact?: boolean;
 		scroll?: boolean;
+		headerless?: boolean;
+		sort?: TableSort;
+		selected?: ReadonlySet<RowKey>;
+		/** The name of a row's checkbox, e.g. "Select TypeError: x is undefined". */
+		selectLabel?: (row: Row) => string;
+		rowTone?: (row: Row) => RowTone | undefined;
+		rowTitle?: (row: Row) => string | undefined;
+		selectedKey?: RowKey;
 	};
 
 	let {
@@ -29,7 +52,14 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 		label,
 		rowKey,
 		compact = false,
-		scroll = false
+		scroll = false,
+		headerless = false,
+		sort,
+		selected = $bindable(),
+		selectLabel,
+		rowTone,
+		rowTitle,
+		selectedKey
 	}: Props = $props();
 
 	const box = $derived(
@@ -49,6 +79,63 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 			column.wideOnly && 'max-table:hidden'
 		];
 	}
+
+	const headingClasses = $derived([
+		'border-b border-border text-xs font-medium tracking-[.03em] text-muted uppercase',
+		scroll && 'sticky top-0 z-1 bg-surface shadow-[inset_0_-1px_0_var(--color-border)]'
+	]);
+
+	// Literal class names, so Tailwind builds them.
+	const tones: Record<RowTone, string> = {
+		error: '[&>*]:bg-row-error even:[&>*]:bg-row-error-even',
+		success: '[&>*]:bg-row-success even:[&>*]:bg-row-success-even',
+		faded: 'opacity-50 even:[&>*]:bg-[linear-gradient(var(--color-stripe),var(--color-stripe))]'
+	};
+	const striped = 'even:[&>*]:bg-[linear-gradient(var(--color-stripe),var(--color-stripe))]';
+
+	function rowClasses(row: Row) {
+		const tone = rowTone?.(row);
+
+		return [
+			'border-b border-border last:border-b-0',
+			selectedKey !== undefined && rowKey?.(row) === selectedKey
+				? '[&>*]:bg-selected'
+				: tone
+					? tones[tone]
+					: striped
+		];
+	}
+
+	const sortIcons = {
+		ascending: 'sortedAscending',
+		descending: 'sortedDescending',
+		none: 'sortable'
+	} as const satisfies Record<SortDirection | 'none', string>;
+
+	// Selection: every row's key, and how many of them are checked.
+	const selectable = $derived(selected !== undefined && rowKey !== undefined);
+	const keys = $derived(rowKey ? rows.map(rowKey) : []);
+	const checkedCount = $derived(keys.filter((key) => selected?.has(key)).length);
+
+	// A new set each time: the bound value changes, so the page sees it.
+	function check(key: RowKey, checked: boolean) {
+		const others = [...(selected ?? [])].filter((item) => item !== key);
+
+		selected = new Set(checked ? [...others, key] : others);
+	}
+
+	// Other rows (another page, a filter): what was checked is no longer in view.
+	let checkedRows: Row[] | undefined;
+
+	$effect(() => {
+		if (checkedRows !== undefined && rows !== checkedRows && selected?.size) {
+			selected = new Set();
+		}
+
+		checkedRows = rows;
+	});
+
+	const checkboxClasses = 'size-4 cursor-pointer accent-accent align-middle focus-ring';
 </script>
 
 {#if rows.length === 0 && empty}
@@ -63,32 +150,84 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 		aria-label={scroll ? label : undefined}
 	>
 		<table class="w-full border-collapse" aria-label={label}>
-			<thead>
+			<thead class={headerless ? 'sr-only' : undefined}>
 				<tr>
+					{#if selectable}
+						<th scope="col" class={[padding, headingClasses, 'w-[1%]']}>
+							<input
+								type="checkbox"
+								class={checkboxClasses}
+								aria-label="Select all"
+								checked={keys.length > 0 && checkedCount === keys.length}
+								{@attach (box: HTMLInputElement) => {
+									box.indeterminate = checkedCount > 0 && checkedCount < keys.length;
+								}}
+								onchange={(event) =>
+									(selected = event.currentTarget.checked ? new Set(keys) : new Set())}
+							/>
+						</th>
+					{/if}
 					{#each columns as column (column.key)}
+						{@const state = column.sort && sort ? columnSort(column.sort, sort.current) : undefined}
 						<th
 							scope="col"
-							class={[
-								columnClasses(column),
-								'border-b border-border text-xs font-medium tracking-[.03em] text-muted uppercase',
-								scroll && 'sticky top-0 z-1 bg-surface shadow-[inset_0_-1px_0_var(--color-border)]'
-							]}
+							aria-sort={state?.direction}
+							class={[columnClasses(column), headingClasses, state?.direction && 'text-text']}
 						>
-							<!-- The buttons need no heading to be seen; screen readers still get one. -->
-							<span class={column.actions ? 'sr-only' : undefined}>{column.label}</span>
+							{#if state && sort}
+								<!-- eslint-disable svelte/no-navigation-without-resolve -- the list's own address -->
+								<a
+									href={sort.href(state.next)}
+									title={state.direction ? 'Reverse the order' : `Sort by ${column.label}`}
+									class={[
+										'inline-flex items-center gap-1 rounded-control text-inherit no-underline focus-ring hover:text-text hover:no-underline',
+										column.number && 'flex-row-reverse'
+									]}
+								>
+									{column.label}
+									<Icon name={sortIcons[state.direction ?? 'none']} size={14} />
+								</a>
+								<!-- eslint-enable svelte/no-navigation-without-resolve -->
+							{:else}
+								<!-- The buttons need no heading to be seen; screen readers still get one. -->
+								<span class={column.actions ? 'sr-only' : undefined}>{column.label}</span>
+							{/if}
 						</th>
 					{/each}
 				</tr>
 			</thead>
 			<tbody>
 				{#each rows as row, index (rowKey ? rowKey(row) : index)}
+					{@const key = rowKey?.(row)}
 					<tr
-						class="border-b border-border last:border-b-0 even:[&>td]:bg-[linear-gradient(var(--color-stripe),var(--color-stripe))]"
+						class={rowClasses(row)}
+						title={rowTitle?.(row)}
+						aria-current={selectedKey !== undefined && key === selectedKey ? 'true' : undefined}
 					>
-						{#each columns as column (column.key)}
-							<td class={[columnClasses(column), 'wrap-break-word']}>
-								{@render cell(row, column)}
+						{#if selectable && key !== undefined}
+							<td class={[padding, 'w-[1%] align-top']}>
+								<input
+									type="checkbox"
+									class={checkboxClasses}
+									aria-label={selectLabel?.(row) ?? 'Select'}
+									checked={selected?.has(key)}
+									onchange={(event) => check(key, event.currentTarget.checked)}
+								/>
 							</td>
+						{/if}
+						{#each columns as column (column.key)}
+							{#if column.rowHeader}
+								<th
+									scope="row"
+									class={[columnClasses(column), 'w-[30%] font-normal break-all text-muted']}
+								>
+									{@render cell(row, column)}
+								</th>
+							{:else}
+								<td class={[columnClasses(column), 'wrap-break-word']}>
+									{@render cell(row, column)}
+								</td>
+							{/if}
 						{/each}
 					</tr>
 				{/each}

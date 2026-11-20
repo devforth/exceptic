@@ -6,6 +6,7 @@ to choose (one option and none chosen).
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import { toggled } from '#lib/selection.ts';
 	import { controlClasses } from './field.ts';
 	import Icon from './Icon.svelte';
 
@@ -31,6 +32,8 @@ to choose (one option and none chosen).
 		};
 		const closeOnEscape = (event: KeyboardEvent) => {
 			if (details?.open && event.key === 'Escape') {
+				// Handled: Esc must not also leave the page (Breadcrumbs).
+				event.preventDefault();
 				details.open = false;
 				details.querySelector('summary')?.focus();
 			}
@@ -45,18 +48,12 @@ to choose (one option and none chosen).
 		};
 	});
 
-	function toggle(value: string, checked: boolean) {
-		const next = checked ? [...selected, value] : selected.filter((chosen) => chosen !== value);
-
-		onchange(options.filter((known) => next.includes(known)));
-	}
-
 	const optionClasses =
 		'flex cursor-pointer items-center gap-2 rounded-control px-2 py-1.5 whitespace-nowrap hover:bg-hover';
 </script>
 
 {#if options.length > 1 || selected.length > 0}
-	<details bind:this={details} class="relative">
+	<details bind:this={details} class="relative" data-popup>
 		<summary
 			class={[controlClasses, 'flex cursor-pointer list-none items-center gap-1.5 marker:hidden']}
 		>
@@ -75,7 +72,8 @@ to choose (one option and none chosen).
 					<input
 						type="checkbox"
 						checked={selected.includes(value)}
-						onchange={(event) => toggle(value, event.currentTarget.checked)}
+						onchange={(event) =>
+							onchange(toggled(options, selected, value, event.currentTarget.checked))}
 					/>
 					{@render option(value)}
 				</label>

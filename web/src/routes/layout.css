@@ -37,6 +37,12 @@
 	--color-info-hover: color-mix(in srgb, var(--color-info) 22%, var(--color-info-bg));
 	/* A shade deeper than error-bg, so an error badge shows on red rows. */
 	--color-error-badge: color-mix(in srgb, var(--color-error-bg) 90%, var(--color-error));
+	/* Table rows in a tone (an issue's status): lighter than the badge, every second row a
+	   shade deeper instead of the stripe. */
+	--color-row-error: color-mix(in srgb, var(--color-error-bg) 60%, var(--color-surface));
+	--color-row-error-even: color-mix(in srgb, var(--color-error-bg) 75%, var(--color-surface));
+	--color-row-success: color-mix(in srgb, var(--color-success-bg) 55%, var(--color-surface));
+	--color-row-success-even: color-mix(in srgb, var(--color-success-bg) 85%, var(--color-surface));
 
 	--font-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
 	--font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;

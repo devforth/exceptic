@@ -17,6 +17,12 @@ export const oldUI = {
 	logout: '/logout'
 } as const;
 
+/** Pages of the app that another step adds: plain paths until their routes exist, since
+ * resolve() takes only routes that do. */
+export const comingPages = {
+	projectSetup: (id: number) => `/projects/${id}/setup`
+} as const;
+
 /** An address with its query, encoded. */
 export function withQuery(path: string, params: Record<string, string>): string {
 	return `${path}?${new URLSearchParams(params).toString()}`;
