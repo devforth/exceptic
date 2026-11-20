@@ -10,16 +10,28 @@ Every component with its variants, on sample data. Served only by the dev server
 	import Button from '#lib/components/Button.svelte';
 	import type { ButtonVariant } from '#lib/components/button.ts';
 	import ActiveFilters from '#lib/components/ActiveFilters.svelte';
+	import Breadcrumbs from '#lib/components/Breadcrumbs.svelte';
 	import Card from '#lib/components/Card.svelte';
+	import Choice from '#lib/components/Choice.svelte';
+	import ChoiceGroup from '#lib/components/ChoiceGroup.svelte';
+	import CodeBlock from '#lib/components/CodeBlock.svelte';
+	import type { Confirmation } from '#lib/components/confirm.ts';
+	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
 	import CopyButton from '#lib/components/CopyButton.svelte';
 	import CopyField from '#lib/components/CopyField.svelte';
 	import DateRange from '#lib/components/DateRange.svelte';
+	import Details from '#lib/components/Details.svelte';
 	import Dialog from '#lib/components/Dialog.svelte';
+	import Facts from '#lib/components/Facts.svelte';
 	import FilterBar from '#lib/components/FilterBar.svelte';
 	import EmptyState from '#lib/components/EmptyState.svelte';
+	import Hint from '#lib/components/Hint.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import LevelBadge from '#lib/components/LevelBadge.svelte';
+	import LevelChoices from '#lib/components/LevelChoices.svelte';
+	import LevelSummary from '#lib/components/LevelSummary.svelte';
 	import LogBody from '#lib/components/LogBody.svelte';
+	import type { MenuItem } from '#lib/components/menu.ts';
 	import NavLink from '#lib/components/NavLink.svelte';
 	import NotFound from '#lib/components/NotFound.svelte';
 	import Notice from '#lib/components/Notice.svelte';
@@ -27,11 +39,18 @@ Every component with its variants, on sample data. Served only by the dev server
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import Pager from '#lib/components/Pager.svelte';
 	import Picker from '#lib/components/Picker.svelte';
+	import RowMenu from '#lib/components/RowMenu.svelte';
 	import SearchField from '#lib/components/SearchField.svelte';
+	import SecretReveal from '#lib/components/SecretReveal.svelte';
+	import Select from '#lib/components/Select.svelte';
+	import type { StatusTone } from '#lib/components/status.ts';
+	import StatusText from '#lib/components/StatusText.svelte';
 	import Table from '#lib/components/Table.svelte';
+	import Tabs from '#lib/components/Tabs.svelte';
+	import TextField from '#lib/components/TextField.svelte';
 	import Time from '#lib/components/Time.svelte';
 	import UsageBar from '#lib/components/UsageBar.svelte';
-	import type { TableColumn } from '#lib/components/table.ts';
+	import type { RowTone, TableColumn } from '#lib/components/table.ts';
 	import { icons, type IconName } from '#lib/icons.ts';
 	import { toast } from '#lib/toast.svelte.ts';
 	import Row from './Row.svelte';
@@ -56,6 +75,10 @@ Every component with its variants, on sample data. Served only by the dev server
 		{ token: 'error', swatch: 'bg-error' },
 		{ token: 'error-bg', swatch: 'bg-error-bg' },
 		{ token: 'error-badge', swatch: 'bg-error-badge' },
+		{ token: 'row-error', swatch: 'bg-row-error' },
+		{ token: 'row-error-even', swatch: 'bg-row-error-even' },
+		{ token: 'row-success', swatch: 'bg-row-success' },
+		{ token: 'row-success-even', swatch: 'bg-row-success-even' },
 		{ token: 'success', swatch: 'bg-success' },
 		{ token: 'success-bg', swatch: 'bg-success-bg' },
 		{ token: 'warning', swatch: 'bg-warning' },
@@ -77,9 +100,12 @@ Every component with its variants, on sample data. Served only by the dev server
 		'warning',
 		'info',
 		'debug',
-		'plain'
+		'plain',
+		'success',
+		'muted'
 	];
-	const noticeTones: NoticeTone[] = ['success', 'warning', 'error'];
+	const noticeTones: NoticeTone[] = ['info', 'success', 'warning', 'error'];
+	const statusTones: StatusTone[] = ['success', 'warning', 'error', 'muted'];
 
 	type SampleProject = {
 		id: number;
@@ -145,6 +171,118 @@ Every component with its variants, on sample data. Served only by the dev server
 	let samplePage = $state(2);
 	let samplePerPage = $state(20);
 	let sampleDialog = $state(false);
+	let sampleNarrowDialog = $state(false);
+	let sampleRole = $state('user');
+	let sampleEmail = $state(true);
+	let sampleEventLevels: string[] = $state(['fatal', 'error']);
+	let sampleLogLevels: string[] = $state([]);
+	let sampleName = $state('backend');
+	let sampleStatus = $state('');
+	let sampleSelected: ReadonlySet<string | number> = $state(new Set([2]));
+	let sampleTab = $state('claude');
+
+	// Samples of actions: they wait a moment, as a request would.
+	const pause = () => new Promise((resolve) => setTimeout(resolve, 800));
+	const failing = async () => {
+		await pause();
+		throw new Error('sample failure');
+	};
+
+	const sampleMenu: MenuItem[] = [
+		{ label: 'Rename', icon: 'edit', action: () => toast.show('Rename chosen.') },
+		{ label: 'Show installation code', icon: 'code', href: '#row-menu' },
+		{ label: 'Settings', icon: 'settings', href: '#row-menu', separatorBefore: true },
+		{ label: 'Logs', icon: 'logs', href: '#row-menu' },
+		{
+			label: 'Delete',
+			icon: 'delete',
+			danger: true,
+			separatorBefore: true,
+			confirm: {
+				title: 'Delete project',
+				message: 'Delete the project worker with all its issues, events and logs?',
+				confirmLabel: 'Delete'
+			},
+			action: pause
+		}
+	];
+
+	const sampleConfirm: Confirmation = {
+		title: 'Delete user',
+		message:
+			'Delete the user developer? They are logged out and their coding agents are disconnected.',
+		confirmLabel: 'Delete'
+	};
+	const sampleReset: Confirmation = {
+		title: 'Reset password',
+		message: 'Give developer a new temporary password? Their coding agents are disconnected.',
+		confirmLabel: 'Reset',
+		tone: 'primary'
+	};
+
+	const sampleRoles = [
+		{ name: 'admin', description: 'projects, notifications, users and deleting issues' },
+		{ name: 'user', description: 'issue statuses, logs and their own coding agents' }
+	];
+
+	type SampleFact = { label: string; value: string };
+
+	const sampleFacts: SampleFact[] = [
+		{ label: 'Events', value: '1,204' },
+		{ label: 'First seen', value: '3 days ago' },
+		{ label: 'Release', value: 'backend@1.4.2' },
+		{ label: 'Environment', value: 'production' }
+	];
+
+	const statusOptions = [
+		{ value: 'unresolved', label: 'Unresolved' },
+		{ value: 'resolved', label: 'Resolved' },
+		{ value: 'ignored', label: 'Ignored' }
+	];
+
+	const sampleTabs = [
+		{ id: 'claude', label: 'Claude Code' },
+		{ id: 'codex', label: 'Codex' },
+		{ id: 'other', label: 'Other' }
+	];
+
+	const sortedColumns: ProjectColumn[] = [
+		{
+			key: 'project',
+			label: 'Project',
+			sort: { ascending: 'project', descending: 'project_desc', first: 'ascending' }
+		},
+		{ key: 'dsn', label: 'DSN' },
+		{
+			key: 'unresolved',
+			label: 'Unresolved',
+			number: true,
+			sort: { ascending: 'unresolved_asc', descending: 'unresolved', first: 'descending' }
+		},
+		{ key: 'levels', label: 'Records', wideOnly: true },
+		{ key: 'actions', label: 'Actions', actions: true }
+	];
+
+	const sampleTone = (row: SampleProject): RowTone | undefined =>
+		row.unresolved > 100 ? 'error' : row.unresolved === 0 ? 'success' : 'faded';
+
+	type Context = { name: string; value: string };
+	type ContextColumn = TableColumn<keyof Context>;
+
+	const contextColumns: ContextColumn[] = [
+		{ key: 'name', label: 'Name', rowHeader: true },
+		{ key: 'value', label: 'Value' }
+	];
+	const contexts: Context[] = [
+		{ name: 'runtime', value: 'node v24.11.0' },
+		{ name: 'os', value: 'Linux 6.8' },
+		{ name: 'browser', value: 'Firefox 140' }
+	];
+
+	const sampleJson = '{\n  "app_memory": 264241152,\n  "device": "x86_64"\n}';
+	const sampleSnippet =
+		'Sentry.init({\n  dsn: "http://key@localhost:8000/1",\n  enableLogs: true\n});';
+
 	const sampleLog =
 		'{"level":"error","msg":"Payment failed","err":"Error: card declined\\n    at charge (pay.js:12)\\n    at handler (api.js:40)"}';
 </script>
@@ -194,6 +332,10 @@ Every component with its variants, on sample data. Served only by the dev server
 				<Button {variant} disabled>Disabled</Button>
 			</Row>
 		{/each}
+		<Row caption="busy: its action runs (clicks ignored, the focus stays)">
+			<Button variant="primary" busy>Saving</Button>
+			<Button variant="danger" busy>Deleting</Button>
+		</Row>
 	</Section>
 
 	<Section title="Copy button and toast">
@@ -212,6 +354,48 @@ Every component with its variants, on sample data. Served only by the dev server
 		</Row>
 	</Section>
 
+	<Section title="Code and secrets" id="code">
+		<Row caption="CodeBlock plain: text as given, long lines wrapped (indented JSON)" wide>
+			<CodeBlock code={sampleJson} label="Context" />
+		</Row>
+		<Row caption="CodeBlock command: one line after ›, with its copy button" wide>
+			<CodeBlock
+				variant="command"
+				code="claude mcp add --transport http exceptic http://localhost:8000/mcp"
+				label="Claude Code command"
+				copyTitle="Copy the command"
+				copied="Command copied to clipboard."
+			/>
+		</Row>
+		<Row caption="CodeBlock snippet: several lines to paste, with its copy button" wide>
+			<CodeBlock
+				variant="snippet"
+				code={sampleSnippet}
+				label="SDK setup"
+				copyTitle="Copy the code"
+			/>
+		</Row>
+		<Row caption="CopyField masked: dots until Show; the button copies the value" wide>
+			<CopyField
+				value="exc_0123456789abcdef0123456789abcdef"
+				label="Personal token"
+				copyTitle="Copy the token"
+				masked
+			/>
+		</Row>
+		<Row caption="SecretReveal: shown only once, with what to do with it" wide>
+			<SecretReveal
+				value="Z6R4SGSGAQYPH2TOBTAQBSUH6X"
+				label="Temporary password"
+				copyTitle="Copy the temporary password"
+				copied="Temporary password copied to clipboard."
+			>
+				<b>Temporary password</b>: give it to the user. It is shown only now; they choose their own
+				when they log in.
+			</SecretReveal>
+		</Row>
+	</Section>
+
 	<Section title="Badges" id="badges">
 		<Row caption="tone">
 			{#each badgeTones as tone (tone)}
@@ -223,6 +407,172 @@ Every component with its variants, on sample data. Served only by the dev server
 			<Badge tone="project" label="frontend" />
 			<Badge tone="project" label="worker" href="#badges" title="Issues of worker" />
 			<Badge tone="error" label="error" href="#badges" />
+		</Row>
+		<Row caption="StatusText: a state as a colored word">
+			{#each statusTones as tone (tone)}
+				<StatusText {tone} title="A {tone} state">{tone}</StatusText>
+			{/each}
+		</Row>
+	</Section>
+
+	<Section title="Navigation" id="navigation">
+		<Row caption="Breadcrumbs: the path above a title; Esc follows the item before the last" wide>
+			<Breadcrumbs
+				items={[
+					{ label: 'Projects', href: '#navigation' },
+					{ label: 'backend', href: '#navigation-backend' },
+					{ label: 'Installation', href: '#navigation-setup' }
+				]}
+			/>
+		</Row>
+		<Row caption="Tabs: the arrows, Home and End move; param puts the tab in the address" wide>
+			<Tabs label="MCP client" tabs={sampleTabs} bind:selected={sampleTab}>
+				{#snippet panel(id: string)}<p class="text-muted">The panel of {id}.</p>{/snippet}
+			</Tabs>
+		</Row>
+	</Section>
+
+	<Section title="Confirmations and row menus" id="row-menu">
+		<Row caption="ConfirmButton: asks in a ConfirmDialog (Cancel focused), then runs the action">
+			<ConfirmButton confirm={sampleConfirm} action={pause}>Delete</ConfirmButton>
+			<ConfirmButton
+				confirm={sampleConfirm}
+				action={failing}
+				icon="delete"
+				title="Delete, and fail"
+			/>
+			<ConfirmButton variant="default" confirm={sampleReset} action={pause}>
+				Reset password
+			</ConfirmButton>
+		</Row>
+		<Row caption="RowMenu: the ⋯ of a table row, items as data; Delete asks first">
+			<span>worker</span>
+			<RowMenu label="Actions for worker" items={sampleMenu} />
+		</Row>
+		<Row caption="Dialog narrow with actions (a short form)">
+			<Button onclick={() => (sampleNarrowDialog = true)}>Rename</Button>
+			<Dialog title="Rename project" size="narrow" bind:open={sampleNarrowDialog}>
+				<TextField label="Name" name="name" bind:value={sampleName} required />
+				{#snippet actions()}
+					<Button onclick={() => (sampleNarrowDialog = false)}>Cancel</Button>
+					<Button variant="primary" onclick={() => (sampleNarrowDialog = false)}>Save</Button>
+				{/snippet}
+			</Dialog>
+		</Row>
+	</Section>
+
+	<Section title="Form fields" id="forms">
+		<div class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
+			<Card>
+				<TextField
+					label="Project name"
+					name="name"
+					bind:value={sampleName}
+					hint="Lowercase letters, digits, - and _."
+				/>
+				<TextField label="Name" name="display_name" note="optional: the username when empty" />
+				<TextField label="Email" name="email" type="email" placeholder="you@example.com" />
+				<TextField
+					label="Refused name"
+					name="refused"
+					value="Back End"
+					error="Use lowercase letters, digits, - and _."
+				/>
+				<TextField label="Username" name="username" value="developer" readonly />
+				<TextField label="Bot token" name="bot_token" type="password" saved="1234…wxyz" />
+			</Card>
+			<Card>
+				<ChoiceGroup legend="Role" hint="What the user may do.">
+					{#each sampleRoles as role (role.name)}
+						<Choice
+							type="radio"
+							name="role"
+							value={role.name}
+							label={role.name}
+							description={role.description}
+							checked={sampleRole === role.name}
+							onchange={() => (sampleRole = role.name)}
+						/>
+					{/each}
+				</ChoiceGroup>
+				<ChoiceGroup legend="Send to" inline error="Choose where to send.">
+					<Choice
+						type="checkbox"
+						label="Email"
+						checked={sampleEmail}
+						onchange={(checked: boolean) => (sampleEmail = checked)}
+					/>
+					<Choice
+						type="checkbox"
+						label="Slack"
+						checked={false}
+						onchange={() => {}}
+						disabled
+						reason="set SECRET_KEY"
+					/>
+				</ChoiceGroup>
+				<Row caption="Select with its option of no choice; Hint">
+					<Select
+						label="Status"
+						all="All statuses"
+						value={sampleStatus}
+						options={statusOptions}
+						onchange={(value: string) => (sampleStatus = value)}
+					/>
+					<Hint text="Delete older logs." />
+				</Row>
+			</Card>
+			<Card>
+				<LevelChoices
+					kind="event"
+					legend="Error levels"
+					selected={sampleEventLevels}
+					onchange={(chosen: string[]) => (sampleEventLevels = chosen)}
+				/>
+				<LevelChoices
+					kind="log"
+					legend="Log levels"
+					selected={sampleLogLevels}
+					onchange={(chosen: string[]) => (sampleLogLevels = chosen)}
+				/>
+				<Row caption="LevelSummary: the chosen levels, highest first, or none">
+					<LevelSummary kind="event" chosen={sampleEventLevels} />
+					<LevelSummary kind="log" chosen={sampleLogLevels} />
+				</Row>
+			</Card>
+		</div>
+	</Section>
+
+	<Section title="Details and facts" id="details">
+		<Details title="Breadcrumbs" count={30}>
+			<p>Rows of the section.</p>
+		</Details>
+		<Details title="Request">
+			{#snippet summary()}<code>GET http://localhost:3500/api/debug-sentry/cause</code>{/snippet}
+			<p>A detail cut to one line in the heading.</p>
+		</Details>
+		<Details title="Levels to record" variant="form" hint="What this project stores.">
+			{#snippet summary()}<LevelSummary kind="event" chosen={sampleEventLevels} />{/snippet}
+			<LevelChoices
+				kind="event"
+				legend="Error levels"
+				selected={sampleEventLevels}
+				onchange={(chosen: string[]) => (sampleEventLevels = chosen)}
+			/>
+		</Details>
+		<Details title="Projects" variant="form" invalid>
+			{#snippet summary()}<span class="text-muted">none</span>{/snippet}
+			<p class="text-error">Choose at least one project (invalid: it opens).</p>
+		</Details>
+		<Row caption="inline: a small disclosure inside other content" wide>
+			<Details title="app" variant="inline">
+				<CodeBlock code={sampleJson} />
+			</Details>
+		</Row>
+		<Row caption="Facts: a label over each value" wide>
+			<Facts facts={sampleFacts}>
+				{#snippet value(fact: SampleFact)}{fact.value}{/snippet}
+			</Facts>
 		</Row>
 	</Section>
 
@@ -387,6 +737,53 @@ Every component with its variants, on sample data. Served only by the dev server
 				{/snippet}
 			</Table>
 		</Row>
+		<Row
+			caption="sort (a heading links to its order, then the reverse), selected (checkboxes), rowTone, rowTitle, selectedKey"
+			wide
+		>
+			<Table
+				columns={sortedColumns}
+				rows={projects}
+				rowKey={(row: SampleProject) => row.id}
+				label="Projects, sortable"
+				sort={{ current: 'unresolved', href: () => '#tables' }}
+				bind:selected={sampleSelected}
+				selectLabel={(row: SampleProject) => `Select ${row.name}`}
+				rowTone={sampleTone}
+				rowTitle={(row: SampleProject) => `${row.unresolved} unresolved`}
+				selectedKey={3}
+			>
+				{#snippet cell(row: SampleProject, column: ProjectColumn)}
+					{#if column.key === 'project'}
+						<Badge tone="project" label={row.name} />
+					{:else if column.key === 'dsn'}
+						<code class="break-all">{row.dsn}</code>
+					{:else if column.key === 'unresolved'}
+						{row.unresolved}
+					{:else if column.key === 'levels'}
+						<LevelSummary kind="event" chosen={row.levels} />
+					{:else}
+						<RowMenu label="Actions for {row.name}" items={sampleMenu} />
+					{/if}
+				{/snippet}
+			</Table>
+			<p class="mt-2 text-xs text-muted">Checked: {[...sampleSelected].join(', ') || 'none'}.</p>
+		</Row>
+		<Row
+			caption="headerless (headings for screen readers only), rowHeader (a key–value table)"
+			wide
+		>
+			<Table
+				columns={contextColumns}
+				rows={contexts}
+				rowKey={(row: Context) => row.name}
+				label="Contexts"
+				headerless
+				compact
+			>
+				{#snippet cell(row: Context, column: ContextColumn)}{row[column.key]}{/snippet}
+			</Table>
+		</Row>
 		<Row caption="compact, scroll (sticky header)" wide>
 			<Table
 				columns={breadcrumbColumns}
@@ -408,6 +805,12 @@ Every component with its variants, on sample data. Served only by the dev server
 	</Section>
 
 	<Section title="Page heading and empty state" id="page-heading">
+		<PageHeading title="TypeError: x is undefined" tabTitle={false}>
+			{#snippet leading()}<LevelBadge level="error" />{/snippet}
+			{#snippet actions()}
+				<Button>Resolve</Button>
+			{/snippet}
+		</PageHeading>
 		<PageHeading title="Projects" tabTitle={false}>
 			{#snippet actions()}
 				<Button variant="primary" icon="add" href="#page-heading">Add project</Button>

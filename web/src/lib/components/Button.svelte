@@ -13,6 +13,8 @@ only its icon, and title names it (tooltip and aria-label).
 		variant?: ButtonVariant;
 		href?: string;
 		type?: 'button' | 'submit';
+		/** The id of the form a submit button sends, when it sits outside it (a dialog's footer). */
+		form?: string;
 		disabled?: boolean;
 		icon?: IconName;
 		/** The name of an icon-only button, or a tooltip of one with text. */
@@ -23,6 +25,10 @@ only its icon, and title names it (tooltip and aria-label).
 		onclick?: (event: MouseEvent) => void;
 		/** A button that opens or closes something: whether it is open (aria-expanded). */
 		expanded?: boolean;
+		/** What it opens (aria-haspopup). */
+		popup?: 'menu' | 'dialog';
+		/** Its action runs: it ignores clicks but keeps the focus (disabled would drop it). */
+		busy?: boolean;
 		children?: Snippet;
 	};
 
@@ -30,6 +36,7 @@ only its icon, and title names it (tooltip and aria-label).
 		variant = 'default',
 		href,
 		type = 'button',
+		form,
 		disabled = false,
 		icon,
 		title,
@@ -37,8 +44,20 @@ only its icon, and title names it (tooltip and aria-label).
 		value,
 		onclick,
 		expanded,
+		popup,
+		busy = false,
 		children
 	}: Props = $props();
+
+	function click(event: MouseEvent) {
+		if (busy) {
+			event.preventDefault();
+
+			return;
+		}
+
+		onclick?.(event);
+	}
 
 	// Boxed buttons share one hover and focus: the border takes the tone, a ring of it glows.
 	const boxed =
@@ -90,11 +109,15 @@ only its icon, and title names it (tooltip and aria-label).
 {:else}
 	<button
 		{type}
+		{form}
 		{disabled}
 		{name}
 		{value}
-		{onclick}
+		onclick={click}
 		aria-expanded={expanded}
+		aria-haspopup={popup}
+		aria-busy={busy || undefined}
+		aria-disabled={busy || undefined}
 		class={classes}
 		{title}
 		aria-label={iconOnly ? title : undefined}

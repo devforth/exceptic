@@ -8,13 +8,17 @@
 	import Button from '#lib/components/Button.svelte';
 	import Card from '#lib/components/Card.svelte';
 	import CopyField from '#lib/components/CopyField.svelte';
+	import Dialog from '#lib/components/Dialog.svelte';
 	import LevelBadge from '#lib/components/LevelBadge.svelte';
+	import type { MenuItem } from '#lib/components/menu.ts';
 	import Notice from '#lib/components/Notice.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
+	import RowMenu from '#lib/components/RowMenu.svelte';
 	import Table from '#lib/components/Table.svelte';
 	import type { TableColumn } from '#lib/components/table.ts';
+	import TextField from '#lib/components/TextField.svelte';
 	import UsageBar from '#lib/components/UsageBar.svelte';
-	import { oldUI, withQuery } from '#lib/nav.ts';
+	import { comingPages, oldUI, withQuery } from '#lib/nav.ts';
 	import { toast } from '#lib/toast.svelte.ts';
 	import type { PageProps } from './$types';
 
@@ -45,21 +49,93 @@
 	}
 
 	async function remove(project: Project) {
-		if (
-			!confirm(
-				`Delete the project ${project.name} with all its issues, events and logs? Its DSN stops working. This cannot be undone.`
-			)
-		) {
-			return;
-		}
+		await post('delete_project', { project: String(project.id) });
+		toast.show(deleted);
+		await invalidateAll();
+	}
+
+	// Rename: a dialog with the name; the server checks it (a refused name stays in the dialog).
+	let renaming: Project | undefined = $state();
+	let renameOpen = $state(false);
+	let newName = $state('');
+	let renameError = $state('');
+	let renameBusy = $state(false);
+	let renameForm: HTMLFormElement | undefined = $state();
+
+	function startRename(project: Project) {
+		renaming = project;
+		newName = project.name;
+		renameError = '';
+		renameOpen = true;
+	}
+
+	async function rename(event: SubmitEvent) {
+		event.preventDefault();
+
+		if (!renaming || renameBusy) return;
+
+		renameBusy = true;
+		renameError = '';
 
 		try {
-			await post('delete_project', { project: String(project.id) });
-			toast.show(deleted);
+			await post('update_project', { project: String(renaming.id), name: newName.trim() });
+			renameOpen = false;
+			toast.show('Project renamed.');
 			await invalidateAll();
 		} catch (failure) {
-			toast.show(failure instanceof ApiError ? failure.message : 'Could not delete the project.');
+			renameError = failure instanceof ApiError ? failure.message : 'Could not rename the project.';
+		} finally {
+			renameBusy = false;
 		}
+	}
+
+	// Projects from PROJECTS keep their name and cannot be deleted.
+	function menuOf(project: Project): MenuItem[] {
+		const editable = canAdminister && !project.from_env;
+		const items: MenuItem[] = [];
+
+		if (editable) {
+			items.push({ label: 'Rename', icon: 'edit', action: () => startRename(project) });
+		}
+
+		items.push({
+			label: 'Show installation code',
+			icon: 'code',
+			href: comingPages.projectSetup(project.id)
+		});
+
+		if (canAdminister) {
+			items.push({
+				label: 'Settings',
+				icon: 'settings',
+				href: oldUI.project(project.id),
+				separatorBefore: true
+			});
+		}
+
+		items.push({
+			label: 'Logs',
+			icon: 'logs',
+			href: withQuery(resolve('/(app)/logs'), { project: project.name }),
+			separatorBefore: !canAdminister
+		});
+
+		if (editable) {
+			items.push({
+				label: 'Delete',
+				icon: 'delete',
+				danger: true,
+				separatorBefore: true,
+				confirm: {
+					title: 'Delete project',
+					message: `Delete the project ${project.name} with all its issues, events and logs? Its DSN stops working. This cannot be undone.`,
+					confirmLabel: 'Delete'
+				},
+				action: () => remove(project)
+			});
+		}
+
+		return items;
 	}
 </script>
 
@@ -136,31 +212,33 @@
 			</div>
 			<div class="text-xs text-muted">logs: {typeof logs === 'string' ? logs : logs.join(' ')}</div>
 		{:else}
-			<div class="flex gap-1.5">
-				{#if canAdminister}
-					<Button
-						icon="settings"
-						href={oldUI.project(project.id)}
-						title="Settings of {project.name}"
-					/>
-				{/if}
-				<Button
-					icon="logs"
-					href={withQuery(resolve('/(app)/logs'), { project: project.name })}
-					title="Logs of {project.name}"
-				/>
-				{#if canAdminister && !project.from_env}
-					<Button
-						variant="danger"
-						icon="delete"
-						title="Delete {project.name}"
-						onclick={() => remove(project)}
-					/>
-				{/if}
-			</div>
+			<RowMenu label="Actions for {project.name}" items={menuOf(project)} />
 		{/if}
 	{/snippet}
 	{#snippet empty()}
 		No projects yet. Add one, or set <code>PROJECTS=1:backend:&lt;public key&gt;</code>.
 	{/snippet}
 </Table>
+
+<Dialog
+	title="Rename project"
+	bind:open={renameOpen}
+	size="narrow"
+	dismissible={!renameBusy}
+	onopen={() => renameForm?.querySelector('input')?.select()}
+>
+	<form id="rename-project" bind:this={renameForm} onsubmit={rename}>
+		<TextField
+			label="Name"
+			name="name"
+			bind:value={newName}
+			required
+			autocomplete="off"
+			error={renameError}
+		/>
+	</form>
+	{#snippet actions()}
+		<Button disabled={renameBusy} onclick={() => (renameOpen = false)}>Cancel</Button>
+		<Button variant="primary" type="submit" form="rename-project" busy={renameBusy}>Save</Button>
+	{/snippet}
+</Dialog>

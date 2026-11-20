@@ -5,7 +5,7 @@ two on each side of the current one, and the page size.
 -->
 <script lang="ts">
 	import { perPageChoices } from '#lib/filters.ts';
-	import { controlClasses } from './field.ts';
+	import Select from './Select.svelte';
 
 	type Props = {
 		page: number;
@@ -36,6 +36,11 @@ two on each side of the current one, and the page size.
 
 		return shown;
 	});
+
+	const perPageOptions = perPageChoices.map((choice) => ({
+		value: String(choice),
+		label: `${choice} per page`
+	}));
 
 	const linkClasses =
 		'focus-ring rounded-control px-2 py-1 no-underline hover:bg-hover hover:no-underline';
@@ -72,15 +77,11 @@ two on each side of the current one, and the page size.
 				{/if}
 			</span>
 		{/if}
-		<select
-			class={controlClasses}
-			aria-label="Rows per page"
-			value={perPage}
-			onchange={(event) => onperpage(Number(event.currentTarget.value))}
-		>
-			{#each perPageChoices as choice (choice)}
-				<option value={choice}>{choice} per page</option>
-			{/each}
-		</select>
+		<Select
+			label="Rows per page"
+			value={String(perPage)}
+			options={perPageOptions}
+			onchange={(value: string) => onperpage(Number(value))}
+		/>
 	</nav>
 {/if}

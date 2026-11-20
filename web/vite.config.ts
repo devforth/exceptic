@@ -1,4 +1,5 @@
 import tailwindcss from '@tailwindcss/vite';
+import { svelteTesting } from '@testing-library/svelte/vite';
 import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { readdirSync } from 'node:fs';
@@ -39,14 +40,19 @@ export default defineConfig({
 			},
 			// dist/spa is embedded in the binary (web.go); dist/.gitkeep lets Go build without it.
 			adapter: adapter({ pages: 'dist/spa', fallback: '200.html' })
-		})
+		}),
+		// In tests: Svelte's browser build, and the rendered components removed after each test.
+		svelteTesting()
 	],
 	server: {
 		proxy: { [`^(?!${servedHere.map((pattern) => `(${pattern})`).join('|')})`]: goServer }
 	},
-	// Unit tests of the client code (pnpm test, part of make web-check).
+	// Tests of the client code and of the components in a simulated browser (pnpm test, part
+	// of make web-check).
 	test: {
 		include: ['src/**/*.test.ts'],
+		environment: 'jsdom',
+		setupFiles: ['src/test/setup.ts'],
 		passWithNoTests: true
 	}
 });
