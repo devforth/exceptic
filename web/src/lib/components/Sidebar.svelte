@@ -45,12 +45,12 @@ account and Log out. It collapses to icons (the choice is kept in this browser);
 	);
 
 	function address(entry: NavEntry) {
-		return entry.route ? resolve(entry.route) : entry.href;
+		return resolve(entry.route);
 	}
 
 	// The section of the page: an item of the app whose address starts the page's.
 	function isActive(entry: NavEntry) {
-		return entry.route !== undefined && page.url.pathname.startsWith(resolve(entry.route));
+		return page.url.pathname.startsWith(resolve(entry.route));
 	}
 
 	const unresolved = $derived(session.unresolved_issues);

@@ -1,11 +1,5 @@
-// The menu, and the addresses of the server-rendered UI: the one place the app names them
-// until it replaces them. The Go server serves its pages at their addresses and the app at
-// every other one; when a page moves here, its menu item gets a route instead of an href.
+// The menu of the app.
 import type { IconName } from './icons.ts';
-
-export const oldUI = {
-	mcp: '/agents'
-} as const;
 
 /** An address with its query, encoded. */
 export function withQuery(path: string, params: Record<string, string>): string {
@@ -18,7 +12,8 @@ type AppRoute =
 	| '/(app)/projects'
 	| '/(app)/logs'
 	| '/(app)/users'
-	| '/(app)/notifications';
+	| '/(app)/notifications'
+	| '/(app)/agents';
 
 export type NavEntry = {
 	id: string;
@@ -28,7 +23,8 @@ export type NavEntry = {
 	adminOnly?: boolean;
 	/** The unresolved issues are counted on it. */
 	countsUnresolved?: boolean;
-} & ({ route: AppRoute; href?: never } | { href: string; route?: never });
+	route: AppRoute;
+};
 
 export type NavGroup = { id: string; label: string; entries: NavEntry[] };
 
@@ -65,7 +61,7 @@ export const navGroups: NavGroup[] = [
 				label: 'MCP',
 				title: 'MCP: connect a coding agent',
 				icon: 'mcp',
-				href: oldUI.mcp
+				route: '/(app)/agents'
 			}
 		]
 	}

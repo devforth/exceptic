@@ -33,6 +33,8 @@ var PlainRequests = []PlainRequest{
 	plainRequest[noInput, NoContent]("logout", http.MethodPost),
 	plainRequest[ChangePasswordInput, NoContent]("change_password", http.MethodPost),
 	plainRequest[noInput, PersonalToken]("personal_token", http.MethodPost),
+	plainRequest[AuthorizationInput, Authorization]("authorization_request", http.MethodGet),
+	plainRequest[AuthorizationDecision, AuthorizationTarget]("authorization_decision", http.MethodPost),
 }
 
 // LoginStateInput: next is where to go after the login.
@@ -65,11 +67,10 @@ type ChangePasswordInput struct {
 	ConfirmPassword string `json:"confirm_password"`
 }
 
-// PersonalToken is a new personal token, shown once: its Preview stays
-// visible later, SetupPrompt has an agent add the server with it.
+// PersonalToken is a new personal token, shown once; SetupPrompt has an
+// agent add the server with it.
 type PersonalToken struct {
 	Token       string `json:"token"`
-	Preview     string `json:"preview"`
 	SetupPrompt string `json:"setup_prompt"`
 }
 
@@ -178,4 +179,33 @@ func readPlain(w http.ResponseWriter, r *http.Request, input any) bool {
 	}
 
 	return true
+}
+
+// AuthorizationInput: Query is the query of an agent's address of the
+// consent page (/oauth/authorize?...), as it came.
+type AuthorizationInput struct {
+	Query string `json:"query"`
+}
+
+// Authorization is what the consent page shows about a valid request, and
+// FormToken, which binds the decision to this session and this request.
+// Refused requests answer 400 with the reason, never a redirect.
+type Authorization struct {
+	ClientName string `json:"client_name"`
+	// ClientSite is the host that published the agent's metadata document.
+	ClientSite  string `json:"client_site,omitempty"`
+	RedirectURI string `json:"redirect_uri"`
+	FormToken   string `json:"form_token"`
+}
+
+type AuthorizationDecision struct {
+	Query     string `json:"query"`
+	FormToken string `json:"form_token"`
+	Allow     bool   `json:"allow"`
+}
+
+// AuthorizationTarget is where the page sends the browser: back to the
+// agent, with a code or an error.
+type AuthorizationTarget struct {
+	RedirectURL string `json:"redirect_url"`
 }

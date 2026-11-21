@@ -302,13 +302,11 @@ document.addEventListener("change", (event) => {
 });
 
 // Submit the form of a field whose events do not reach it: one outside its
-// form (form= attribute, like the page size under a list), or a select that
-// shows something else when changed (data-submit-on-change, whose MCP apps).
+// form (form= attribute, like the page size under a list).
 document.addEventListener("change", (event) => {
   const field = event.target;
-  const outside = field.form && field.hasAttribute("form") && !field.form.contains(field);
 
-  if (outside || field.matches("select[data-submit-on-change]")) {
+  if (field.form && field.hasAttribute("form") && !field.form.contains(field)) {
     field.form.requestSubmit();
   }
 });
@@ -344,57 +342,6 @@ document.addEventListener("click", (event) => {
 document.addEventListener("DOMContentLoaded", enhance);
 // After an outerHTML swap the event points at the removed element, so rescan the page.
 document.addEventListener("htmx:afterSettle", enhance);
-
-// Client tabs keep connected apps in view. Links also work without JavaScript.
-function selectMCPClient(tab, focus = false) {
-  const settings = tab.closest(".mcp-settings");
-  const client = tab.dataset.mcpTab;
-
-  settings.querySelectorAll("[data-mcp-tab]").forEach((item) => {
-    const selected = item === tab;
-    item.setAttribute("aria-selected", String(selected));
-    item.tabIndex = selected ? 0 : -1;
-    document.getElementById(item.getAttribute("aria-controls")).hidden = !selected;
-  });
-  settings.querySelectorAll("[data-mcp-client]").forEach((input) => { input.value = client; });
-  history.replaceState(null, "", tab.href);
-
-  if (focus) tab.focus();
-}
-
-document.addEventListener("click", (event) => {
-  const tab = event.target.closest("[data-mcp-tab]");
-
-  if (!tab || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
-
-  event.preventDefault();
-  selectMCPClient(tab);
-});
-
-document.addEventListener("keydown", (event) => {
-  const tab = event.target.closest("[data-mcp-tab]");
-
-  if (!tab || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-
-  const tabs = Array.from(tab.closest('[role="tablist"]').querySelectorAll("[data-mcp-tab]"));
-  let index = tabs.indexOf(tab);
-
-  if (event.key === "Home") index = 0;
-  else if (event.key === "End") index = tabs.length - 1;
-  else index = (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
-
-  event.preventDefault();
-  selectMCPClient(tabs[index], true);
-});
-
-// Token generation returns just the settings card; keep its selected URL in sync.
-document.addEventListener("htmx:afterSwap", (event) => {
-  if (event.detail.target.id !== "mcp-settings") return;
-
-  const tab = document.querySelector('[data-mcp-tab][aria-selected="true"]');
-
-  if (tab) history.replaceState(null, "", tab.href);
-});
 
 // Popovers close themselves on Esc; mark the open ones so Esc does not also go back.
 document.addEventListener("toggle", (event) => {

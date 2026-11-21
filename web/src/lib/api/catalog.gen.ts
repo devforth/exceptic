@@ -383,6 +383,19 @@ export interface Endpoints {
 			missing_issue_ids?: string[] | null;
 		};
 	};
+	get_mcp_setup: {
+		in: Record<string, never>;
+		out: {
+			url: string;
+			server_name: string;
+			claude_command: string;
+			codex_command: string;
+			project_config: string;
+			token_set: boolean;
+			unencrypted: boolean;
+			ips_restricted: boolean;
+		};
+	};
 	get_project: {
 		in: {
 			/** Project name or ID. */
@@ -495,12 +508,18 @@ export interface Endpoints {
 		};
 		out: {
 			user: string;
+			user_id: string;
+			owners?: {
+				id: string;
+				name: string;
+			}[] | null;
 			agents: ({
 				grant_id: string;
 				name: string;
 				kind: string;
 				created_at: IsoTime;
 				last_used_at?: IsoTime | null;
+				connected: boolean;
 			})[] | null;
 		};
 	};
@@ -937,6 +956,7 @@ export const endpoints = {
 	get_issue: { method: 'GET', text: true, admin: false, destructive: false, confirm: false },
 	get_issue_details: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	get_issues: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
+	get_mcp_setup: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	get_project: { method: 'GET', text: false, admin: true, destructive: false, confirm: false },
 	get_project_defaults: { method: 'GET', text: false, admin: true, destructive: false, confirm: false },
 	get_project_setup: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
@@ -1003,8 +1023,28 @@ export interface PlainRequests {
 		in: Record<string, never>;
 		out: {
 			token: string;
-			preview: string;
 			setup_prompt: string;
+		};
+	};
+	authorization_request: {
+		in: {
+			query: string;
+		};
+		out: {
+			client_name: string;
+			client_site?: string;
+			redirect_uri: string;
+			form_token: string;
+		};
+	};
+	authorization_decision: {
+		in: {
+			query: string;
+			form_token: string;
+			allow: boolean;
+		};
+		out: {
+			redirect_url: string;
 		};
 	};
 }
@@ -1016,6 +1056,8 @@ export const plainRequests = {
 	logout: { method: 'POST' },
 	change_password: { method: 'POST' },
 	personal_token: { method: 'POST' },
+	authorization_request: { method: 'GET' },
+	authorization_decision: { method: 'POST' },
 } as const;
 
 /** The answer to a refused request: fields by input name, the record that already exists. */

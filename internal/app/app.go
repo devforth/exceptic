@@ -2,6 +2,7 @@
 package app
 
 import (
+	"maps"
 	"context"
 	"log/slog"
 	"net/http"
@@ -94,6 +95,8 @@ func New(ctx context.Context, options Options) (*App, error) {
 
 	// One catalog of requests, served as the REST API and as MCP tools, on the same services as the UI.
 	endpoints := api.Endpoints(registry, all)
+	plainRequests := api.LoginRequests(logger, auth, settings.AppName)
+	maps.Copy(plainRequests, api.AgentRequests(logger, auth, all.Agents))
 	app.Handler = server.New(server.Options{
 		Logger:         logger,
 		Database:       db,
@@ -103,7 +106,7 @@ func New(ctx context.Context, options Options) (*App, error) {
 		OAuth:          authorization,
 		UI:             webUI,
 		Web:            spa,
-		UIAPI:          api.NewUI(logger, endpoints, api.LoginRequests(logger, auth, settings.AppName), auth, settings.Notifications.PublicURL, settings.TrustedProxies),
+		UIAPI:          api.NewUI(logger, endpoints, plainRequests, auth, settings.Notifications.PublicURL, settings.TrustedProxies),
 		APIToken:       settings.APIToken,
 		AllowedIPs:     settings.AllowedIPs,
 		TrustedProxies: settings.TrustedProxies,

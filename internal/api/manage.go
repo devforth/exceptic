@@ -32,7 +32,7 @@ func (handler *handlers) management() []Endpoint {
 		}, handler.updateAccountName),
 		Define(Endpoint{
 			Name:        "list_agents",
-			Description: "Coding agents and personal tokens connected to MCP for the user (admins: user_id of a user they manage), with when each was last used.",
+			Description: "Coding agents and personal tokens connected to MCP for the user (admins: user_id of a user they manage, from owners), with when each was last used; connected is false for a personal token never used.",
 			ReadOnly:    true, Transports: ActsAsUser,
 		}, handler.listAgents),
 		Define(Endpoint{
@@ -40,6 +40,11 @@ func (handler *handlers) management() []Endpoint {
 			Description: "Revoke a connected agent or personal token (grant_id from list_agents); it stops working at once.",
 			Destructive: true, Transports: ActsAsUser,
 		}, handler.disconnectAgent),
+		Define(Endpoint{
+			Name:        "get_mcp_setup",
+			Description: "How to connect a coding agent: the MCP endpoint, its commands and .mcp.json, whether the viewer has a personal token, and warnings.",
+			ReadOnly:    true, Transports: TransportUI,
+		}, handler.getMCPSetup),
 
 		Define(Endpoint{
 			Name:        "get_project",
@@ -167,11 +172,21 @@ type agentOutput struct {
 	Kind       string     `json:"kind"`
 	CreatedAt  time.Time  `json:"created_at"`
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	// Connected: false for a personal token never used, which is no connected app yet.
+	Connected bool `json:"connected"`
+}
+
+type agentOwnerOutput struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type agentsOutput struct {
-	User   string        `json:"user"`
-	Agents []agentOutput `json:"agents"`
+	User   string `json:"user"`
+	UserID string `json:"user_id"`
+	// Owners: whose agents the caller may list, themselves included; only when more than one.
+	Owners []agentOwnerOutput `json:"owners,omitempty"`
+	Agents []agentOutput      `json:"agents"`
 }
 
 func (handler *handlers) listAgents(ctx context.Context, call Call, input listAgentsInput) (agentsOutput, error) {
@@ -186,10 +201,18 @@ func (handler *handlers) listAgents(ctx context.Context, call Call, input listAg
 		return agentsOutput{}, ErrNotFound
 	}
 
-	output := agentsOutput{User: page.Owner.Username, Agents: []agentOutput{}}
+	output := agentsOutput{User: page.Owner.Username, UserID: page.Owner.ID, Agents: []agentOutput{}}
+
+	if len(page.Owners) > 1 {
+		for _, owner := range page.Owners {
+			output.Owners = append(output.Owners, agentOwnerOutput{ID: owner.ID, Name: owner.DisplayName()})
+		}
+	}
 
 	for _, grant := range page.Grants {
-		output.Agents = append(output.Agents, agentOutput{GrantID: grant.ID, Name: call.Text(grant.Name), Kind: grant.Kind, CreatedAt: grant.CreatedAt, LastUsedAt: grant.LastUsedAt})
+		output.Agents = append(output.Agents, agentOutput{
+			GrantID: grant.ID, Name: call.Text(grant.Name), Kind: grant.Kind, CreatedAt: grant.CreatedAt, LastUsedAt: grant.LastUsedAt, Connected: grant.Connected(),
+		})
 	}
 
 	return output, nil

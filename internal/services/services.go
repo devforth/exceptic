@@ -50,7 +50,7 @@ func New(dependencies Dependencies) *All {
 		Deliveries:   newDeliveries(database),
 		Verification: newVerification(dependencies.Logger, database, dependencies.Factory, connections),
 		Logs:         newLogs(database),
-		Agents:       newAgents(dependencies.OAuth, database),
+		Agents:       newAgents(dependencies.OAuth, database, settings),
 		Users:        NewUsers(dependencies.Logger, database),
 		Sessions:     NewSessions(database),
 	}

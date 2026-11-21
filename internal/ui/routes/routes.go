@@ -7,7 +7,6 @@ import (
 	"net/netip"
 	"strings"
 
-	"github.com/devforth/exceptic/internal/oauth"
 	"github.com/devforth/exceptic/internal/services"
 	"github.com/devforth/exceptic/internal/session"
 	"github.com/devforth/exceptic/internal/ui/controllers"
@@ -32,12 +31,6 @@ func Register(router *http.ServeMux, protect func(http.Handler) http.Handler, co
 	// The dashboard: every route needs a login and the user's own password; any role.
 	dashboard := group{
 		"GET /{$}": controller.Home, // to the web app's issue list
-
-		"GET /agents":                       controller.AgentsPage,
-		"POST /agents/token":                controller.NewAgentToken,
-		"POST /agents/{grantID}/disconnect": controller.DisconnectAgent, // someone else's needs an admin (services.Agents)
-		"GET " + oauth.AuthorizePath:        controller.AuthorizePage,
-		"POST " + oauth.AuthorizePath:       controller.Authorize,
 
 		"GET " + services.ProjectColorsPath: controller.ProjectColors, // names the projects
 	}

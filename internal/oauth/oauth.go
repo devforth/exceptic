@@ -21,7 +21,7 @@ import (
 
 // Paths of the endpoints, below the server's address (PUBLIC_URL).
 const (
-	AuthorizePath = "/oauth/authorize" // the consent page, served by the UI
+	AuthorizePath = "/oauth/authorize" // the consent page of the web app
 	TokenPath     = "/oauth/token"
 	RegisterPath  = "/oauth/register"
 	jwksPath      = "/oauth/jwks"
@@ -76,19 +76,30 @@ func (authorization *Server) internalError(w http.ResponseWriter, r *http.Reques
 	http.Error(w, "internal error", http.StatusInternalServerError)
 }
 
+// Address is the server's address as agents reach it (PUBLIC_URL, or the
+// request's behind TRUSTED_PROXIES).
+func (authorization *Server) Address(r *http.Request) *url.URL {
+	return server.PublicURL(r, authorization.PublicURL, authorization.TrustedProxies)
+}
+
 // Issuer identifies this authorization server: the server's address.
 func (authorization *Server) Issuer(r *http.Request) string {
-	return server.PublicURL(r, authorization.PublicURL, authorization.TrustedProxies).String()
+	return authorization.Address(r).String()
 }
 
 // URL is the address of path on this server.
 func (authorization *Server) URL(r *http.Request, path string) string {
-	return server.PublicURL(r, authorization.PublicURL, authorization.TrustedProxies).JoinPath(path).String()
+	return authorization.Address(r).JoinPath(path).String()
 }
 
 // ResourceURL is the MCP endpoint, as agents connect to it.
 func (authorization *Server) ResourceURL(r *http.Request) string {
-	return authorization.URL(r, authorization.ResourcePath)
+	return authorization.ResourceAt(authorization.Address(r))
+}
+
+// ResourceAt is the MCP endpoint at the server's address.
+func (authorization *Server) ResourceAt(address *url.URL) string {
+	return address.JoinPath(authorization.ResourcePath).String()
 }
 
 // Error is an OAuth error response (RFC 6749 §5.2).
@@ -203,11 +214,9 @@ func (authorization *Server) Disconnect(ctx context.Context, grantID string) err
 	return authorization.Store.DeleteGrant(ctx, grantID)
 }
 
-// Unencrypted reports whether agents reach the server over plain HTTP on
-// another machine: codes and tokens could then be read on the way.
-func (authorization *Server) Unencrypted(r *http.Request) bool {
-	address := server.PublicURL(r, authorization.PublicURL, authorization.TrustedProxies)
-
+// Unencrypted reports whether agents reach the server at address over plain
+// HTTP on another machine: codes and tokens could then be read on the way.
+func Unencrypted(address *url.URL) bool {
 	return address.Scheme != "https" && !loopback(address)
 }
 
