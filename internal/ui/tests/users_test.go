@@ -3,6 +3,7 @@ package tests
 import (
 	"context"
 	"encoding/json"
+	"html"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -17,44 +18,43 @@ import (
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
-var (
-	temporaryPasswordField = regexp.MustCompile(`id="temporary-password" value="([^"]+)"`)
-	userAction             = regexp.MustCompile(`action="/users/([a-z0-9]{8})"`)
-)
-
 const userPassword = "user password 123"
 
-// createUser adds a user from the users page and lets them choose their
-// password, as they must at the first login. It returns their id and a
-// client logged in as them.
+// createUser adds a user through the web app's API and lets them choose
+// their password, as they must at the first login. It returns their id and
+// a client logged in as them.
 func (server *testServer) createUser(username, role string) (string, *testServer) {
 	server.t.Helper()
 
-	response := server.post("/users", url.Values{"username": {username}, "role": {role}})
-	page := response.Body.String()
-	temporary := temporaryPasswordField.FindStringSubmatch(page)
-	id := userAction.FindStringSubmatch(page)
-
-	if response.Code != http.StatusOK || temporary == nil || id == nil {
-		server.t.Fatalf("create %s: %d %s", username, response.Code, page)
+	var created struct {
+		User struct {
+			ID string `json:"id"`
+		} `json:"user"`
+		TemporaryPassword string `json:"temporary_password"`
 	}
 
-	user := server.as(username, temporary[1])
+	response := server.call("create_user", map[string]string{"username": username, "role": role})
 
-	// A temporary password leads to the account page, and only there.
-	if response := user.get("/agents"); response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/account" {
+	if err := json.Unmarshal(response.Body.Bytes(), &created); err != nil || response.Code != http.StatusOK {
+		server.t.Fatalf("create %s: %d %s", username, response.Code, response.Body)
+	}
+
+	user := server.as(username, created.TemporaryPassword)
+
+	// A temporary password leads the old pages to the account page.
+	if response := user.get("/issues"); response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/account" {
 		server.t.Fatalf("temporary password: %d %q", response.Code, response.Header().Get("Location"))
 	}
 
-	response = user.post("/account/password", url.Values{"current_password": {temporary[1]}, "password": {userPassword}, "confirm_password": {userPassword}})
+	response = user.call("change_password", map[string]string{"current_password": created.TemporaryPassword, "password": userPassword, "confirm_password": userPassword})
 
-	if response.Code != http.StatusSeeOther {
+	if response.Code != http.StatusNoContent {
 		server.t.Fatalf("choose a password: %d %s", response.Code, response.Body)
 	}
 
-	user.page("/agents")
+	user.page("/issues")
 
-	return id[1], user
+	return created.User.ID, user
 }
 
 // What each role may open: users get issues, logs, the projects (read-only)
@@ -65,13 +65,13 @@ func TestRoles(t *testing.T) {
 	server.login()
 
 	_, admin := server.createUser("ops", store.RoleAdmin)
-	userID, user := server.createUser("dev", store.RoleUser)
+	_, user := server.createUser("dev", store.RoleUser)
 
-	for _, path := range []string{"/agents", "/account"} {
+	for _, path := range []string{"/issues", "/logs", "/agents"} {
 		user.page(path)
 	}
 
-	for _, path := range []string{"/notifications", "/notifications/new", "/notifications/log", "/users", "/users/" + userID} {
+	for _, path := range []string{"/notifications", "/notifications/new", "/notifications/log", "/projects/new", "/projects/1"} {
 		if response := user.get(path); response.Code != http.StatusNotFound {
 			t.Errorf("user GET %s: %d", path, response.Code)
 		}
@@ -87,113 +87,45 @@ func TestRoles(t *testing.T) {
 			t.Errorf("a user sees %s", hidden)
 		}
 	}
+
+	if response := user.post("/projects", url.Values{"name": {"sneaky"}}); response.Code != http.StatusNotFound {
+		t.Errorf("a user created a project: %d", response.Code)
+	}
 }
 
-// Admins manage admins and users, never the superadmin or themselves here.
-func TestAdminsManageUsers(t *testing.T) {
+// Users change statuses but cannot delete issues: no button, and the server
+// refuses it from the issue page and the list.
+func TestUsersCannotDeleteIssues(t *testing.T) {
 	server := newTestServer(t, password)
+	server.ingestFixtures()
 	server.login()
 
-	otherID, _ := server.createUser("ops2", store.RoleAdmin)
-	_, admin := server.createUser("ops", store.RoleAdmin)
+	_, user := server.createUser("dev", store.RoleUser)
+	id := user.unresolvedIDs()[0]
 
-	// The admin edits the other admin, not the superadmin, whose page is read-only.
-	root := superadminID(t, admin)
-
-	if users := admin.page("/users"); !strings.Contains(users, `href="/users/`+otherID+`" title="Edit`) || strings.Contains(users, `href="/users/`+root+`" title="Edit`) {
-		t.Errorf("edit links:\n%s", users)
-	}
-
-	if page := admin.page("/users/" + root); strings.Contains(page, `action="/users/`+root+`"`) || !strings.Contains(page, "cannot change this user") {
-		t.Errorf("superadmin page for an admin:\n%s", page)
-	}
-
-	for _, request := range []struct {
-		path string
-		form url.Values
-	}{
-		{"/users/" + root, url.Values{"name": {"Boss"}, "role": {"user"}}},
-		{"/users/" + root + "/password", nil},
-		{"/users/" + root + "/delete", nil},
-		{"/users", url.Values{"username": {"second"}, "role": {"superadmin"}}},
-	} {
-		response := admin.post(request.path, request.form)
-
-		if response.Code != http.StatusNotFound && response.Code != http.StatusUnprocessableEntity {
-			t.Errorf("admin POST %s: %d", request.path, response.Code)
+	for _, page := range []string{user.page("/issues"), user.page("/issues/" + id)} {
+		if strings.Contains(page, `value="delete"`) {
+			t.Error("a user sees the Delete button")
 		}
 	}
 
-	if response := admin.post("/users/"+otherID, url.Values{"name": {"Second admin"}, "role": {"user"}}); response.Code != http.StatusSeeOther {
-		t.Fatalf("admin edits an admin: %d %s", response.Code, response.Body)
+	if !strings.Contains(server.page("/issues/"+id), `value="delete"`) {
+		t.Error("the superadmin has no Delete button")
 	}
 
-	if page := admin.page("/users"); !strings.Contains(page, "Second admin") {
-		t.Error("the change is not shown")
+	if response := user.post("/issues/"+id+"/action", url.Values{"action": {"delete"}}); response.Code != http.StatusNotFound {
+		t.Errorf("delete from the issue page: %d", response.Code)
 	}
 
-	if response := admin.post("/users/"+otherID+"/delete", nil); response.Code != http.StatusSeeOther {
-		t.Fatalf("admin deletes a user: %d", response.Code)
+	if response := user.post("/issues/bulk", url.Values{"action": {"delete"}, "issue": {id}}); response.Code != http.StatusNotFound {
+		t.Errorf("bulk delete: %d", response.Code)
 	}
 
-	if response := server.post("/users", url.Values{"username": {"OPS"}, "role": {"user"}}); response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "taken") {
-		t.Errorf("a username in another case: %d", response.Code)
+	user.page("/issues/" + id)
+
+	if response := user.post("/issues/"+id+"/action", url.Values{"action": {"resolve"}}); response.Code != http.StatusSeeOther {
+		t.Errorf("a user cannot resolve: %d", response.Code)
 	}
-}
-
-// A password reset by someone else ends the user's sessions and disconnects
-// their agents; changing your own keeps your agents and this session.
-func TestPasswordChangesAndAgents(t *testing.T) {
-	server := newTestServer(t, password)
-	server.login()
-
-	id, user := server.createUser("dev", store.RoleUser)
-	token := personalToken(t, user)
-	other := server.as("dev", userPassword)
-
-	// Own change: this session stays, the other ends, the agent works.
-	response := user.post("/account/password", url.Values{"current_password": {"wrong"}, "password": {"new password 456"}, "confirm_password": {"new password 456"}})
-
-	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "current password is wrong") {
-		t.Fatalf("wrong current password: %d", response.Code)
-	}
-
-	response = user.post("/account/password", url.Values{"current_password": {userPassword}, "password": {"new password 456"}, "confirm_password": {"new password 456"}})
-
-	if response.Code != http.StatusSeeOther {
-		t.Fatalf("own change: %d %s", response.Code, response.Body)
-	}
-
-	user.page("/agents")
-
-	if response := other.get("/agents"); response.Code != http.StatusSeeOther {
-		t.Error("the other session survived the password change")
-	}
-
-	agentAccess(t, server, token, http.StatusOK)
-
-	// A reset by an admin: logged out, agents disconnected, a temporary password.
-	page := server.post("/users/"+id+"/password", nil).Body.String()
-
-	if temporaryPasswordField.FindStringSubmatch(page) == nil {
-		t.Fatalf("no temporary password:\n%s", page)
-	}
-
-	if response := user.get("/agents"); response.Code != http.StatusSeeOther {
-		t.Error("the session survived a reset")
-	}
-
-	agentAccess(t, server, token, http.StatusUnauthorized)
-
-	// Deleting a user disconnects their agents too.
-	deletedID, deleted := server.createUser("gone", store.RoleUser)
-	token = personalToken(t, deleted)
-
-	if response := server.post("/users/"+deletedID+"/delete", nil); response.Code != http.StatusSeeOther {
-		t.Fatalf("delete: %d", response.Code)
-	}
-
-	agentAccess(t, server, token, http.StatusUnauthorized)
 }
 
 // personalToken generates the personal token of the client's user.
@@ -269,26 +201,6 @@ func TestAgentsOfOtherUsers(t *testing.T) {
 	agentAccess(t, server, token, http.StatusUnauthorized)
 }
 
-// The users list shows the username under the name only when they differ.
-func TestUsersListShowsUsernameOnce(t *testing.T) {
-	server := newTestServer(t, password)
-	server.login()
-
-	username := `<div class="muted small">admin</div>`
-
-	if page := server.page("/users"); strings.Contains(page, username) {
-		t.Error("a user without a name of their own shows the username twice")
-	}
-
-	if response := server.post("/account/name", url.Values{"name": {"Root"}}); response.Code != http.StatusSeeOther {
-		t.Fatalf("rename: %d", response.Code)
-	}
-
-	if page := server.page("/users"); !strings.Contains(page, username) {
-		t.Error("a named user's username is missing")
-	}
-}
-
 // Every status change is in the issue's history: who, when and how; a
 // resolved issue that happens again is reopened by its event.
 func TestStatusHistory(t *testing.T) {
@@ -300,31 +212,25 @@ func TestStatusHistory(t *testing.T) {
 	_, user := server.createUser("dev", store.RoleUser)
 	id := server.unresolvedIDs()[0]
 
-	// The name field starts with the current name: the username until one is set.
-	if page := user.page("/account"); !strings.Contains(page, `<input name="name" value="dev"`) {
-		t.Error("the name field is empty")
+	if response := user.call("update_account_name", map[string]string{"name": "Dev One"}); response.Code != http.StatusOK {
+		t.Fatalf("rename: %d %s", response.Code, response.Body)
 	}
 
-	user.post("/account/name", url.Values{"name": {"Dev One"}})
+	user.post("/issues/"+id+"/action", url.Values{"action": {"resolve"}})
+	server.post("/issues/bulk", url.Values{"action": {"ignore"}, "issue": {id}})
+	server.post("/issues/"+id+"/action", url.Values{"action": {"ignore"}}) // no change, no entry
 
-	if page := user.page("/account"); !strings.Contains(page, `<input name="name" value="Dev One"`) {
-		t.Error("the saved name is not shown")
+	page := html.UnescapeString(server.page("/issues/" + id))
+	history := page[strings.Index(page, "<h2>Status history</h2>"):]
+	history = history[:strings.Index(history, "</section>")]
+
+	if strings.Count(history, "<li>") != 2 || !strings.Contains(history, "by admin") || !strings.Contains(history, "by Dev One") ||
+		strings.Index(history, "by admin") > strings.Index(history, "by Dev One") {
+		t.Fatalf("history:\n%s", history)
 	}
 
-	// An empty name is saved as the username.
-	server.post("/account/name", url.Values{"name": {" "}})
-
-	if page := server.page("/account"); !strings.Contains(page, `<input name="name" value="admin"`) {
-		t.Error("an empty name is not the username")
-	}
-
-	user.applyIssueAction("resolve", id)
-	server.applyIssueAction("ignore", id)
-	server.applyIssueAction("ignore", id) // no change, no entry
-
-	// Newest first, each with the name its author had then.
-	if history := statusHistory(t, server, id); len(history) != 2 || history[0].Name != "admin" || history[1].Name != "Dev One" || history[0].To != store.StatusIgnored {
-		t.Fatalf("history: %+v", history)
+	if !strings.Contains(page, `class="status status-ignored"`) || !strings.Contains(page, "by admin ·") {
+		t.Error("the header does not say who changed the status")
 	}
 
 	// A resolved issue that happens again: reopened by its event.
@@ -364,48 +270,10 @@ func TestStatusHistory(t *testing.T) {
 		t.Fatal("not a regression", result, err)
 	}
 
-	if history := statusHistory(t, server, id); len(history) != 4 || !history[0].ByEvent || history[1].Name != "API token" {
-		t.Errorf("reopening not in the history: %+v", history)
-	}
-}
+	page = html.UnescapeString(server.page("/issues/" + id))
 
-type statusChange struct {
-	To      string `json:"to"`
-	Name    string `json:"name"`
-	ByEvent bool   `json:"by_event"`
-}
-
-// statusHistory is the history of an issue as its page reads it.
-func statusHistory(t *testing.T, server *testServer, issueID string) []statusChange {
-	t.Helper()
-
-	var details struct {
-		History []statusChange `json:"history"`
-	}
-
-	if err := json.Unmarshal([]byte(server.page("/api/ui/get_issue_details?issue_id="+issueID)), &details); err != nil {
-		t.Fatal(err)
-	}
-
-	return details.History
-}
-
-// A stolen session must not become a way to guess the password: wrong
-// current passwords count against the login limit.
-func TestAccountPasswordGuessing(t *testing.T) {
-	server := newTestServer(t, password)
-	server.login()
-
-	wrong := url.Values{"current_password": {"guess guess guess"}, "password": {"new password 456"}, "confirm_password": {"new password 456"}}
-
-	for range 10 {
-		server.post("/account/password", wrong)
-	}
-
-	right := url.Values{"current_password": {password}, "password": {"new password 456"}, "confirm_password": {"new password 456"}}
-
-	if response := server.post("/account/password", right); response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "Too many wrong passwords") {
-		t.Fatalf("after 10 guesses: %d", response.Code)
+	if !strings.Contains(page, "reopened: happened again") || !strings.Contains(page, "by API token") {
+		t.Errorf("reopening not in the history:\n%s", page)
 	}
 }
 
@@ -429,15 +297,23 @@ func TestAdminsCannotTouchSuperadminAgents(t *testing.T) {
 	}
 }
 
-// superadminID reads the id of the superadmin ("admin") from its link on the users page.
+// superadminID is the id of the superadmin ("admin").
 func superadminID(t *testing.T, server *testServer) string {
 	t.Helper()
 
-	match := regexp.MustCompile(`href="/users/([a-z0-9]{8})"[^>]*>[^<]*admin<`).FindStringSubmatch(server.page("/users"))
+	users, err := server.app.Services.Users.List(context.Background())
 
-	if match == nil {
-		t.Fatal("no link to the superadmin on the users page")
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	return match[1]
+	for _, user := range users {
+		if user.Role == store.RoleSuperadmin {
+			return user.ID
+		}
+	}
+
+	t.Fatal("no superadmin")
+
+	return ""
 }

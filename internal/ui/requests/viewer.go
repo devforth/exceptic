@@ -6,7 +6,6 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/devforth/exceptic/internal/services"
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
@@ -24,9 +23,4 @@ func Viewer(r *http.Request) store.User {
 	viewer, _ := r.Context().Value(viewerKey{}).(store.User)
 
 	return viewer
-}
-
-// ReadUser reads the user form.
-func ReadUser(r *http.Request) services.UserInput {
-	return services.UserInput{Username: r.PostFormValue("username"), Name: r.PostFormValue("name"), Role: r.PostFormValue("role")}
 }

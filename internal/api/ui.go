@@ -75,25 +75,37 @@ func (handler *UI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	handler.unknown.ServeHTTP(w, r)
 }
 
-// caller is the user of the session: 401 without one, so the app sends the
-// browser to the login; 500 when it could not be checked, never a login loop.
+// caller is the user of the session, as a call of the web app.
 func (handler *UI) caller(w http.ResponseWriter, r *http.Request) (Call, bool) {
-	viewer, err := handler.sessions.User(r)
+	viewer, ok := sessionViewer(handler.logger, handler.sessions, w, r)
 
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		server.JSONError(w, http.StatusUnauthorized, "login required")
-
-		return Call{}, false
-	case err != nil:
-		handler.logger.Error("web app session check failed", "path", r.URL.Path, "err", err)
-		server.JSONError(w, http.StatusInternalServerError, "internal error")
-
+	if !ok {
 		return Call{}, false
 	}
 
 	return Call{Transport: TransportUI, Viewer: viewer, Actor: viewer.Actor(store.SourceUI),
 		Address: server.PublicURL(r, handler.publicURL, handler.trustedProxies)}, true
+}
+
+// sessionViewer is the user of the request's session: without one it
+// answers 401, so the app sends the browser to the login; 500 when it could
+// not be checked, never a login loop.
+func sessionViewer(logger *slog.Logger, sessions SessionUsers, w http.ResponseWriter, r *http.Request) (store.User, bool) {
+	viewer, err := sessions.User(r)
+
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		server.JSONError(w, http.StatusUnauthorized, "login required")
+
+		return store.User{}, false
+	case err != nil:
+		logger.Error("web app session check failed", "path", r.URL.Path, "err", err)
+		server.JSONError(w, http.StatusInternalServerError, "internal error")
+
+		return store.User{}, false
+	}
+
+	return viewer, true
 }
 
 // guard: the headers of every answer, and only the web app's own pages may

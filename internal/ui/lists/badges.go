@@ -10,13 +10,12 @@ import (
 const (
 	KindProject = "project"
 	KindLevel   = "level"
-	KindRole    = "role"
 )
 
-// Badge is a project, level or role badge, the one "badge" partial for all:
+// Badge is a project or level badge, the one "badge" partial for both:
 // a link when URL is set, a plain label otherwise (inside checkboxes).
 type Badge struct {
-	Kind string // KindProject, KindLevel or KindRole
+	Kind string // KindProject or KindLevel
 	Name string
 	URL  string
 }
@@ -26,11 +25,8 @@ func (badge Badge) IsProject() bool { return badge.Kind == KindProject }
 
 // Class is the badge's CSS class.
 func (badge Badge) Class() string {
-	switch badge.Kind {
-	case KindProject:
+	if badge.IsProject() {
 		return "project"
-	case KindRole:
-		return "badge role-" + badge.Name
 	}
 
 	return "badge " + helpers.LevelClass(badge.Name)

@@ -14,8 +14,9 @@ import (
 
 func TestStaticAndSecurityHeaders(t *testing.T) {
 	server := newTestServer(t, password)
+	server.login()
 
-	for _, path := range []string{"/static/htmx.min.js", "/static/app.css", "/static/app.js"} {
+	for _, path := range []string{"/static/htmx.min.js", "/static/app.css", "/static/app.js", "/static/flatpickr.min.js", "/static/flatpickr.min.css"} {
 		response := server.get(path)
 
 		if response.Code != http.StatusOK || response.Body.Len() == 0 {
@@ -23,7 +24,7 @@ func TestStaticAndSecurityHeaders(t *testing.T) {
 		}
 	}
 
-	response := server.get("/login")
+	response := server.get("/agents")
 
 	if csp := response.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'self'") {
 		t.Fatalf("CSP = %q", csp)
@@ -37,7 +38,7 @@ func TestStaticAndSecurityHeaders(t *testing.T) {
 		t.Fatalf("page cache headers: %q, Vary %q", response.Header().Get("Cache-Control"), response.Header().Get("Vary"))
 	}
 
-	if cache := server.get(assetPath(server.page("/login"), "app.css")).Header().Get("Cache-Control"); !strings.Contains(cache, "immutable") {
+	if cache := server.get(assetPath(server.page("/agents"), "app.css")).Header().Get("Cache-Control"); !strings.Contains(cache, "immutable") {
 		t.Fatalf("versioned static file: Cache-Control %q", cache)
 	}
 }
@@ -51,15 +52,16 @@ func assetPath(page, name string) string {
 
 func TestStaticAssetsAreVersioned(t *testing.T) {
 	server := newTestServer(t, password)
+	server.login()
 
-	page := server.page("/login")
+	page := server.page("/agents")
 	link := regexp.MustCompile(`href="(/static/app\.css\?v=[0-9a-f]{12})"`).FindStringSubmatch(page)
 
 	if link == nil {
 		t.Fatalf("app.css is not linked with a content version:\n%s", page)
 	}
 
-	for _, asset := range []string{"htmx.min.js", "app.js"} {
+	for _, asset := range []string{"flatpickr.min.js", "flatpickr.min.css"} {
 		if !regexp.MustCompile(`/static/` + regexp.QuoteMeta(asset) + `\?v=[0-9a-f]{12}`).MatchString(page) {
 			t.Errorf("%s is not linked with a content version", asset)
 		}
@@ -80,7 +82,7 @@ func TestSidebarCollapsed(t *testing.T) {
 	server := newTestServer(t, password)
 	server.login()
 
-	page := server.page("/agents")
+	page := server.page("/issues")
 
 	if strings.Contains(page, "sidebar-collapsed") {
 		t.Fatal("the menu starts expanded")
@@ -91,7 +93,7 @@ func TestSidebarCollapsed(t *testing.T) {
 		t.Fatal("the toggle must carry the cookie's name and collapsed value")
 	}
 
-	request := httptest.NewRequest(http.MethodGet, "/agents", nil)
+	request := httptest.NewRequest(http.MethodGet, "/issues", nil)
 	request.AddCookie(&http.Cookie{Name: "sidebar", Value: "collapsed"})
 
 	if page := server.send(request).Body.String(); !strings.Contains(page, `class="app sidebar-collapsed"`) {
@@ -103,11 +105,15 @@ func TestSidebarCollapsed(t *testing.T) {
 // app.js follows on Esc (data-back).
 func TestBackLinks(t *testing.T) {
 	server := newTestServer(t, password)
+	server.ingestFixtures()
 	server.login()
 
 	for path, want := range map[string]string{
-		"/notifications/new": `<a href="/notifications" data-back`,
-		"/notifications/log": `<a href="/notifications" data-back`,
+		"/issues/" + server.unresolvedIDs()[0]: `<a href="/issues" data-back`,
+		"/projects/1":                          `<a href="/projects" data-back`,
+		"/projects/cleanups":                   `<a href="/projects" data-back`,
+		"/notifications/new":                   `<a href="/notifications" data-back`,
+		"/notifications/log":                   `<a href="/notifications" data-back`,
 	} {
 		if !strings.Contains(server.page(path), want) {
 			t.Errorf("%s: missing %s", path, want)
@@ -148,7 +154,7 @@ func TestMenuGroupsAndCounter(t *testing.T) {
 		position += next
 	}
 
-	server.applyIssueAction("resolve", ids[0])
+	server.post("/issues/"+ids[0]+"/action", url.Values{"action": {"resolve"}})
 
 	if page := server.page("/agents"); !strings.Contains(page, fmt.Sprintf(`aria-label="%d unresolved"`, len(ids)-1)) {
 		t.Error("the counter does not follow a resolved issue")
@@ -163,8 +169,9 @@ func TestMenuMarksTheSection(t *testing.T) {
 	activeItem := regexp.MustCompile(`href="([^"]+)"[^>]*class="active" aria-current="page"`)
 
 	for path, item := range map[string]string{
-		"/notifications/new": "/notifications", "/notifications/log": "/notifications", "/users/new": "/users",
-		"/agents": "/agents", "/account": "/account",
+		"/issues": "/issues", "/projects/new": "/projects", "/projects/cleanups": "/projects",
+		"/notifications/new": "/notifications", "/notifications/log": "/notifications",
+		"/agents": "/agents",
 	} {
 		if active := activeItem.FindAllStringSubmatch(server.page(path), -1); len(active) != 1 || active[0][1] != item {
 			t.Errorf("%s marks %v, want %s", path, active, item)
@@ -177,7 +184,7 @@ func TestMenuMarksTheSection(t *testing.T) {
 func TestNotFoundPage(t *testing.T) {
 	server := newTestServer(t, password)
 
-	for _, path := range []string{"/no-such-page", "/projects", "/issues", "/issues/zzzzzzzz"} {
+	for _, path := range []string{"/no-such-page", "/projects"} {
 		if response := server.get(path); response.Code != http.StatusOK || !strings.Contains(response.Body.String(), fixtures.WebPage) {
 			t.Errorf("%s: %d %s, want the web app", path, response.Code, response.Body)
 		}
@@ -191,8 +198,8 @@ func TestNotFoundPage(t *testing.T) {
 	_, user := server.createUser("dev", "user")
 
 	for name, response := range map[string]*httptest.ResponseRecorder{
-		"missing connection": server.get("/notifications/zzzzzzzz"),
-		"not for this role":  user.get("/notifications"),
+		"missing issue":     server.get("/issues/zzzzzzzz"),
+		"not for this role": user.get("/notifications"),
 	} {
 		body := response.Body.String()
 

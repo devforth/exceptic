@@ -6,8 +6,7 @@ import (
 )
 
 type sessionOutput struct {
-	User        userOutput `json:"user"`
-	DisplayName string     `json:"display_name"`
+	User userOutput `json:"user"`
 	// CanAdminister: projects, notifications and users; the app never maps roles itself.
 	CanAdminister    bool   `json:"can_administer"`
 	AppName          string `json:"app_name"`
@@ -66,7 +65,7 @@ func (handler *handlers) getSession(ctx context.Context, call Call, _ noInput) (
 	}
 
 	return sessionOutput{
-		User: userView(call.Viewer), DisplayName: call.Viewer.DisplayName(), CanAdminister: call.Viewer.CanAdminister(),
+		User: userView(call.Viewer), CanAdminister: call.Viewer.CanAdminister(),
 		AppName: handler.services.AppName, UnresolvedIssues: unresolved, ProjectColorsURL: handler.services.Projects.ColorsURL(),
 		ProjectColors: handler.services.Projects.ColorsByName(),
 	}, nil

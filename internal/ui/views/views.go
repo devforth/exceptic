@@ -51,9 +51,8 @@ var templateFuncs = template.FuncMap{
 	"retryNow": func(id any, count int, back string) map[string]any {
 		return map[string]any{"ID": id, "Count": count, "Return": back}
 	},
-	"back":        link,
-	"editLink":    link,
-	"roleSummary": func(role string) string { return store.RoleSummaries[role] },
+	"back":     link,
+	"editLink": link,
 	"deleteConnection": func(id, name, label string) deleteButton {
 		return deleteButton{URL: "/notifications/" + id + "/delete", Name: name, Label: label,
 			Confirm: "Delete the connection " + name + "? Its queued messages are dropped; a confirmed address stays confirmed."}

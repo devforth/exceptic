@@ -161,8 +161,10 @@ export interface Endpoints {
 				id: string;
 				username: string;
 				name?: string;
+				display_name: string;
 				role: string;
 				must_change_password?: boolean;
+				created_at: IsoTime;
 				last_login_at?: IsoTime | null;
 			};
 			temporary_password: string;
@@ -220,8 +222,10 @@ export interface Endpoints {
 			id: string;
 			username: string;
 			name?: string;
+			display_name: string;
 			role: string;
 			must_change_password?: boolean;
+			created_at: IsoTime;
 			last_login_at?: IsoTime | null;
 		};
 	};
@@ -431,11 +435,12 @@ export interface Endpoints {
 				id: string;
 				username: string;
 				name?: string;
+				display_name: string;
 				role: string;
 				must_change_password?: boolean;
+				created_at: IsoTime;
 				last_login_at?: IsoTime | null;
 			};
-			display_name: string;
 			can_administer: boolean;
 			app_name: string;
 			unresolved_issues: number;
@@ -462,6 +467,25 @@ export interface Endpoints {
 			other_bytes: number;
 			other: string;
 			counting?: boolean;
+		};
+	};
+	get_user: {
+		in: {
+			/** id from list_users. */
+			user_id: string;
+		};
+		out: {
+			user: {
+				id: string;
+				username: string;
+				name?: string;
+				display_name: string;
+				role: string;
+				must_change_password?: boolean;
+				created_at: IsoTime;
+				last_login_at?: IsoTime | null;
+			};
+			can_manage: boolean;
 		};
 	};
 	list_agents: {
@@ -699,12 +723,17 @@ export interface Endpoints {
 		in: Record<string, never>;
 		out: {
 			items: ({
-				id: string;
-				username: string;
-				name?: string;
-				role: string;
-				must_change_password?: boolean;
-				last_login_at?: IsoTime | null;
+				user: {
+					id: string;
+					username: string;
+					name?: string;
+					display_name: string;
+					role: string;
+					must_change_password?: boolean;
+					created_at: IsoTime;
+					last_login_at?: IsoTime | null;
+				};
+				can_manage: boolean;
 			})[] | null;
 			next_cursor?: string;
 		};
@@ -719,8 +748,10 @@ export interface Endpoints {
 				id: string;
 				username: string;
 				name?: string;
+				display_name: string;
 				role: string;
 				must_change_password?: boolean;
+				created_at: IsoTime;
 				last_login_at?: IsoTime | null;
 			};
 			temporary_password: string;
@@ -765,8 +796,10 @@ export interface Endpoints {
 			id: string;
 			username: string;
 			name?: string;
+			display_name: string;
 			role: string;
 			must_change_password?: boolean;
+			created_at: IsoTime;
 			last_login_at?: IsoTime | null;
 		};
 	};
@@ -876,8 +909,10 @@ export interface Endpoints {
 			id: string;
 			username: string;
 			name?: string;
+			display_name: string;
 			role: string;
 			must_change_password?: boolean;
+			created_at: IsoTime;
 			last_login_at?: IsoTime | null;
 		};
 	};
@@ -907,6 +942,7 @@ export const endpoints = {
 	get_project_setup: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	get_session: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	get_storage: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
+	get_user: { method: 'GET', text: false, admin: true, destructive: false, confirm: false },
 	list_agents: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	list_cleanups: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	list_connections: { method: 'GET', text: false, admin: true, destructive: false, confirm: false },

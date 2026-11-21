@@ -1,6 +1,7 @@
 // The web app's requests to the catalog and its plain requests (/api/ui/<name>), typed by catalog.gen.ts.
 import { error } from '@sveltejs/kit';
-import { oldUI, withQuery } from '#lib/nav.ts';
+import { resolve } from '$app/paths';
+import { withQuery } from '#lib/nav.ts';
 import {
 	apiPrefix,
 	endpoints,
@@ -190,7 +191,7 @@ function toLogin(): Promise<never> {
 	}
 
 	location.assign(
-		withQuery(oldUI.login, { next: location.pathname + location.search + location.hash })
+		withQuery(resolve('/login'), { next: location.pathname + location.search + location.hash })
 	);
 	leaving = new Promise<never>(() => {});
 

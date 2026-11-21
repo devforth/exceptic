@@ -221,21 +221,6 @@ details > summary { cursor: pointer; }
 .delivery-failed { color: var(--error); }
 input.mono-field { width: 100%; margin-top: 4px; font-family: ui-monospace, monospace; }
 
-.login {
-  max-width: 340px;
-  margin: 12vh auto 0;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 28px;
-}
-.login h1 { font-size: 18px; margin: 0; }
-.login .error { color: var(--error); background: var(--error-bg); padding: 8px 10px; border-radius: 6px; margin: 0; }
-.notice { color: var(--muted); }
-
 .htmx-request { opacity: .6; transition: opacity .2s; }
 
 @media (max-width: 800px) {
@@ -331,7 +316,7 @@ fieldset.connection-rest { border: none; padding: 0; background: none; display: 
 fieldset.connection-rest:disabled > :not(.actions) { opacity: .45; }
 fieldset.connection-rest:disabled button[type="submit"] { opacity: .45; cursor: not-allowed; }
 /* A label stacked over its field. */
-.login label, .field-row > label, .type-fields label, .email-step label, fieldset.connection-rest > label:not(.option),
+.field-row > label, .type-fields label, .email-step label, fieldset.connection-rest > label:not(.option),
 .settings-form > label, .settings-form > .field, .settings-form fieldset > label:not(.option) { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 13px; }
 
 /* MCP page: a value with its copy button. */
@@ -383,10 +368,6 @@ pre.snippet { background: var(--code-bg); padding: 10px; border-radius: 6px; ove
 }
 
 /* Users and the account page. */
-.temporary-password { margin: 12px 0; padding: 12px; border: 1px solid var(--warning); border-radius: 8px; background: var(--warning-bg); }
-.temporary-password .copy-row { max-width: 520px; }
-.badge.role-superadmin { color: var(--info); background: var(--info-bg); }
-.badge.role-admin, .badge.role-user { color: var(--text); background: var(--code-bg); }
 /* The account link sits in a nav of its own above Log out. */
 .sidebar nav.sidebar-account { flex: none; }
 /* A DSN with its copy button (projects). */

@@ -376,9 +376,9 @@ func TestUIProjects(t *testing.T) {
 type sessionAnswer struct {
 	User struct {
 		ID                 string `json:"id"`
+		DisplayName        string `json:"display_name"`
 		MustChangePassword bool   `json:"must_change_password"`
 	} `json:"user"`
-	DisplayName      string            `json:"display_name"`
 	CanAdminister    bool              `json:"can_administer"`
 	AppName          string            `json:"app_name"`
 	UnresolvedIssues int               `json:"unresolved_issues"`
@@ -407,7 +407,7 @@ func TestGetSession(t *testing.T) {
 			t.Fatalf("%s: %d %s", role, response.Code, response.Body)
 		}
 
-		if session.User.ID != user.id || session.DisplayName != "Web "+role || session.CanAdminister != canAdminister ||
+		if session.User.ID != user.id || session.User.DisplayName != "Web "+role || session.CanAdminister != canAdminister ||
 			session.AppName != server.app.Services.AppName || session.UnresolvedIssues != unresolved ||
 			session.ProjectColorsURL != server.app.Services.Projects.ColorsURL() {
 			t.Errorf("%s: %+v", role, session)
