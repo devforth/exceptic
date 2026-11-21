@@ -157,6 +157,57 @@ func (service *Connections) defaultName(ctx context.Context, connection store.Co
 // DefaultSlackName names a Slack connection saved without a name.
 const DefaultSlackName = "Slack"
 
+// Types are the types a new connection may have, in config.AllChannelTypes
+// order: whether each can be used now (what is missing if not), whether it
+// links to the issue by default and what an empty name becomes.
+func (service *Connections) Types() []ChannelType {
+	var types []ChannelType
+
+	for _, channelType := range config.AllChannelTypes {
+		available, reason := service.notifications.ChannelAvailable(channelType)
+		types = append(types, ChannelType{
+			Type: channelType, Available: available, Reason: reason,
+			IncludeIssueLink: !store.NewConnection(channelType, service.recording).HideIssueLink,
+			NamePlaceholder:  namePlaceholders[channelType],
+		})
+	}
+
+	return types
+}
+
+// namePlaceholders: what an empty name becomes, as the form says it; an
+// email connection takes the part of the address before "@" ("team" before
+// one is entered).
+var namePlaceholders = map[string]string{
+	config.ChannelEmail:    "team",
+	config.ChannelTelegram: "the name of the chat, from Telegram",
+	config.ChannelSlack:    DefaultSlackName,
+}
+
+// IssueLinksAvailable: messages can link to the issue page (PUBLIC_URL is set).
+func (service *Connections) IssueLinksAvailable() bool {
+	return service.notifications.PublicURL != ""
+}
+
+// Destination says where a connection sends, never its token: the address,
+// the chat, or the Slack bot's channel.
+func (service *Connections) Destination(connection store.Connection) string {
+	if connection.Type == config.ChannelEmail {
+		return connection.Address
+	}
+
+	switch chat := service.Chat(connection); {
+	case !chat.Readable:
+		return "token cannot be decrypted (SECRET_KEY changed?)"
+	case connection.Type == config.ChannelTelegram:
+		return "chat " + chat.Telegram.ChatID
+	case chat.Slack.BotToken != "":
+		return "bot in " + chat.Slack.Channel + ", prompt in thread"
+	default:
+		return "incoming webhook"
+	}
+}
+
 // Chat is what the secret of a chat connection holds; Readable is false when
 // it cannot be decrypted (SECRET_KEY changed).
 type Chat struct {

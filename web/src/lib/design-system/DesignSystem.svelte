@@ -336,6 +336,12 @@ Every component with its variants, on sample data. Served only by the dev server
 			<Button variant="primary" busy>Saving</Button>
 			<Button variant="danger" busy>Deleting</Button>
 		</Row>
+		<Row caption="external: another site in a new tab, without referrer or opener">
+			<Button variant="info" icon="externalLink" href="https://example.com" external>
+				Find chat ID
+			</Button>
+			<Button variant="info" icon="externalLink" disabled>Find chat ID</Button>
+		</Row>
 	</Section>
 
 	<Section title="Copy button and toast">

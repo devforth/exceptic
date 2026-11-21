@@ -20,24 +20,20 @@ import (
 
 // Controllers holds what the handlers need.
 type Controllers struct {
-	logger       *slog.Logger
-	retention    config.Retention
-	views        *views.Renderer
-	auth         *session.Auth
-	issues       *services.Issues
-	projects     *services.Projects
-	connections  *services.Connections
-	deliveries   *services.Deliveries
-	verification *services.Verification
-	logs         *services.Logs
-	agents       *services.Agents
-	users        *services.Users
+	logger    *slog.Logger
+	retention config.Retention
+	views     *views.Renderer
+	auth      *session.Auth
+	issues    *services.Issues
+	projects  *services.Projects
+	logs      *services.Logs
+	agents    *services.Agents
+	users     *services.Users
 	// For the MCP page: whether ALLOWED_IPS limits access.
 	ipsRestricted bool
 	appName       string // APP_NAME
 
-	connectionViews presenters.Connections
-	projectViews    presenters.Projects
+	projectViews presenters.Projects
 }
 
 // Dependencies are the parts Controllers is built from.
@@ -60,18 +56,11 @@ func New(dependencies Dependencies) *Controllers {
 		auth:          dependencies.Auth,
 		issues:        all.Issues,
 		projects:      all.Projects,
-		connections:   all.Connections,
-		deliveries:    all.Deliveries,
-		verification:  all.Verification,
 		logs:          all.Logs,
 		agents:        all.Agents,
 		users:         all.Users,
 		ipsRestricted: len(settings.AllowedIPs) > 0,
 		appName:       settings.AppName,
-		connectionViews: presenters.Connections{
-			Chat: all.Connections.Chat, Notifications: settings.Notifications, Recording: settings.Recording,
-			Projects: all.Projects, ProjectName: all.Projects.Name,
-		},
 		projectViews: presenters.Projects{
 			Recording: settings.Recording,
 			FromEnv:   all.Projects.FromEnv, Color: all.Projects.Color,

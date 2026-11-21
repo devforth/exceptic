@@ -110,8 +110,6 @@ func TestBackLinks(t *testing.T) {
 		"/issues/" + server.unresolvedIDs()[0]: `<a href="/issues" data-back`,
 		"/projects/1":                          `<a href="/projects" data-back`,
 		"/projects/cleanups":                   `<a href="/projects" data-back`,
-		"/notifications/new":                   `<a href="/notifications" data-back`,
-		"/notifications/log":                   `<a href="/notifications" data-back`,
 	} {
 		if !strings.Contains(server.page(path), want) {
 			t.Errorf("%s: missing %s", path, want)
@@ -168,8 +166,8 @@ func TestMenuMarksTheSection(t *testing.T) {
 
 	for path, item := range map[string]string{
 		"/issues": "/issues", "/projects/new": "/projects", "/projects/cleanups": "/projects",
-		"/notifications/new": "/notifications", "/notifications/log": "/notifications", "/users/new": "/users",
-		"/agents": "/agents", "/account": "/account",
+		"/users/new": "/users",
+		"/agents":    "/agents", "/account": "/account",
 	} {
 		if active := activeItem.FindAllStringSubmatch(server.page(path), -1); len(active) != 1 || active[0][1] != item {
 			t.Errorf("%s marks %v, want %s", path, active, item)
@@ -197,7 +195,7 @@ func TestNotFoundPage(t *testing.T) {
 
 	for name, response := range map[string]*httptest.ResponseRecorder{
 		"missing issue":     server.get("/issues/zzzzzzzz"),
-		"not for this role": user.get("/notifications"),
+		"not for this role": user.get("/users"),
 	} {
 		body := response.Body.String()
 

@@ -271,13 +271,13 @@ func TestLoginReplacesSession(t *testing.T) {
 func TestDashboardNeedsLogin(t *testing.T) {
 	server := newTestServer(t, password)
 
-	for _, path := range []string{"/", "/issues", "/issues/1", "/projects/1", "/notifications", "/notifications/log", "/notifications/1", "/project-colors.css"} {
+	for _, path := range []string{"/", "/issues", "/issues/1", "/projects/1", "/project-colors.css"} {
 		if response := server.get(path); response.Code != http.StatusSeeOther || !strings.HasPrefix(response.Header().Get("Location"), "/login") {
 			t.Errorf("GET %s: %d %q", path, response.Code, response.Header().Get("Location"))
 		}
 	}
 
-	for _, path := range []string{"/issues/bulk", "/projects", "/projects/1/delete", "/notifications", "/notifications/1/retry", "/notifications/email/start"} {
+	for _, path := range []string{"/issues/bulk", "/projects", "/projects/1/delete"} {
 		if response := server.post(path, url.Values{}); response.Code != http.StatusSeeOther || !strings.HasPrefix(response.Header().Get("Location"), "/login") {
 			t.Errorf("POST %s: %d %q", path, response.Code, response.Header().Get("Location"))
 		}

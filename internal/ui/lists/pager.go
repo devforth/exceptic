@@ -49,8 +49,7 @@ type ListFragment struct {
 }
 
 var (
-	IssueList    = ListFragment{Target: "issue-list", Form: "issue-filters"}
-	DeliveryList = ListFragment{Target: "delivery-list", Form: "delivery-filters"}
+	IssueList = ListFragment{Target: "issue-list", Form: "issue-filters"}
 )
 
 type PageLink struct {

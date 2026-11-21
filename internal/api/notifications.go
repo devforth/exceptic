@@ -9,20 +9,32 @@ import (
 
 	"github.com/devforth/exceptic/internal/notify"
 	"github.com/devforth/exceptic/internal/platform/config"
+	"github.com/devforth/exceptic/internal/platform/textutil"
 	"github.com/devforth/exceptic/internal/services"
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
 // Notification connections, as on the Notifications page. Stored tokens are
-// never returned; an email address receives nothing before it is confirmed
-// with the code mailed to it, which only its owner can read.
+// never returned (the web app gets them masked); an email address receives
+// nothing before it is confirmed with the code mailed to it, which only its
+// owner can read.
 func (handler *handlers) notificationEndpoints() []Endpoint {
 	return []Endpoint{
 		Define(Endpoint{
 			Name:        "list_connections",
-			Description: "Notification connections (email, Telegram, Slack): projects, levels, whether active and confirmed, and delivery health.",
+			Description: "Notification connections (email, Telegram, Slack): where each sends, projects, levels, whether active and confirmed, and delivery health.",
 			ReadOnly:    true, Admin: true, Transports: ActsAsUser,
 		}, handler.listConnections),
+		Define(Endpoint{
+			Name:        "get_connection",
+			Description: "One connection as its form shows it: project ids, chat ids, the saved tokens masked, when its address was confirmed and how many messages wait for a retry.",
+			ReadOnly:    true, Admin: true, Transports: TransportUI,
+		}, handler.getConnection),
+		Define(Endpoint{
+			Name:        "get_connection_defaults",
+			Description: "What the form of a new connection offers: each type with what it lacks, the default type and levels, and whether messages can link to issues (PUBLIC_URL).",
+			ReadOnly:    true, Admin: true, Transports: TransportUI,
+		}, handler.getConnectionDefaults),
 		Define(Endpoint{
 			Name: "start_email_verification",
 			Description: "First step of an email connection: mails a 6-digit code to the address, or says it is confirmed already. " +
@@ -48,6 +60,16 @@ func (handler *handlers) notificationEndpoints() []Endpoint {
 			Choices: connectionChoices,
 		}, handler.updateConnection),
 		Define(Endpoint{
+			Name:        "set_connection_active",
+			Description: "Turn a connection on or off without changing anything else; an unconfirmed address cannot be turned on.",
+			Idempotent:  true, Admin: true, Transports: ActsAsUser, Confirm: true,
+		}, handler.setConnectionActive),
+		Define(Endpoint{
+			Name:        "test_chat",
+			Description: "Send a test message with the chat fields of the form before they are saved; with connection_id, empty fields keep its saved tokens.",
+			Admin:       true, Transports: TransportUI,
+		}, handler.testChat),
+		Define(Endpoint{
 			Name:        "send_test_message",
 			Description: "Send a test message through a saved connection and say whether it was delivered.",
 			Admin:       true, Transports: ActsAsUser,
@@ -68,6 +90,12 @@ func (handler *handlers) notificationEndpoints() []Endpoint {
 			ReadOnly:    true, Admin: true, Transports: ActsAsUser,
 			Choices: map[string][]string{"status": store.OutboxStatuses},
 		}, handler.listDeliveries),
+		Define(Endpoint{
+			Name:        "count_deliveries",
+			Description: "How many messages of the delivery log match the filters of list_deliveries.",
+			ReadOnly:    true, Admin: true, Transports: TransportUI,
+			Choices: map[string][]string{"status": store.OutboxStatuses},
+		}, handler.countDeliveries),
 	}
 }
 
@@ -77,6 +105,8 @@ type deliveryHealth struct {
 	Failed     int        `json:"failed,omitempty"`
 	LastSentAt *time.Time `json:"last_sent_at,omitempty"`
 	LastError  string     `json:"last_error,omitempty"`
+	// Failing: messages wait for a retry, or the latest outcome was an error.
+	Failing bool `json:"failing,omitempty"`
 }
 
 type connectionOutput struct {
@@ -84,6 +114,7 @@ type connectionOutput struct {
 	Name             string          `json:"name"`
 	Type             string          `json:"type"`
 	Email            string          `json:"email,omitempty"`
+	Destination      string          `json:"destination"`
 	AllProjects      bool            `json:"all_projects"`
 	Projects         []string        `json:"projects,omitempty"`
 	Levels           []string        `json:"levels"`
@@ -96,7 +127,8 @@ type connectionOutput struct {
 func (handler *handlers) connectionView(call Call, connection store.Connection, health map[string]store.DeliveryHealth) connectionOutput {
 	output := connectionOutput{
 		ID: connection.ID, Name: connection.Name, Type: connection.Type, AllProjects: connection.AllProjects, Levels: connection.Levels,
-		Active: connection.Active, Confirmed: connection.Verified, IncludeIssueLink: !connection.HideIssueLink,
+		Destination: handler.services.Connections.Destination(connection),
+		Active:      connection.Active, Confirmed: connection.Verified, IncludeIssueLink: !connection.HideIssueLink,
 	}
 
 	if connection.Type == config.ChannelEmail {
@@ -108,7 +140,9 @@ func (handler *handlers) connectionView(call Call, connection store.Connection, 
 	}
 
 	if state, ok := health[connection.ID]; ok {
-		output.Delivery = &deliveryHealth{Pending: state.Pending, Retrying: state.Retrying, Failed: state.Failed, LastError: call.Text(state.LastError)}
+		output.Delivery = &deliveryHealth{
+			Pending: state.Pending, Retrying: state.Retrying, Failed: state.Failed, LastError: call.Text(state.LastError), Failing: state.Failing(),
+		}
 
 		if !state.LastSentAt.IsZero() {
 			output.Delivery.LastSentAt = &state.LastSentAt
@@ -139,6 +173,111 @@ func (handler *handlers) listConnections(ctx context.Context, call Call, _ noInp
 	return output, nil
 }
 
+// connectionDetailsOutput is a connection as its form shows it. Saved tokens
+// are masked (textutil.MaskSecret), never whole.
+type connectionDetailsOutput struct {
+	ID               string     `json:"id"`
+	Name             string     `json:"name"`
+	Type             string     `json:"type"`
+	Email            string     `json:"email,omitempty"`
+	Confirmed        bool       `json:"confirmed"`
+	VerifiedAt       *time.Time `json:"verified_at,omitempty"`
+	AllProjects      bool       `json:"all_projects"`
+	ProjectIDs       []int      `json:"project_ids"`
+	Levels           []string   `json:"levels"`
+	Active           bool       `json:"active"`
+	IncludeIssueLink bool       `json:"include_issue_link"`
+	ChatID           string     `json:"chat_id,omitempty"`
+	SlackChannel     string     `json:"slack_channel,omitempty"`
+	// The saved tokens, masked: what the form says is kept when its field stays empty.
+	SavedTelegramToken string `json:"saved_telegram_token,omitempty"`
+	SavedWebhookURL    string `json:"saved_webhook_url,omitempty"`
+	SavedSlackBotToken string `json:"saved_slack_bot_token,omitempty"`
+	// SecretReadable is false when the saved tokens cannot be decrypted (SECRET_KEY changed).
+	SecretReadable bool `json:"secret_readable"`
+	// Retrying is how many messages wait for a retry after a failed attempt.
+	Retrying int `json:"retrying"`
+}
+
+func (handler *handlers) getConnection(ctx context.Context, _ Call, input connectionInput) (connectionDetailsOutput, error) {
+	connection, err := handler.services.Connections.Get(ctx, input.ConnectionID)
+
+	if err != nil {
+		return connectionDetailsOutput{}, err
+	}
+
+	output := connectionDetailsOutput{
+		ID: connection.ID, Name: connection.Name, Type: connection.Type, Confirmed: connection.Verified,
+		AllProjects: connection.AllProjects, ProjectIDs: append([]int{}, connection.ProjectIDs...), Levels: connection.Levels,
+		Active: connection.Active, IncludeIssueLink: !connection.HideIssueLink, SecretReadable: true,
+	}
+
+	if connection.Type == config.ChannelEmail {
+		output.Email = connection.Address
+
+		if destination, err := handler.services.Verification.EmailDestination(ctx, connection.DestinationID); err == nil && destination.Verified {
+			output.VerifiedAt = &destination.VerifiedAt
+		}
+	} else {
+		chat := handler.services.Connections.Chat(connection)
+		output.SecretReadable = chat.Readable
+
+		if chat.Readable {
+			output.ChatID, output.SavedTelegramToken = chat.Telegram.ChatID, textutil.MaskSecret(chat.Telegram.BotToken)
+			output.SlackChannel = chat.Slack.Channel
+			output.SavedWebhookURL, output.SavedSlackBotToken = textutil.MaskSecret(chat.Slack.WebhookURL), textutil.MaskSecret(chat.Slack.BotToken)
+		}
+	}
+
+	health, err := handler.services.Connections.DeliveryHealth(ctx)
+
+	if err != nil {
+		return output, err
+	}
+
+	output.Retrying = health[connection.ID].Retrying
+
+	return output, nil
+}
+
+type channelTypeOutput struct {
+	Type      string `json:"type"`
+	Available bool   `json:"available"`
+	// Reason is what is missing when it is not available: "set SMTP_HOST and EMAIL_FROM".
+	Reason           string `json:"reason,omitempty"`
+	IncludeIssueLink bool   `json:"include_issue_link"`
+	NamePlaceholder  string `json:"name_placeholder"`
+}
+
+type connectionDefaultsOutput struct {
+	Types []channelTypeOutput `json:"types"`
+	// DefaultType is the first available type; empty when none is.
+	DefaultType string   `json:"default_type"`
+	Levels      []string `json:"levels"`
+	// IssueLinksAvailable: PUBLIC_URL is set, so messages can link to the issue.
+	IssueLinksAvailable bool `json:"issue_links_available"`
+}
+
+func (handler *handlers) getConnectionDefaults(_ context.Context, _ Call, _ noInput) (connectionDefaultsOutput, error) {
+	connections := handler.services.Connections
+	output := connectionDefaultsOutput{IssueLinksAvailable: connections.IssueLinksAvailable()}
+
+	for _, channelType := range connections.Types() {
+		output.Types = append(output.Types, channelTypeOutput{
+			Type: channelType.Type, Available: channelType.Available, Reason: channelType.Reason,
+			IncludeIssueLink: channelType.IncludeIssueLink, NamePlaceholder: channelType.NamePlaceholder,
+		})
+
+		if channelType.Available && output.DefaultType == "" {
+			output.DefaultType = channelType.Type
+		}
+	}
+
+	output.Levels = connections.New(output.DefaultType).Levels
+
+	return output, nil
+}
+
 type emailInput struct {
 	Email string `json:"email" jsonschema:"The email address."`
 }
@@ -146,18 +285,28 @@ type emailInput struct {
 type emailStepOutput struct {
 	Email     string `json:"email"`
 	Confirmed bool   `json:"confirmed"`
-	Message   string `json:"message"`
+	// State is code (a code was mailed, or one was sent moments ago) or verified.
+	State      string     `json:"state"`
+	VerifiedAt *time.Time `json:"verified_at,omitempty"`
+	// Notice is what the page says of the step: "We sent a 6-digit code to …".
+	Notice  string `json:"notice,omitempty"`
+	Message string `json:"message"`
 }
 
-// emailStep tells the agent what the UI's email step shows.
-func emailStep(step services.EmailStep) (emailStepOutput, error) {
-	output := emailStepOutput{Email: step.Address, Confirmed: step.Verified()}
+// emailStep tells what the step came to; a refused one names the input
+// field it is about (field).
+func emailStep(step services.EmailStep, field string) (emailStepOutput, error) {
+	output := emailStepOutput{Email: step.Address, Confirmed: step.Verified(), State: step.State, Notice: step.Notice}
+
+	if !step.VerifiedAt.IsZero() {
+		output.VerifiedAt = &step.VerifiedAt
+	}
 
 	switch {
 	case step.Duplicate != nil:
 		return output, duplicateError(*step.Duplicate, "sends to this address")
 	case step.Error != "":
-		return output, Invalid("%s", step.Error)
+		return output, InputError{message: step.Error, fields: map[string]string{field: step.Error}}
 	case output.Confirmed:
 		output.Message = "Confirmed: create_connection can use this address."
 	default:
@@ -178,7 +327,7 @@ func (handler *handlers) startEmailVerification(ctx context.Context, _ Call, inp
 		return emailStepOutput{}, err
 	}
 
-	return emailStep(step)
+	return emailStep(step, "email")
 }
 
 type confirmEmailInput struct {
@@ -203,16 +352,18 @@ func (handler *handlers) confirmEmail(ctx context.Context, _ Call, input confirm
 		return emailStepOutput{}, err
 	}
 
-	return emailStep(step)
+	return emailStep(step, "code")
 }
 
 // connectionFields are the rule fields of a connection; nil keeps the value.
 type connectionFields struct {
-	Name             *string   `json:"name,omitempty" jsonschema:"A name; empty names it after the address or chat."`
-	Projects         *[]string `json:"projects,omitempty" jsonschema:"Project names or IDs; an empty list means every project, including future ones."`
-	Levels           *[]string `json:"levels,omitempty" jsonschema:"Issue levels to notify about (default: the levels recorded by default)."`
-	Active           *bool     `json:"active,omitempty" jsonschema:"Send notifications (default true)."`
-	IncludeIssueLink *bool     `json:"include_issue_link,omitempty" jsonschema:"Link to the issue in this panel (default true for email, false for chats, which may be public)."`
+	Name        *string   `json:"name,omitempty" jsonschema:"A name; empty names it after the address or chat."`
+	AllProjects *bool     `json:"all_projects,omitempty" jsonschema:"Every project, including future ones; false sends only for projects."`
+	Projects    *[]string `json:"projects,omitempty" jsonschema:"Project names or IDs; an empty list means every project, unless all_projects is false."`
+	Levels      *[]string `json:"levels,omitempty" jsonschema:"Issue levels to notify about (default: the levels recorded by default)."`
+	Active      *bool     `json:"active,omitempty" jsonschema:"Send notifications (default true)."`
+	// The default is store.NewConnection's.
+	IncludeIssueLink *bool `json:"include_issue_link,omitempty" jsonschema:"Link to the issue in this panel (default true for email, false for chats, which may be public)."`
 }
 
 var connectionChoices = map[string][]string{"levels": config.Levels}
@@ -226,45 +377,8 @@ type chatFields struct {
 	SlackChannel  string `json:"slack_channel,omitempty" jsonschema:"slack: the channel ID the bot is invited to."`
 }
 
-// applyConnection writes the given fields over the form.
-func (handler *handlers) applyConnection(form url.Values, fields connectionFields, chat chatFields) error {
-	if fields.Name != nil {
-		form.Set("name", *fields.Name)
-	}
-
-	if fields.Projects != nil {
-		form.Del("project")
-		form.Del("all_projects")
-
-		for _, nameOrID := range *fields.Projects {
-			project, ok := handler.projects.List().Find(nameOrID)
-
-			if !ok {
-				return Invalid("unknown project %q (see list_projects)", nameOrID)
-			}
-
-			form.Add("project", strconv.Itoa(project.ID))
-		}
-
-		if len(*fields.Projects) == 0 {
-			form.Set("all_projects", "on")
-		}
-	}
-
-	if fields.Levels != nil {
-		form["level"] = *fields.Levels
-	}
-
-	for name, value := range map[string]*bool{"active": fields.Active, "include_issue_link": fields.IncludeIssueLink} {
-		switch {
-		case value == nil:
-		case *value:
-			form.Set(name, "on")
-		default:
-			form.Del(name)
-		}
-	}
-
+// set writes the filled chat fields over the form.
+func (chat chatFields) set(form url.Values) {
 	for name, value := range map[string]string{
 		"bot_token": chat.BotToken, "chat_id": chat.ChatID, "webhook_url": chat.WebhookURL,
 		"slack_bot_token": chat.SlackBotToken, "slack_channel": chat.SlackChannel,
@@ -273,6 +387,54 @@ func (handler *handlers) applyConnection(form url.Values, fields connectionField
 			form.Set(name, value)
 		}
 	}
+}
+
+// setCheckbox: a checkbox of the form as given; nil keeps it.
+func setCheckbox(form url.Values, name string, value *bool) {
+	switch {
+	case value == nil:
+	case *value:
+		form.Set(name, "on")
+	default:
+		form.Del(name)
+	}
+}
+
+// applyConnection writes the given fields over the form.
+func (handler *handlers) applyConnection(form url.Values, fields connectionFields, chat chatFields) error {
+	if fields.Name != nil {
+		form.Set("name", *fields.Name)
+	}
+
+	if fields.Projects != nil {
+		form.Del("project")
+
+		for _, nameOrID := range *fields.Projects {
+			project, ok := handler.projects.List().Find(nameOrID)
+
+			if !ok {
+				return problemsError(map[string]string{"projects": "unknown project " + strconv.Quote(nameOrID) + " (see list_projects)"}, nil)
+			}
+
+			form.Add("project", strconv.Itoa(project.ID))
+		}
+	}
+
+	switch {
+	case fields.AllProjects != nil:
+		setCheckbox(form, "all_projects", fields.AllProjects)
+	case fields.Projects != nil:
+		all := len(*fields.Projects) == 0
+		setCheckbox(form, "all_projects", &all)
+	}
+
+	if fields.Levels != nil {
+		form["level"] = *fields.Levels
+	}
+
+	setCheckbox(form, "active", fields.Active)
+	setCheckbox(form, "include_issue_link", fields.IncludeIssueLink)
+	chat.set(form)
 
 	return nil
 }
@@ -318,7 +480,9 @@ func (handler *handlers) createConnection(ctx context.Context, call Call, input 
 		}
 
 		if !ok || !destination.Verified {
-			return connectionOutput{}, Invalid("email: confirm %q first with start_email_verification and confirm_email", input.Email)
+			return connectionOutput{}, problemsError(map[string]string{
+				"email": "confirm " + strconv.Quote(input.Email) + " first with start_email_verification and confirm_email",
+			}, nil)
 		}
 
 		form.Set("destination_id", destination.ID)
@@ -355,6 +519,70 @@ func (handler *handlers) updateConnection(ctx context.Context, call Call, input 
 	}
 
 	return handler.saveConnection(ctx, call, form, connection)
+}
+
+type setConnectionActiveInput struct {
+	ConnectionID string `json:"connection_id" jsonschema:"id from list_connections."`
+	Active       bool   `json:"active" jsonschema:"true sends notifications, false stops them."`
+}
+
+// setConnectionActive changes only active: a save of the whole form would
+// refuse a connection whose tokens can no longer be read, so it could not
+// be turned off.
+func (handler *handlers) setConnectionActive(ctx context.Context, call Call, input setConnectionActiveInput) (connectionOutput, error) {
+	connection, err := handler.services.Connections.Get(ctx, input.ConnectionID)
+
+	if err != nil {
+		return connectionOutput{}, err
+	}
+
+	if err := handler.services.Connections.SetActive(ctx, connection, input.Active); errors.Is(err, store.ErrNotVerified) {
+		return connectionOutput{}, problemsError(map[string]string{"active": "Confirm the email address first."}, nil)
+	} else if err != nil {
+		return connectionOutput{}, err
+	}
+
+	connection.Active = input.Active
+
+	return handler.connectionView(call, connection, nil), nil
+}
+
+type testChatInput struct {
+	Type             string `json:"type,omitempty" jsonschema:"telegram or slack; with connection_id, its own type."`
+	ConnectionID     string `json:"connection_id,omitempty" jsonschema:"A saved connection: its tokens fill the empty fields."`
+	Name             string `json:"name,omitempty" jsonschema:"The name the test message shows."`
+	IncludeIssueLink bool   `json:"include_issue_link,omitempty" jsonschema:"As the form has it."`
+	chatFields
+}
+
+type chatTestOutput struct {
+	Sent bool `json:"sent"`
+	// Message says what happened: sent, not delivered and why, or what is wrong in the fields.
+	Message string `json:"message"`
+}
+
+func (handler *handlers) testChat(ctx context.Context, _ Call, input testChatInput) (chatTestOutput, error) {
+	var existing store.Connection
+
+	channelType := input.Type
+
+	if input.ConnectionID != "" {
+		connection, err := handler.services.Connections.Get(ctx, input.ConnectionID)
+
+		if err != nil {
+			return chatTestOutput{}, err
+		}
+
+		existing, channelType = connection, connection.Type
+	}
+
+	form := url.Values{"name": {input.Name}}
+	setCheckbox(form, "include_issue_link", &input.IncludeIssueLink)
+	input.set(form)
+
+	result := handler.services.Connections.TestChat(ctx, form, channelType, existing)
+
+	return chatTestOutput{Sent: result.Sent, Message: result.Message}, nil
 }
 
 func (handler *handlers) sendTestMessage(ctx context.Context, call Call, input connectionInput) (doneOutput, error) {
@@ -402,25 +630,48 @@ func (handler *handlers) deleteConnection(ctx context.Context, _ Call, input con
 	return doneOutput{Done: "deleted"}, nil
 }
 
-type listDeliveriesInput struct {
+type deliveriesFilter struct {
 	ConnectionID string `json:"connection_id,omitempty" jsonschema:"Only this connection."`
 	Status       string `json:"status,omitempty" jsonschema:"Delivery status; every status when empty."`
-	Limit        int    `json:"limit,omitempty" jsonschema:"Messages per page."`
-	Cursor       string `json:"cursor,omitempty" jsonschema:"next_cursor of the previous page."`
+}
+
+func (filter deliveriesFilter) outbox() store.OutboxFilter {
+	return store.OutboxFilter{Channel: filter.ConnectionID, Status: filter.Status}
+}
+
+type listDeliveriesInput struct {
+	deliveriesFilter
+	Limit  int    `json:"limit,omitempty" jsonschema:"Messages per page."`
+	Cursor string `json:"cursor,omitempty" jsonschema:"next_cursor of the previous page."`
+}
+
+// deliveryItemOutput is an issue a message is about; a summary lists several.
+type deliveryItemOutput struct {
+	Message string `json:"message"`
+	Project string `json:"project,omitempty"`
+	Title   string `json:"title,omitempty"`
+	IssueID string `json:"issue_id,omitempty"`
 }
 
 type deliveryOutput struct {
-	ID            int64     `json:"id"`
-	ConnectionID  string    `json:"connection_id"`
-	Message       string    `json:"message"`
-	Project       string    `json:"project,omitempty"`
-	Title         string    `json:"title,omitempty"`
-	IssueID       string    `json:"issue_id,omitempty"`
-	Status        string    `json:"status"`
-	Attempts      int       `json:"attempts"`
-	LastError     string    `json:"last_error,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID           int64  `json:"id"`
+	ConnectionID string `json:"connection_id"`
+	deliveryItemOutput
+	// Items are the first issues of a summary, More the ones not listed.
+	Items     []deliveryItemOutput `json:"items,omitempty"`
+	More      int                  `json:"more,omitempty"`
+	Status    string               `json:"status"`
+	Retrying  bool                 `json:"retrying"`
+	Attempts  int                  `json:"attempts"`
+	LastError string               `json:"last_error,omitempty"`
+	CreatedAt time.Time            `json:"created_at"`
+	// UpdatedAt is when it was sent, for a sent message.
+	UpdatedAt     time.Time `json:"updated_at"`
 	NextAttemptAt time.Time `json:"next_attempt_at"`
+}
+
+func deliveryItem(call Call, description notify.Description) deliveryItemOutput {
+	return deliveryItemOutput{Message: description.Label, Project: description.Project, Title: call.Text(description.Title), IssueID: description.IssueID}
 }
 
 func (handler *handlers) listDeliveries(ctx context.Context, call Call, input listDeliveriesInput) (Page[deliveryOutput], error) {
@@ -433,11 +684,8 @@ func (handler *handlers) listDeliveries(ctx context.Context, call Call, input li
 		return output, err
 	}
 
-	filter := store.OutboxFilter{Status: input.Status, Limit: limit + 1, Offset: offset}
-
-	if input.ConnectionID != "" {
-		filter.Channel = input.ConnectionID
-	}
+	filter := input.outbox()
+	filter.Limit, filter.Offset = limit+1, offset
 
 	records, err := handler.services.Deliveries.List(ctx, filter)
 
@@ -449,11 +697,17 @@ func (handler *handlers) listDeliveries(ctx context.Context, call Call, input li
 
 	for _, record := range records {
 		message := notify.Describe(record.Kind, record.Payload)
-		output.Items = append(output.Items, deliveryOutput{
-			ID: record.ID, ConnectionID: record.Channel, Message: message.Label, Project: message.Project, Title: call.Text(message.Title),
-			IssueID: message.IssueID, Status: record.Status, Attempts: record.Attempts, LastError: call.Text(record.LastError),
-			CreatedAt: record.CreatedAt, NextAttemptAt: record.NextAttemptAt,
-		})
+		row := deliveryOutput{
+			ID: record.ID, ConnectionID: record.Channel, deliveryItemOutput: deliveryItem(call, message), More: message.More,
+			Status: record.Status, Retrying: record.Retrying(), Attempts: record.Attempts, LastError: call.Text(record.LastError),
+			CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt, NextAttemptAt: record.NextAttemptAt,
+		}
+
+		for _, item := range message.Items {
+			row.Items = append(row.Items, deliveryItem(call, item))
+		}
+
+		output.Items = append(output.Items, row)
 	}
 
 	if more {
@@ -461,4 +715,10 @@ func (handler *handlers) listDeliveries(ctx context.Context, call Call, input li
 	}
 
 	return output, nil
+}
+
+func (handler *handlers) countDeliveries(ctx context.Context, _ Call, input deliveriesFilter) (countOutput, error) {
+	count, err := handler.services.Deliveries.Count(ctx, input.outbox())
+
+	return countOutput{Count: count}, err
 }

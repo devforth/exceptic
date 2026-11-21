@@ -9,7 +9,6 @@ export const oldUI = {
 	newProject: '/projects/new',
 	project: (id: number) => `/projects/${id}`,
 	cleanups: '/projects/cleanups',
-	notifications: '/notifications',
 	users: '/users',
 	mcp: '/agents',
 	account: '/account',
@@ -29,7 +28,7 @@ export function withQuery(path: string, params: Record<string, string>): string 
 }
 
 /** The routes of the app that are in the menu. */
-type AppRoute = '/(app)/projects' | '/(app)/logs';
+type AppRoute = '/(app)/projects' | '/(app)/logs' | '/(app)/notifications';
 
 export type NavEntry = {
 	id: string;
@@ -61,7 +60,7 @@ export const navGroups: NavGroup[] = [
 				id: 'notifications',
 				label: 'Notifications',
 				icon: 'notifications',
-				href: oldUI.notifications,
+				route: '/(app)/notifications',
 				adminOnly: true
 			},
 			{ id: 'users', label: 'Users', icon: 'users', href: oldUI.users, adminOnly: true },

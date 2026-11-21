@@ -250,81 +250,6 @@ function linkDateRange(form) {
   }
 }
 
-// Connection form: show only the fields of the selected type, lock the rest
-// until an email address is confirmed, and hide the project list while "All
-// projects" is checked (it covers every project).
-function updateConnectionForm(form) {
-  // Only a new connection has type radios; an existing one shows its own fields.
-  const selected = form.querySelector('input[name="type"]:checked');
-
-  if (selected) {
-    form.querySelectorAll(".type-fields").forEach((fields) => {
-      fields.hidden = fields.dataset.type !== selected.value;
-      // The fields of the other types are neither checked nor sent: a hidden
-      // invalid field (a browser filling a login into it) would block the form.
-      fields.querySelectorAll("input, select, textarea").forEach((field) => {
-        field.disabled = fields.hidden;
-      });
-    });
-  }
-
-  // The name placeholder shows what an empty name becomes: the start of the
-  // address, or the type's own.
-  const name = form.querySelector('input[name="name"]');
-
-  if (name && selected) {
-    const address = form.querySelector(`.type-fields[data-type="${selected.value}"] input[name="address"]`);
-    const local = address ? address.value.split("@")[0].trim() : "";
-
-    name.placeholder = local || selected.dataset.namePlaceholder || "";
-  }
-
-  // A chat's test button works once the fields it needs are filled.
-  form.querySelectorAll("button[data-test-needs]").forEach((button) => {
-    const fields = button.closest(".type-fields") || form;
-    const filled = (name) => {
-      const input = fields.querySelector(`[name="${name}"]`);
-      return Boolean(input && (input.value.trim() !== "" || input.dataset.saved !== undefined));
-    };
-
-    button.disabled = !button.dataset.testNeeds.split("|").some((group) => group.split(" ").every(filled));
-  });
-
-  // "Find chat ID" opens the bot's getUpdates once the token is valid (its
-  // pattern leaves nothing to escape in the URL). A saved token is not in the
-  // page, so it needs to be typed again.
-  const botToken = form.querySelector('input[name="bot_token"]');
-
-  form.querySelectorAll("a[data-telegram-updates]").forEach((link) => {
-    const token = botToken && !botToken.disabled ? botToken.value.trim() : "";
-    const valid = token !== "" && botToken.checkValidity();
-
-    if (valid) {
-      link.href = `https://api.telegram.org/bot${token}/getUpdates`;
-    } else {
-      link.removeAttribute("href");
-    }
-
-    link.classList.toggle("disabled", !valid);
-    link.setAttribute("aria-disabled", String(!valid));
-  });
-
-  // An email connection is filled in only after its address is confirmed.
-  const rest = form.querySelector(".connection-rest");
-  const emailStep = form.querySelector(".type-fields:not([hidden]) .email-step");
-
-  if (rest) {
-    rest.disabled = Boolean(emailStep) && !emailStep.hasAttribute("data-verified");
-  }
-
-  const allProjects = form.querySelector("input.all-projects");
-  const projectChoices = form.querySelector(".project-choices");
-
-  if (allProjects && projectChoices) {
-    projectChoices.hidden = allProjects.checked;
-  }
-}
-
 // Closed form sections (details.form-section) show in their heading what is
 // set inside; it follows the fields as they change. [data-summary-of] lists
 // the badges of the checked boxes of that name (data-summary-all-text while
@@ -493,28 +418,7 @@ function enhance() {
     setupRangePicker(form);
     linkDateRange(form);
   });
-  document.querySelectorAll("form.connection-form").forEach(updateConnectionForm);
 }
-
-document.addEventListener("change", (event) => {
-  const form = event.target.closest("form.connection-form");
-
-  if (!form) {
-    return;
-  }
-
-  // A new type brings its default for issue links (data-issue-link), unless
-  // the box was set by hand.
-  const issueLink = form.querySelector('input[name="include_issue_link"]');
-
-  if (event.target === issueLink) {
-    issueLink.dataset.touched = "true";
-  } else if (event.target.matches('input[name="type"]') && issueLink && !issueLink.dataset.touched) {
-    issueLink.checked = event.target.dataset.issueLink === "true";
-  }
-
-  updateConnectionForm(form);
-});
 
 // Submit the form of a field whose events do not reach it: one outside its
 // form (form= attribute, like the page size under a list), or a select that
@@ -529,10 +433,6 @@ document.addEventListener("change", (event) => {
 });
 
 document.addEventListener("input", (event) => {
-  if (event.target.matches("form.connection-form input")) {
-    updateConnectionForm(event.target.form);
-  }
-
   if (event.target.matches('form.filters input[type="date"]')) {
     linkDateRange(event.target.form);
   }

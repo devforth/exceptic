@@ -94,21 +94,6 @@ func (verification *Verification) FindDestination(ctx context.Context, address s
 // againStep asks for the address again: the destination id is unknown.
 var againStep = EmailStep{State: EmailInput, Error: "Enter the email address again."}
 
-// ResendCode mails a new code to the address of destination id.
-func (verification *Verification) ResendCode(ctx context.Context, id string) (EmailStep, error) {
-	destination, err := verification.EmailDestination(ctx, id)
-
-	if err != nil {
-		return againStep, nil
-	}
-
-	if destination.Verified {
-		return verifiedStep(destination), nil
-	}
-
-	return verification.sendCode(ctx, destination)
-}
-
 // ConfirmCode checks a code entered for the address of destination id; an
 // address confirmed already (a repeated submit) stays confirmed.
 func (verification *Verification) ConfirmCode(ctx context.Context, id string, code string) (EmailStep, error) {

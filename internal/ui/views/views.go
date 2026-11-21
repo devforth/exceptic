@@ -62,12 +62,9 @@ var templateFuncs = template.FuncMap{
 	"short":        helpers.Short,
 	"shorten":      textutil.Shorten,
 	"asset":        assetURL,
-	"retryNow": func(id any, count int, back string) map[string]any {
-		return map[string]any{"ID": id, "Count": count, "Return": back}
-	},
-	"back":        link,
-	"editLink":    link,
-	"roleSummary": func(role string) string { return store.RoleSummaries[role] },
+	"back":         link,
+	"editLink":     link,
+	"roleSummary":  func(role string) string { return store.RoleSummaries[role] },
 	"issueActions": func(status string, canDelete bool) issueActions {
 		return issueActions{Resolve: status == store.StatusUnresolved, Reopen: status != store.StatusUnresolved, CanDelete: canDelete}
 	},
@@ -78,12 +75,7 @@ var templateFuncs = template.FuncMap{
 		return deleteButton{URL: fmt.Sprintf("/projects/%d/delete", id), Name: name, Label: label,
 			Confirm: "Delete the project " + name + " with all its issues, events and logs? Its DSN stops working. This cannot be undone."}
 	},
-	"deleteConnection": func(id, name, label string) deleteButton {
-		return deleteButton{URL: "/notifications/" + id + "/delete", Name: name, Label: label,
-			Confirm: "Delete the connection " + name + "? Its queued messages are dropped; a confirmed address stays confirmed."}
-	},
-	"limits":   func() config.FieldLimits { return config.Limits },
-	"chatTest": func(url, needs string) map[string]string { return map[string]string{"URL": url, "Needs": needs} },
+	"limits": func() config.FieldLimits { return config.Limits },
 	"copyButton": func(target, label, title, copied string) map[string]string {
 		return map[string]string{"Target": target, "Label": label, "Title": title, "Copied": copied}
 	},
