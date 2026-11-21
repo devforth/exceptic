@@ -3,11 +3,11 @@
 The 404 page: also what a page the viewer's role does not allow looks like.
 -->
 <script lang="ts">
-	import { oldUI } from '#lib/nav.ts';
+	import { resolve } from '$app/paths';
 	import Button from './Button.svelte';
 	import PageTitle from './PageTitle.svelte';
 
-	let { back = oldUI.issues }: { back?: string } = $props();
+	let { back = resolve('/(app)/issues') }: { back?: string } = $props();
 </script>
 
 <PageTitle title="Page not found" />

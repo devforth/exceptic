@@ -2,7 +2,7 @@ package tests
 
 import (
 	"context"
-	"html"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -42,7 +42,7 @@ func (server *testServer) createUser(username, role string) (string, *testServer
 	user := server.as(username, temporary[1])
 
 	// A temporary password leads to the account page, and only there.
-	if response := user.get("/issues"); response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/account" {
+	if response := user.get("/agents"); response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/account" {
 		server.t.Fatalf("temporary password: %d %q", response.Code, response.Header().Get("Location"))
 	}
 
@@ -52,7 +52,7 @@ func (server *testServer) createUser(username, role string) (string, *testServer
 		server.t.Fatalf("choose a password: %d %s", response.Code, response.Body)
 	}
 
-	user.page("/issues")
+	user.page("/agents")
 
 	return id[1], user
 }
@@ -67,7 +67,7 @@ func TestRoles(t *testing.T) {
 	_, admin := server.createUser("ops", store.RoleAdmin)
 	userID, user := server.createUser("dev", store.RoleUser)
 
-	for _, path := range []string{"/issues", "/logs", "/agents", "/account"} {
+	for _, path := range []string{"/agents", "/account"} {
 		user.page(path)
 	}
 
@@ -90,41 +90,6 @@ func TestRoles(t *testing.T) {
 
 	if response := user.post("/projects", url.Values{"name": {"sneaky"}}); response.Code != http.StatusNotFound {
 		t.Errorf("a user created a project: %d", response.Code)
-	}
-}
-
-// Users change statuses but cannot delete issues: no button, and the server
-// refuses it from the issue page and the list.
-func TestUsersCannotDeleteIssues(t *testing.T) {
-	server := newTestServer(t, password)
-	server.ingestFixtures()
-	server.login()
-
-	_, user := server.createUser("dev", store.RoleUser)
-	id := user.unresolvedIDs()[0]
-
-	for _, page := range []string{user.page("/issues"), user.page("/issues/" + id)} {
-		if strings.Contains(page, `value="delete"`) {
-			t.Error("a user sees the Delete button")
-		}
-	}
-
-	if !strings.Contains(server.page("/issues/"+id), `value="delete"`) {
-		t.Error("the superadmin has no Delete button")
-	}
-
-	if response := user.post("/issues/"+id+"/action", url.Values{"action": {"delete"}}); response.Code != http.StatusNotFound {
-		t.Errorf("delete from the issue page: %d", response.Code)
-	}
-
-	if response := user.post("/issues/bulk", url.Values{"action": {"delete"}, "issue": {id}}); response.Code != http.StatusNotFound {
-		t.Errorf("bulk delete: %d", response.Code)
-	}
-
-	user.page("/issues/" + id)
-
-	if response := user.post("/issues/"+id+"/action", url.Values{"action": {"resolve"}}); response.Code != http.StatusSeeOther {
-		t.Errorf("a user cannot resolve: %d", response.Code)
 	}
 }
 
@@ -203,9 +168,9 @@ func TestPasswordChangesAndAgents(t *testing.T) {
 		t.Fatalf("own change: %d %s", response.Code, response.Body)
 	}
 
-	user.page("/issues")
+	user.page("/agents")
 
-	if response := other.get("/issues"); response.Code != http.StatusSeeOther {
+	if response := other.get("/agents"); response.Code != http.StatusSeeOther {
 		t.Error("the other session survived the password change")
 	}
 
@@ -218,7 +183,7 @@ func TestPasswordChangesAndAgents(t *testing.T) {
 		t.Fatalf("no temporary password:\n%s", page)
 	}
 
-	if response := user.get("/issues"); response.Code != http.StatusSeeOther {
+	if response := user.get("/agents"); response.Code != http.StatusSeeOther {
 		t.Error("the session survived a reset")
 	}
 
@@ -357,21 +322,13 @@ func TestStatusHistory(t *testing.T) {
 		t.Error("an empty name is not the username")
 	}
 
-	user.post("/issues/"+id+"/action", url.Values{"action": {"resolve"}})
-	server.post("/issues/bulk", url.Values{"action": {"ignore"}, "issue": {id}})
-	server.post("/issues/"+id+"/action", url.Values{"action": {"ignore"}}) // no change, no entry
+	user.applyIssueAction("resolve", id)
+	server.applyIssueAction("ignore", id)
+	server.applyIssueAction("ignore", id) // no change, no entry
 
-	page := html.UnescapeString(server.page("/issues/" + id))
-	history := page[strings.Index(page, "<h2>Status history</h2>"):]
-	history = history[:strings.Index(history, "</section>")]
-
-	if strings.Count(history, "<li>") != 2 || !strings.Contains(history, "by admin") || !strings.Contains(history, "by Dev One") ||
-		strings.Index(history, "by admin") > strings.Index(history, "by Dev One") {
-		t.Fatalf("history:\n%s", history)
-	}
-
-	if !strings.Contains(page, `class="status status-ignored"`) || !strings.Contains(page, "by admin ·") {
-		t.Error("the header does not say who changed the status")
+	// Newest first, each with the name its author had then.
+	if history := statusHistory(t, server, id); len(history) != 2 || history[0].Name != "admin" || history[1].Name != "Dev One" || history[0].To != store.StatusIgnored {
+		t.Fatalf("history: %+v", history)
 	}
 
 	// A resolved issue that happens again: reopened by its event.
@@ -411,11 +368,30 @@ func TestStatusHistory(t *testing.T) {
 		t.Fatal("not a regression", result, err)
 	}
 
-	page = html.UnescapeString(server.page("/issues/" + id))
-
-	if !strings.Contains(page, "reopened: happened again") || !strings.Contains(page, "by API token") {
-		t.Errorf("reopening not in the history:\n%s", page)
+	if history := statusHistory(t, server, id); len(history) != 4 || !history[0].ByEvent || history[1].Name != "API token" {
+		t.Errorf("reopening not in the history: %+v", history)
 	}
+}
+
+type statusChange struct {
+	To      string `json:"to"`
+	Name    string `json:"name"`
+	ByEvent bool   `json:"by_event"`
+}
+
+// statusHistory is the history of an issue as its page reads it.
+func statusHistory(t *testing.T, server *testServer, issueID string) []statusChange {
+	t.Helper()
+
+	var details struct {
+		History []statusChange `json:"history"`
+	}
+
+	if err := json.Unmarshal([]byte(server.page("/api/ui/get_issue_details?issue_id="+issueID)), &details); err != nil {
+		t.Fatal(err)
+	}
+
+	return details.History
 }
 
 // A stolen session must not become a way to guess the password: wrong

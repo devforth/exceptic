@@ -2,7 +2,7 @@
 export type FilterValue = {
 	text: string;
 	/** Drawn as a badge of this kind, or as plain text. */
-	kind?: 'project' | 'level';
+	kind?: 'project' | 'level' | 'status';
 	/** The address without this value. */
 	remove: string;
 };

@@ -18,8 +18,8 @@
 	import Table from '#lib/components/Table.svelte';
 	import type { TableColumn } from '#lib/components/table.ts';
 	import Time from '#lib/components/Time.svelte';
-	import { changed, cleared, type Change } from '#lib/filters.ts';
-	import { oldUI, withQuery } from '#lib/nav.ts';
+	import { changed, cleared, daysText, type Change } from '#lib/filters.ts';
+	import { withQuery } from '#lib/nav.ts';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -78,7 +78,7 @@
 					data.filters.from || data.filters.to
 						? [
 								{
-									text: `${data.filters.from || '…'} – ${data.filters.to || '…'}`,
+									text: daysText(data.filters.from, data.filters.to),
 									remove: changed(url, { from: null, to: null })
 								}
 							]
@@ -140,7 +140,9 @@
 			<LogBody text={log.body} />
 			<div class="flex flex-wrap gap-3 text-xs">
 				{#if log.issue}
-					<Button variant="link" href={oldUI.issue(log.issue.id)}>Issue: {log.issue.title}</Button>
+					<Button variant="link" href={resolve('/(app)/issues/[id]', { id: log.issue.id })}>
+						Issue: {log.issue.title}
+					</Button>
 				{/if}
 				{#if log.trace_id}
 					<Button

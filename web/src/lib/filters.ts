@@ -18,6 +18,20 @@ export function readPaging(params: URLSearchParams): Paging {
 	};
 }
 
+/** The page to show of total rows: a page past the end (after a filter or a delete) is the last. */
+export function pageWithin(paging: Paging, total: number): number {
+	return Math.min(paging.page, Math.max(1, Math.ceil(total / paging.perPage)));
+}
+
+/** The levels a level filter offers: those some record has and the chosen ones, in the known order. */
+export function offeredLevels<Level extends string>(
+	known: readonly Level[],
+	present: readonly string[] | null | undefined,
+	chosen: readonly string[]
+): Level[] {
+	return known.filter((level) => (present ?? []).includes(level) || chosen.includes(level));
+}
+
 /** The values of a list parameter that are among the known ones, in the known order. */
 export function readChoices<Value extends string>(
 	params: URLSearchParams,
@@ -27,6 +41,29 @@ export function readChoices<Value extends string>(
 	const given = params.getAll(name).flatMap((value) => value.split(','));
 
 	return known.filter((value) => given.includes(value));
+}
+
+/** The projects of a list parameter, given by name or id, as names in the projects' order. */
+export function readProjects(
+	params: URLSearchParams,
+	projects: readonly { id: number; name: string }[]
+): string[] {
+	const given = params.getAll('project').flatMap((value) => value.split(','));
+
+	return projects
+		.filter((project) => given.includes(project.name) || given.includes(String(project.id)))
+		.map((project) => project.name);
+}
+
+/** A parameter of one value among the known ones; empty when it is not one. */
+export function readChoice<Value extends string>(
+	params: URLSearchParams,
+	name: string,
+	known: readonly Value[]
+): Value | '' {
+	const value = params.get(name) ?? '';
+
+	return known.find((choice) => choice === value) ?? '';
 }
 
 /** A text parameter, trimmed and capped. */
@@ -46,6 +83,13 @@ export function readDays(params: URLSearchParams): { from: string; to: string } 
 	to = isDay(to) ? to : '';
 
 	return from && to && from > to ? { from: to, to: from } : { from, to };
+}
+
+/** A range of days in words, for its chip: "2026-11-01 – 2026-11-10", "from …", "until …". */
+export function daysText(from: string, to: string): string {
+	if (from && to) return `${from} – ${to}`;
+
+	return from ? `from ${from}` : to ? `until ${to}` : '';
 }
 
 /** The days as the times the API filters on: since the first day, until after the last. */

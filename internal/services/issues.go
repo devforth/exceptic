@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"time"
 
@@ -15,11 +16,12 @@ import (
 // Issues: the issue list and pages, the actions on issues and the logs
 // shown with an event.
 type Issues struct {
-	store store.Store
+	logger *slog.Logger
+	store  store.Store
 }
 
-func newIssues(database store.Store) *Issues {
-	return &Issues{store: database}
+func newIssues(logger *slog.Logger, database store.Store) *Issues {
+	return &Issues{logger: logger, store: database}
 }
 
 // Count counts the issues that match filter (its Limit and Offset are ignored).
@@ -64,14 +66,6 @@ func (issues *Issues) Events(ctx context.Context, filter store.EventFilter) ([]s
 	return issues.store.ListEvents(ctx, filter)
 }
 
-// recentEventsShown is how many events of an issue its page lists.
-const recentEventsShown = 20
-
-// RecentEvents lists the newest events of an issue for its page.
-func (issues *Issues) RecentEvents(ctx context.Context, issueID string) ([]store.EventSummary, error) {
-	return issues.store.ListEvents(ctx, store.EventFilter{IssueID: issueID, Limit: recentEventsShown})
-}
-
 // SelectedEvent is the event the issue page shows: eventID (from ?event=, in
 // UUID or hex form) when given, otherwise the latest one. An event of another
 // issue is store.ErrNotFound, as a missing one: the page then shows no event
@@ -101,6 +95,9 @@ const (
 	ActionReopen  = "reopen"
 	ActionDelete  = "delete"
 )
+
+// IssueActions are the actions in the order the pages offer them.
+var IssueActions = []string{ActionResolve, ActionIgnore, ActionReopen, ActionDelete}
 
 // issueActions maps an action to the status it sets; delete sets none.
 var issueActions = map[string]string{

@@ -1,3 +1,5 @@
+// Package contracts holds the view types the templates receive, with their
+// display methods; every view type of the UI is defined here.
 package contracts
 
 import "time"

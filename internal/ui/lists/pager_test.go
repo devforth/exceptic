@@ -25,18 +25,18 @@ func TestReadPaging(t *testing.T) {
 }
 
 func testLinks(query url.Values) FilterLinks {
-	return NewFilterLinks(httptest.NewRequest("GET", "/issues", nil), query)
+	return NewFilterLinks(httptest.NewRequest("GET", "/notifications/log", nil), query)
 }
 
 func TestPager(t *testing.T) {
-	links := testLinks(url.Values{"level": {"error"}, "page": {"5"}})
-	pager := NewPager(links, 5, 20, 134, IssueList)
+	links := testLinks(url.Values{"status": {"sent"}, "page": {"5"}})
+	pager := NewPager(links, 5, 20, 134, DeliveryList)
 
 	if pager.Pages != 7 || pager.First != 81 || pager.Last != 100 {
 		t.Errorf("pager = %d pages, rows %d–%d, want 7 pages, rows 81–100", pager.Pages, pager.First, pager.Last)
 	}
 
-	if pager.PrevURL != "/issues?level=error&page=4" || pager.NextURL != "/issues?level=error&page=6" {
+	if pager.PrevURL != "/notifications/log?page=4&status=sent" || pager.NextURL != "/notifications/log?page=6&status=sent" {
 		t.Errorf("prev %q, next %q", pager.PrevURL, pager.NextURL)
 	}
 
@@ -51,18 +51,18 @@ func TestPager(t *testing.T) {
 		t.Errorf("page links = %v, want %v", numbers, want)
 	}
 
-	if pager.Links[0].URL != "/issues?level=error" {
+	if pager.Links[0].URL != "/notifications/log?status=sent" {
 		t.Errorf("first page URL = %q, want no page parameter", pager.Links[0].URL)
 	}
 
 	// Past the end: the last page.
-	past := NewPager(links, 40, 20, 134, IssueList)
+	past := NewPager(links, 40, 20, 134, DeliveryList)
 
 	if past.Page != 7 || past.NextURL != "" || past.First != 121 || past.Last != 134 {
 		t.Errorf("past the end = page %d, rows %d–%d, next %q", past.Page, past.First, past.Last, past.NextURL)
 	}
 
-	empty := NewPager(links, 1, 20, 0, IssueList)
+	empty := NewPager(links, 1, 20, 0, DeliveryList)
 
 	if empty.Pages != 1 || empty.First != 0 || empty.PrevURL != "" || empty.NextURL != "" {
 		t.Errorf("empty list pager = %+v", empty)

@@ -69,9 +69,8 @@ account and Log out. It collapses to icons (the choice is kept in this browser);
 			collapsed && 'sidebar:justify-center'
 		]}
 	>
-		<!-- eslint-disable svelte/no-navigation-without-resolve -- a page of the server-rendered UI -->
 		<a
-			href={oldUI.issues}
+			href={resolve('/(app)/issues')}
 			class={[
 				'min-w-0 pr-1 pl-2.5 leading-tight font-bold wrap-anywhere text-text no-underline hover:no-underline',
 				collapsed && 'sidebar:hidden'
@@ -79,7 +78,6 @@ account and Log out. It collapses to icons (the choice is kept in this browser);
 		>
 			{session.app_name}
 		</a>
-		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		<span class="max-sidebar:hidden">
 			<Button
 				variant="ghost"

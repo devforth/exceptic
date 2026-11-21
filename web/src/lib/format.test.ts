@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanLog, exactTime, readableLog, timeAgo } from './format.ts';
+import { cleanLog, clockTime, exactTime, readableLog, timeAgo } from './format.ts';
 
 const now = Date.parse('2026-11-20T12:00:00Z');
 
@@ -15,6 +15,10 @@ describe('timeAgo', () => {
 
 	it('gives the exact UTC time for a tooltip', () => {
 		expect(exactTime('2026-11-17T12:14:41.242Z')).toBe('2026-11-17 12:14:41 UTC');
+	});
+
+	it('gives the time of day to the millisecond, in UTC', () => {
+		expect(clockTime('2026-11-10T18:26:59.148+02:00')).toBe('16:26:59.148');
 	});
 });
 

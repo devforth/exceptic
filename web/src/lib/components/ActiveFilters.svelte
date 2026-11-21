@@ -8,6 +8,7 @@ The filters a list applies, one chip per field: each value removable on its own 
 	import Button from './Button.svelte';
 	import type { FilterChip } from './chips.ts';
 	import LevelBadge from './LevelBadge.svelte';
+	import StatusBadge from './StatusBadge.svelte';
 
 	let { chips, clear }: { chips: FilterChip[]; clear: string } = $props();
 </script>
@@ -23,6 +24,8 @@ The filters a list applies, one chip per field: each value removable on its own 
 							<Badge tone="project" label={value.text} />
 						{:else if value.kind === 'level'}
 							<LevelBadge level={value.text} />
+						{:else if value.kind === 'status'}
+							<StatusBadge status={value.text} />
 						{:else}
 							<strong>{value.text}</strong>
 						{/if}

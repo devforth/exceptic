@@ -11,6 +11,18 @@ export const maxLimit = 100;
 
 /** Inputs and outputs of every request the web app may make. */
 export interface Endpoints {
+	apply_issue_action: {
+		in: {
+			/** What to do with the issues. */
+			action: 'resolve' | 'ignore' | 'reopen' | 'delete';
+			/** The issues; issues deleted meanwhile are skipped. */
+			issue_ids: string[] | null;
+		};
+		out: {
+			action: string;
+			issues: number;
+		};
+	};
 	confirm_email: {
 		in: {
 			/** The address the code was mailed to. */
@@ -22,6 +34,28 @@ export interface Endpoints {
 			email: string;
 			confirmed: boolean;
 			message: string;
+		};
+	};
+	count_issues: {
+		in: {
+			/** Project names or IDs; every project when empty. */
+			project?: string[] | null;
+			/** Issue status, unresolved by default; all for every status. */
+			status?: '' | 'unresolved' | 'resolved' | 'ignored' | 'all';
+			/** Issue levels; every level when empty. */
+			level?: ('debug' | 'info' | 'warning' | 'error' | 'fatal')[] | null;
+			/** Text in the issue title or location. */
+			query?: string;
+			/** RFC 3339 time, e.g. 2026-11-11T10:00:00Z: only issues with an event at or after it. */
+			since?: string;
+			/** RFC 3339 time: only issues with an event before it. */
+			until?: string;
+			/** What since/until apply to; by default any event of the issue, its first or last seen time included. */
+			date_by?: '' | 'event' | 'first_seen' | 'last_seen';
+		};
+		out: {
+			count: number;
+			more?: boolean;
 		};
 	};
 	count_logs: {
@@ -208,6 +242,120 @@ export interface Endpoints {
 		};
 		out: string;
 	};
+	get_issue_details: {
+		in: {
+			/** Issue ID. */
+			issue_id: string;
+			/** An event of this issue (UUID or 32 hex); the latest when empty. */
+			event_id?: string;
+		};
+		out: {
+			issue: {
+				id: string;
+				project: string;
+				title: string;
+				location?: string;
+				level: string;
+				status: string;
+				event_count: number;
+				first_seen: IsoTime;
+				last_seen: IsoTime;
+				resolved_at?: IsoTime | null;
+				mcp_reference?: string;
+			};
+			agent_prompt: string;
+			history: {
+				from: string;
+				to: string;
+				name?: string;
+				by_event?: boolean;
+				via_mcp?: boolean;
+				event_id?: string;
+				created_at: IsoTime;
+			}[] | null;
+			events: {
+				items: {
+					event_id: string;
+					timestamp: IsoTime;
+					level: string;
+					environment?: string;
+					release?: string;
+					trace_id?: string;
+					received_at: IsoTime;
+				}[] | null;
+				next_cursor?: string;
+			};
+			event_state: 'shown' | 'unreadable' | 'missing' | 'none';
+			event?: {
+				event_id: string;
+				timestamp: IsoTime;
+				clock_drift?: string;
+				thinned?: boolean;
+				platform?: string;
+				environment?: string;
+				release?: string;
+				server_name?: string;
+				sdk?: string;
+				trace_id?: string;
+				trace_has_logs?: boolean;
+				message?: string;
+				exceptions: ({
+					type?: string;
+					value?: string;
+					handled?: boolean | null;
+					frames: ({
+						function?: string;
+						location?: string;
+						line?: number;
+						column?: number;
+						in_app?: boolean;
+						source_lines: {
+							number: number;
+							text: string;
+							current?: boolean;
+						}[] | null;
+						vars?: string;
+					})[] | null;
+				})[] | null;
+				breadcrumbs: ({
+					timestamp?: IsoTime | null;
+					category?: string;
+					level?: string;
+					message?: string;
+					data?: string;
+				})[] | null;
+				request?: {
+					method?: string;
+					url?: string;
+					headers: {
+						name: string;
+						value: string;
+					}[] | null;
+				} | null;
+				tags: {
+					name: string;
+					value: string;
+				}[] | null;
+				user?: {
+					id?: string;
+					email?: string;
+					username?: string;
+					ip_address?: string;
+				} | null;
+				contexts: {
+					name: string;
+					value: string;
+				}[] | null;
+				related_logs: {
+					time: IsoTime;
+					level: string;
+					body: string;
+				}[] | null;
+				logs_from_request?: boolean;
+				payload: string;
+			} | null;
+		};
+	};
 	get_issues: {
 		in: {
 			/** 1 to 100 known issue IDs. Duplicates are handled once. */
@@ -225,6 +373,7 @@ export interface Endpoints {
 				first_seen: IsoTime;
 				last_seen: IsoTime;
 				resolved_at?: IsoTime | null;
+				mcp_reference?: string;
 			})[] | null;
 			missing_issue_ids?: string[] | null;
 		};
@@ -360,8 +509,15 @@ export interface Endpoints {
 				environment?: string;
 				release?: string;
 				trace_id?: string;
+				received_at: IsoTime;
 			}[] | null;
 			next_cursor?: string;
+		};
+	};
+	list_issue_levels: {
+		in: Record<string, never>;
+		out: {
+			levels: string[] | null;
 		};
 	};
 	list_issues: {
@@ -399,6 +555,7 @@ export interface Endpoints {
 				first_seen: IsoTime;
 				last_seen: IsoTime;
 				resolved_at?: IsoTime | null;
+				mcp_reference?: string;
 			})[] | null;
 			next_cursor?: string;
 		};
@@ -604,6 +761,7 @@ export interface Endpoints {
 				first_seen: IsoTime;
 				last_seen: IsoTime;
 				resolved_at?: IsoTime | null;
+				mcp_reference?: string;
 			})[] | null;
 			missing_issue_ids?: string[] | null;
 		};
@@ -653,7 +811,9 @@ export interface Endpoints {
 
 /** How each request is sent, and what the app must know before offering it. */
 export const endpoints = {
+	apply_issue_action: { method: 'POST', text: false, admin: false, destructive: false, confirm: false },
 	confirm_email: { method: 'POST', text: false, admin: true, destructive: false, confirm: false },
+	count_issues: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	count_logs: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	create_connection: { method: 'POST', text: false, admin: true, destructive: false, confirm: true },
 	create_project: { method: 'POST', text: false, admin: true, destructive: false, confirm: false },
@@ -666,6 +826,7 @@ export const endpoints = {
 	get_account: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	get_event: { method: 'GET', text: true, admin: false, destructive: false, confirm: false },
 	get_issue: { method: 'GET', text: true, admin: false, destructive: false, confirm: false },
+	get_issue_details: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	get_issues: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	get_project: { method: 'GET', text: false, admin: true, destructive: false, confirm: false },
 	get_session: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
@@ -674,6 +835,7 @@ export const endpoints = {
 	list_connections: { method: 'GET', text: false, admin: true, destructive: false, confirm: false },
 	list_deliveries: { method: 'GET', text: false, admin: true, destructive: false, confirm: false },
 	list_issue_events: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
+	list_issue_levels: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	list_issues: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	list_log_levels: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	list_logs: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
@@ -755,6 +917,14 @@ export type ErrorBody = {
 
 /** The values input fields take. */
 export const choices = {
+	apply_issue_action: {
+		action: ['resolve', 'ignore', 'reopen', 'delete'],
+	},
+	count_issues: {
+		date_by: ['event', 'first_seen', 'last_seen'],
+		level: ['debug', 'info', 'warning', 'error', 'fatal'],
+		status: ['unresolved', 'resolved', 'ignored', 'all'],
+	},
 	count_logs: {
 		level: ['trace', 'debug', 'info', 'warn', 'error', 'fatal'],
 	},

@@ -18,13 +18,31 @@ It looks like any Button of its variant (danger for a delete).
 		icon?: IconName;
 		/** The name of an icon-only button, or a tooltip of one with text. */
 		title?: string;
+		/** Nothing to act on yet (no issue chosen). */
+		disabled?: boolean;
 		children?: Snippet;
 	};
 
-	let { confirm, action, variant = 'danger', icon, title, children }: Props = $props();
+	let {
+		confirm,
+		action,
+		variant = 'danger',
+		icon,
+		title,
+		disabled = false,
+		children
+	}: Props = $props();
 
 	let open = $state(false);
 </script>
 
-<Button {variant} {icon} {title} popup="dialog" onclick={() => (open = true)} {children} />
+<Button
+	{variant}
+	{icon}
+	{title}
+	{disabled}
+	popup="dialog"
+	onclick={() => (open = true)}
+	{children}
+/>
 <ConfirmDialog bind:open {...confirm} onconfirm={action} />

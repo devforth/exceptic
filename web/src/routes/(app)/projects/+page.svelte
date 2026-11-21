@@ -183,7 +183,7 @@
 			<Badge
 				tone="project"
 				label={project.name}
-				href={withQuery(oldUI.issues, { project: project.name })}
+				href={withQuery(resolve('/(app)/issues'), { project: project.name })}
 				title="Issues of {project.name}"
 			/>
 			<div class="text-xs text-muted">
@@ -197,7 +197,7 @@
 				copied="DSN copied to clipboard."
 			/>
 		{:else if column.key === 'unresolved'}
-			<Button variant="link" href={withQuery(oldUI.issues, { project: project.name })}>
+			<Button variant="link" href={withQuery(resolve('/(app)/issues'), { project: project.name })}>
 				{project.unresolved_issues}
 			</Button>
 		{:else if column.key === 'records'}
@@ -208,7 +208,7 @@
 						no errors
 					</span>{:else}{#each events as level (level)}<LevelBadge
 							{level}
-							href={withQuery(oldUI.issues, { level })}
+							href={withQuery(resolve('/(app)/issues'), { level })}
 						/>{/each}{/if}
 			</div>
 			<div class="text-xs text-muted">logs: {typeof logs === 'string' ? logs : logs.join(' ')}</div>

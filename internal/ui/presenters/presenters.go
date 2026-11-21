@@ -2,26 +2,6 @@
 // without I/O.
 package presenters
 
-import (
-	"github.com/devforth/exceptic/internal/storage/store"
-	"github.com/devforth/exceptic/internal/ui/contracts"
-)
-
 // ProjectName names a project by id, also one that no longer exists
 // (services.Projects.Name).
 type ProjectName func(projectID int) string
-
-// IssueRows labels each issue with its project.
-func IssueRows(issues []store.Issue, projectName ProjectName) []contracts.IssueRow {
-	rows := make([]contracts.IssueRow, 0, len(issues))
-
-	for _, issue := range issues {
-		rows = append(rows, IssueRow(issue, projectName))
-	}
-
-	return rows
-}
-
-func IssueRow(issue store.Issue, projectName ProjectName) contracts.IssueRow {
-	return contracts.IssueRow{Issue: issue, ProjectName: projectName(issue.ProjectID)}
-}

@@ -21,10 +21,8 @@ import (
 
 	"github.com/devforth/exceptic/docs"
 
-	"github.com/devforth/exceptic/internal/agentprompt"
 	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/platform/textutil"
-	"github.com/devforth/exceptic/internal/sentry"
 	"github.com/devforth/exceptic/internal/storage/store"
 	"github.com/devforth/exceptic/internal/ui/helpers"
 	"github.com/devforth/exceptic/internal/ui/lists"
@@ -39,41 +37,23 @@ var staticFiles embed.FS
 // link is the data of a partial that is a link: where to and its text.
 func link(url, label string) map[string]string { return map[string]string{"URL": url, "Label": label} }
 
-// issueActions is the data of the issue-action-buttons partial: the actions
-// for an issue of this status, or for the checked issues of the list (bulk).
-type issueActions struct {
-	Bulk, Resolve, Reopen, CanDelete bool
-}
-
 // deleteButton is the data of the delete-button partial; an empty Label is the trash icon.
 type deleteButton struct {
 	URL, Name, Label, Confirm string
 }
 
 var templateFuncs = template.FuncMap{
-	"timeAgo":      helpers.TimeAgo,
-	"isoTime":      func(value time.Time) string { return value.UTC().Format(time.RFC3339) },
-	"fullTime":     func(value time.Time) string { return value.UTC().Format("2006-01-02 15:04:05.000 UTC") },
-	"levelClass":   helpers.LevelClass,
-	"cleanLog":     helpers.CleanLog,
-	"prettyJSON":   textutil.IndentJSON,
-	"handled":      helpers.Handled,
-	"parseRequest": sentry.ParseRequest,
-	"short":        helpers.Short,
-	"shorten":      textutil.Shorten,
-	"asset":        assetURL,
+	"timeAgo":  helpers.TimeAgo,
+	"isoTime":  func(value time.Time) string { return value.UTC().Format(time.RFC3339) },
+	"fullTime": func(value time.Time) string { return value.UTC().Format("2006-01-02 15:04:05.000 UTC") },
+	"shorten":  textutil.Shorten,
+	"asset":    assetURL,
 	"retryNow": func(id any, count int, back string) map[string]any {
 		return map[string]any{"ID": id, "Count": count, "Return": back}
 	},
 	"back":        link,
 	"editLink":    link,
 	"roleSummary": func(role string) string { return store.RoleSummaries[role] },
-	"issueActions": func(status string, canDelete bool) issueActions {
-		return issueActions{Resolve: status == store.StatusUnresolved, Reopen: status != store.StatusUnresolved, CanDelete: canDelete}
-	},
-	"bulkActions": func(canDelete bool) issueActions {
-		return issueActions{Bulk: true, Resolve: true, Reopen: true, CanDelete: canDelete}
-	},
 	"deleteProject": func(id int, name, label string) deleteButton {
 		return deleteButton{URL: fmt.Sprintf("/projects/%d/delete", id), Name: name, Label: label,
 			Confirm: "Delete the project " + name + " with all its issues, events and logs? Its DSN stops working. This cannot be undone."}
@@ -87,13 +67,7 @@ var templateFuncs = template.FuncMap{
 	"copyButton": func(target, label, title, copied string) map[string]string {
 		return map[string]string{"Target": target, "Label": label, "Title": title, "Copied": copied}
 	},
-	"copyText": func(text, label, title, copied string) map[string]string {
-		return map[string]string{"Text": text, "Label": label, "Title": title, "Copied": copied}
-	},
 	"projectBadge": lists.ProjectBadge,
-	"levelBadge":   lists.LevelBadge,
-	"statusBadge":  lists.StatusBadge,
-	"issueStatus":  lists.StatusOf,
 	// label is a badge that is not a link (inside checkboxes): {{template "badge" (label "level" .Name)}}.
 	"label": lists.Label,
 	// The hint texts, from docs (a missing one fails the page).
@@ -122,7 +96,6 @@ func parseTemplates(appName string) (map[string]page, error) {
 	pages := map[string]page{}
 	funcs := maps.Clone(templateFuncs)
 	funcs["appName"] = func() string { return appName }
-	funcs["mcpReference"] = func(issueID string) string { return agentprompt.MCPReference(appName, issueID) }
 
 	pageFiles, err := fs.Glob(templateFiles, "templates/*/*.html")
 

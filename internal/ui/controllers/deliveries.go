@@ -26,7 +26,7 @@ func (controller *Controllers) DeliveriesPage(w http.ResponseWriter, r *http.Req
 	}
 
 	view := contracts.DeliveriesView{Labels: presenters.ConnectionLabels(connections), Statuses: lists.DeliveryStatuses}
-	query := lists.CleanListQuery(r.URL.Query(), lists.DeliveryListParams(slices.Collect(maps.Keys(view.Labels))), controller.projects)
+	query := lists.CleanListQuery(r.URL.Query(), lists.DeliveryListParams(slices.Collect(maps.Keys(view.Labels))))
 	view.Connection, view.Status, view.Filter = query.Get("connection"), query.Get("status"), lists.NewFilterLinks(r, query)
 
 	view.Connections = presenters.ConnectionOptions(connections, view.Connection)

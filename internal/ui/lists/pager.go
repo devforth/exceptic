@@ -6,7 +6,7 @@ import (
 	"strconv"
 )
 
-// Pagination of the issue and log lists: ?page=N, ?per_page=20|50|100. Both
+// Pagination of the lists: ?page=N, ?per_page=20|50|100. Both
 // stay in the URL, so a page can be shared and reloaded; changing a filter
 // starts again from the first page (the filter form does not send "page").
 
@@ -31,15 +31,14 @@ func ReadPaging(query url.Values) (page, perPage int) {
 type Pager struct {
 	Page, Pages    int
 	Total          int
-	More           bool // there are more rows than Total ("of 10000+"): logs are counted up to a limit
-	First, Last    int  // the rows shown, from 1
+	First, Last    int // the rows shown, from 1
 	PerPage        int
 	PerPageChoices []int
 	PrevURL        string
 	NextURL        string
 	Links          []PageLink
-	Target         string // the element htmx replaces ("issue-list", "delivery-list")
-	Form           string // the filter form the page size belongs to ("issue-filters", "log-filters")
+	Target         string // the element htmx replaces ("delivery-list")
+	Form           string // the filter form the page size belongs to ("delivery-filters")
 }
 
 // ListFragment is the part of a page htmx swaps for a list: the element
@@ -48,10 +47,7 @@ type ListFragment struct {
 	Target, Form string
 }
 
-var (
-	IssueList    = ListFragment{Target: "issue-list", Form: "issue-filters"}
-	DeliveryList = ListFragment{Target: "delivery-list", Form: "delivery-filters"}
-)
+var DeliveryList = ListFragment{Target: "delivery-list", Form: "delivery-filters"}
 
 type PageLink struct {
 	Number  int

@@ -10,12 +10,14 @@ import (
 	"time"
 
 	"github.com/devforth/exceptic/internal/agentprompt"
+	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/sentry"
 	"github.com/devforth/exceptic/internal/services"
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
-type listIssuesInput struct {
+// issueFiltersInput is what list_issues and count_issues filter on.
+type issueFiltersInput struct {
 	Project []string `json:"project,omitempty" jsonschema:"Project names or IDs; every project when empty."`
 	Status  string   `json:"status,omitempty" jsonschema:"Issue status, unresolved by default; all for every status."`
 	Level   []string `json:"level,omitempty" jsonschema:"Issue levels; every level when empty."`
@@ -23,9 +25,14 @@ type listIssuesInput struct {
 	Since   string   `json:"since,omitempty" jsonschema:"RFC 3339 time, e.g. 2026-11-11T10:00:00Z: only issues with an event at or after it."`
 	Until   string   `json:"until,omitempty" jsonschema:"RFC 3339 time: only issues with an event before it."`
 	DateBy  string   `json:"date_by,omitempty" jsonschema:"What since/until apply to; by default any event of the issue, its first or last seen time included."`
-	Sort    string   `json:"sort,omitempty" jsonschema:"Order, last_seen by default: a field newest or most first, with _asc the reverse; project A to Z, project_desc the reverse."`
-	Limit   int      `json:"limit,omitempty" jsonschema:"Issues per page."`
-	Cursor  string   `json:"cursor,omitempty" jsonschema:"next_cursor of the previous page."`
+}
+
+type listIssuesInput struct {
+	issueFiltersInput
+
+	Sort   string `json:"sort,omitempty" jsonschema:"Order, last_seen by default: a field newest or most first, with _asc the reverse; project A to Z, project_desc the reverse."`
+	Limit  int    `json:"limit,omitempty" jsonschema:"Issues per page."`
+	Cursor string `json:"cursor,omitempty" jsonschema:"next_cursor of the previous page."`
 }
 
 // statusFilters are the values of list_issues' status: "all" lists every status.
@@ -42,13 +49,22 @@ type issueOutput struct {
 	FirstSeen  time.Time  `json:"first_seen"`
 	LastSeen   time.Time  `json:"last_seen"`
 	ResolvedAt *time.Time `json:"resolved_at,omitempty"`
+	// MCPReference is the request that has a coding agent fetch the issue
+	// ("Copy for agent"); the web app's only, agents know the tool.
+	MCPReference string `json:"mcp_reference,omitempty"`
 }
 
 func (handler *handlers) issueOutput(call Call, issue store.Issue) issueOutput {
-	return issueOutput{
+	output := issueOutput{
 		ID: issue.ID, Project: handler.projectName(issue.ProjectID), Title: call.Text(issue.Title), Location: call.Text(issue.Culprit),
 		Level: issue.Level, Status: issue.Status, EventCount: issue.EventCount, FirstSeen: issue.FirstSeen, LastSeen: issue.LastSeen, ResolvedAt: issue.ResolvedAt,
 	}
+
+	if call.Transport == TransportUI {
+		output.MCPReference = agentprompt.MCPReference(handler.services.AppName, issue.ID)
+	}
+
+	return output
 }
 
 // projectName is empty for data of a deleted project.
@@ -85,6 +101,24 @@ func (handler *handlers) listIssues(ctx context.Context, call Call, input listIs
 	}
 
 	return output, nil
+}
+
+func (handler *handlers) countIssues(ctx context.Context, _ Call, input issueFiltersInput) (countOutput, error) {
+	filter, err := handler.issueFilter(listIssuesInput{issueFiltersInput: input})
+
+	if err != nil {
+		return countOutput{}, err
+	}
+
+	count, err := handler.services.Issues.Count(ctx, filter)
+
+	return countOutput{Count: count}, err
+}
+
+func (handler *handlers) listIssueLevels(ctx context.Context, _ Call, _ noInput) (levelsOutput, error) {
+	present, err := handler.services.Issues.Levels(ctx)
+
+	return levelsOutput{Levels: append([]string{}, config.InLevelOrder(present, config.Levels)...)}, err
 }
 
 func (handler *handlers) issueFilter(input listIssuesInput) (store.IssueFilter, error) {
@@ -241,6 +275,28 @@ type eventOutput struct {
 	Environment string    `json:"environment,omitempty"`
 	Release     string    `json:"release,omitempty"`
 	TraceID     string    `json:"trace_id,omitempty"`
+	// ReceivedAt is when the server got it; Timestamp is the device's time.
+	ReceivedAt time.Time `json:"received_at"`
+}
+
+// eventsPage is a page of events read with one extra row, which tells
+// whether there is a next one.
+func eventsPage(call Call, events []store.EventSummary, limit int) Page[eventOutput] {
+	output := Page[eventOutput]{Items: []eventOutput{}}
+	events, more := store.Page(events, limit)
+
+	for _, event := range events {
+		output.Items = append(output.Items, eventOutput{
+			EventID: event.EventID, Timestamp: event.Timestamp, Level: event.Level, ReceivedAt: event.ReceivedAt,
+			Environment: call.Text(event.Environment), Release: call.Text(event.Release), TraceID: call.TraceID(event.TraceID),
+		})
+	}
+
+	if more {
+		output.NextCursor = strconv.FormatInt(events[limit-1].ID, 10)
+	}
+
+	return output
 }
 
 func (handler *handlers) listIssueEvents(ctx context.Context, call Call, input listIssueEventsInput) (Page[eventOutput], error) {
@@ -263,20 +319,7 @@ func (handler *handlers) listIssueEvents(ctx context.Context, call Call, input l
 		return output, err
 	}
 
-	events, more := store.Page(events, limit)
-
-	for _, event := range events {
-		output.Items = append(output.Items, eventOutput{
-			EventID: event.EventID, Timestamp: event.Timestamp, Level: event.Level,
-			Environment: call.Text(event.Environment), Release: call.Text(event.Release), TraceID: call.TraceID(event.TraceID),
-		})
-	}
-
-	if more {
-		output.NextCursor = strconv.FormatInt(events[limit-1].ID, 10)
-	}
-
-	return output, nil
+	return eventsPage(call, events, limit), nil
 }
 
 type issueIDsInput struct {
@@ -365,4 +408,40 @@ func (handler *handlers) deleteIssue(ctx context.Context, _ Call, input deleteIs
 	}
 
 	return deletedOutput{Deleted: input.IssueID}, nil
+}
+
+type applyIssueActionInput struct {
+	Action   string   `json:"action" jsonschema:"What to do with the issues."`
+	IssueIDs []string `json:"issue_ids" jsonschema:"The issues; issues deleted meanwhile are skipped."`
+}
+
+type appliedOutput struct {
+	Action string `json:"action"`
+	// Issues is how many issues were asked for.
+	Issues int `json:"issues"`
+}
+
+// applyIssueAction runs an action of the issue list or page for the
+// viewer; deleting needs an admin, which services.Issues checks.
+func (handler *handlers) applyIssueAction(ctx context.Context, call Call, input applyIssueActionInput) (appliedOutput, error) {
+	ids := slices.Compact(slices.Sorted(slices.Values(input.IssueIDs)))
+
+	switch {
+	case len(ids) == 0:
+		return appliedOutput{}, Invalid("no issues given")
+	case len(ids) > services.MaxActionIssues:
+		return appliedOutput{}, Invalid("at most %d issues at once", services.MaxActionIssues)
+	case slices.ContainsFunc(ids, func(id string) bool { return !store.ValidID(id) }):
+		return appliedOutput{}, Invalid("invalid issue id")
+	}
+
+	if err := handler.services.Issues.ApplyAction(ctx, call.Viewer, input.Action, ids); err != nil {
+		if errors.Is(err, services.ErrUnknownAction) {
+			return appliedOutput{}, Invalid("unknown action %q", input.Action)
+		}
+
+		return appliedOutput{}, err
+	}
+
+	return appliedOutput{Action: input.Action, Issues: len(ids)}, nil
 }

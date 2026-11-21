@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"slices"
 
 	"github.com/devforth/exceptic/internal/app"
 	"github.com/devforth/exceptic/internal/session"
@@ -240,14 +239,11 @@ func (server *testServer) waitStored() {
 }
 
 var (
-	issueLink = regexp.MustCompile(`href="/issues/([a-z0-9]{8})"`)
 	// The personal token just generated, and the disconnect buttons, on the MCP page.
 	personalTokenField = regexp.MustCompile(`id="mcp-personal-token" value="Bearer ([^"]+)"`)
 	disconnectAction   = regexp.MustCompile(`action="(/agents/[a-z0-9]{8}/disconnect)"`)
 )
 
-// issueIDs lists the issues linked from a page, each once and in order (a
-// list row links its issue from the title and from the open button).
 // unresolvedIDs lists the unresolved issues the way the web app reads them
 // (/api/ui/list_issues), as the user of the server's session.
 func (server *testServer) unresolvedIDs() []string {
@@ -272,14 +268,22 @@ func (server *testServer) unresolvedIDs() []string {
 	return ids
 }
 
-func issueIDs(html string) []string {
-	var ids []string
+// applyIssueAction runs an action on issues as the web app does (its
+// /api/ui request), and fails unless it is done.
+func (server *testServer) applyIssueAction(action string, ids ...string) {
+	server.t.Helper()
 
-	for _, match := range issueLink.FindAllStringSubmatch(html, -1) {
-		if !slices.Contains(ids, match[1]) {
-			ids = append(ids, match[1])
-		}
+	body, err := json.Marshal(map[string]any{"action": action, "issue_ids": ids})
+
+	if err != nil {
+		server.t.Fatal(err)
 	}
 
-	return ids
+	request := httptest.NewRequest(http.MethodPost, "/api/ui/apply_issue_action", bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", "http://example.com")
+
+	if response := server.send(request); response.Code != http.StatusOK {
+		server.t.Fatalf("%s %v: %d %s", action, ids, response.Code, response.Body)
+	}
 }

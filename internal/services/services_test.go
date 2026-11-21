@@ -141,7 +141,7 @@ func TestVerificationDestinations(t *testing.T) {
 func TestSelectedEvent(t *testing.T) {
 	ctx := context.Background()
 	database := openStore(t)
-	issues := newIssues(database)
+	issues := newIssues(slog.New(slog.DiscardHandler), database)
 	now := time.Now().UTC()
 
 	save := func(eventID, fingerprint string, received time.Time) string {
@@ -188,7 +188,7 @@ func TestSelectedEvent(t *testing.T) {
 func TestDeleteIssue(t *testing.T) {
 	ctx := context.Background()
 	database := openStore(t)
-	issues := newIssues(database)
+	issues := newIssues(slog.New(slog.DiscardHandler), database)
 	now := time.Now().UTC()
 
 	result, err := database.SaveEvent(ctx, store.NewEvent{

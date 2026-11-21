@@ -28,12 +28,8 @@ func Register(router *http.ServeMux, protect func(http.Handler) http.Handler, co
 
 	// The dashboard: every route needs a login and the user's own password; any role.
 	dashboard := group{
-		"GET /{$}":                      controller.Home,
-		"GET /issues":                   controller.IssuesPage,
-		"GET /issues/{issueID}":         controller.IssuePage,
-		"POST /issues/{issueID}/action": controller.IssueAction, // deleting needs an admin (services.Issues)
-		"POST /issues/bulk":             controller.BulkIssueAction,
-		"GET /projects/cleanups":        controller.CleanupsPage,
+		"GET /{$}":               controller.Home, // to the web app's issue list
+		"GET /projects/cleanups": controller.CleanupsPage,
 
 		"GET /agents":                       controller.AgentsPage,
 		"POST /agents/token":                controller.NewAgentToken,

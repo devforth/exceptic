@@ -18,11 +18,11 @@ import (
 func TestLogin(t *testing.T) {
 	server := newTestServer(t, password)
 
-	if response := server.get("/issues"); response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/login?next=%2Fissues" {
+	if response := server.get("/agents"); response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/login?next=%2Fagents" {
 		t.Fatalf("anonymous: %d %q", response.Code, response.Header().Get("Location"))
 	}
 
-	htmx := httptest.NewRequest(http.MethodGet, "/issues?status=all", nil)
+	htmx := httptest.NewRequest(http.MethodGet, "/agents?client=codex", nil)
 	htmx.Header.Set("HX-Request", "true")
 
 	if response := server.send(htmx); response.Code != http.StatusUnauthorized || !strings.HasPrefix(response.Header().Get("HX-Redirect"), "/login") {
@@ -35,8 +35,8 @@ func TestLogin(t *testing.T) {
 
 	server.login()
 
-	if !strings.Contains(server.page("/issues"), "<h1>Issues</h1>") {
-		t.Fatal("issues page after login")
+	if !strings.Contains(server.page("/agents"), "<h1>") {
+		t.Fatal("a page after login")
 	}
 
 	cookie := server.cookie
@@ -52,7 +52,7 @@ func TestLogin(t *testing.T) {
 	// The old cookie no longer works: the session is deleted on the server.
 	server.cookie = cookie
 
-	if response := server.get("/issues"); response.Code != http.StatusSeeOther {
+	if response := server.get("/agents"); response.Code != http.StatusSeeOther {
 		t.Fatalf("after logout: %d", response.Code)
 	}
 }
@@ -70,7 +70,7 @@ func TestSuperadminFromEnvOnce(t *testing.T) {
 		restarted := startServer(t, database, credentials[0], credentials[1])
 		restarted.cookie = first.cookie
 
-		if response := restarted.get("/issues"); response.Code != http.StatusOK {
+		if response := restarted.get("/agents"); response.Code != http.StatusOK {
 			t.Fatalf("restart with %q: %d", credentials[0], response.Code)
 		}
 
@@ -227,21 +227,18 @@ func TestUIDisabledWithoutPassword(t *testing.T) {
 
 func TestCrossSiteRequestsRejected(t *testing.T) {
 	server := newTestServer(t, password)
-	server.ingestFixtures()
 	server.login()
 
-	id := server.unresolvedIDs()[0]
-
-	response := server.post("/issues/"+id+"/action", url.Values{"action": {"resolve"}}, "Origin", "https://evil.test")
+	response := server.post("/account/name", url.Values{"name": {"Evil"}}, "Origin", "https://evil.test")
 
 	if response.Code != http.StatusForbidden {
-		t.Fatalf("cross-site status change: %d", response.Code)
+		t.Fatalf("cross-site change: %d", response.Code)
 	}
 
-	response = server.post("/issues/"+id+"/action", url.Values{"action": {"resolve"}}, "Origin", "http://example.com")
+	response = server.post("/account/name", url.Values{"name": {"Admin"}}, "Origin", "http://example.com")
 
 	if response.Code != http.StatusSeeOther {
-		t.Fatalf("same-site status change: %d", response.Code)
+		t.Fatalf("same-site change: %d", response.Code)
 	}
 }
 
@@ -260,24 +257,24 @@ func TestLoginReplacesSession(t *testing.T) {
 
 	server.cookie = previous
 
-	if response := server.get("/issues"); response.Code != http.StatusSeeOther {
+	if response := server.get("/agents"); response.Code != http.StatusSeeOther {
 		t.Fatalf("the previous session still works: %d", response.Code)
 	}
 }
 
 // Every dashboard route asks for a login, pages and actions alike; only the
-// login itself and static files are open. The web app's pages (/projects)
-// hold no data: its requests ask for the login (TestUIRequiresSession).
+// login itself and static files are open. The web app's pages (/issues,
+// /projects) hold no data: its requests ask for the login (TestUIRequiresSession).
 func TestDashboardNeedsLogin(t *testing.T) {
 	server := newTestServer(t, password)
 
-	for _, path := range []string{"/", "/issues", "/issues/1", "/projects/1", "/notifications", "/notifications/log", "/notifications/1", "/project-colors.css"} {
+	for _, path := range []string{"/", "/agents", "/projects/1", "/notifications", "/notifications/log", "/notifications/1", "/project-colors.css"} {
 		if response := server.get(path); response.Code != http.StatusSeeOther || !strings.HasPrefix(response.Header().Get("Location"), "/login") {
 			t.Errorf("GET %s: %d %q", path, response.Code, response.Header().Get("Location"))
 		}
 	}
 
-	for _, path := range []string{"/issues/bulk", "/projects", "/projects/1/delete", "/notifications", "/notifications/1/retry", "/notifications/email/start"} {
+	for _, path := range []string{"/account/name", "/projects", "/projects/1/delete", "/notifications", "/notifications/1/retry", "/notifications/email/start"} {
 		if response := server.post(path, url.Values{}); response.Code != http.StatusSeeOther || !strings.HasPrefix(response.Header().Get("Location"), "/login") {
 			t.Errorf("POST %s: %d %q", path, response.Code, response.Header().Get("Location"))
 		}
@@ -298,11 +295,11 @@ func TestLoginAfterExpiredFormReturnsToPage(t *testing.T) {
 		headers []string
 		want    string
 	}{
-		{[]string{"Referer", "http://example.com/issues?status=all"}, "/login?next=" + url.QueryEscape("/issues?status=all")},
-		{[]string{"HX-Current-URL", "http://example.com/logs?page=2", "Referer", "http://example.com/issues"}, "/login?next=" + url.QueryEscape("/logs?page=2")},
+		{[]string{"Referer", "http://example.com/account?tab=name"}, "/login?next=" + url.QueryEscape("/account?tab=name")},
+		{[]string{"HX-Current-URL", "http://example.com/agents?client=codex", "Referer", "http://example.com/account"}, "/login?next=" + url.QueryEscape("/agents?client=codex")},
 		{nil, "/login?next=%2Fissues"},
 	} {
-		response := server.post("/issues/bulk", url.Values{"action": {"resolve"}}, test.headers...)
+		response := server.post("/account/name", url.Values{"name": {"Admin"}}, test.headers...)
 
 		if location := response.Header().Get("Location"); location != test.want {
 			t.Errorf("headers %v: redirected to %q, want %q", test.headers, location, test.want)
@@ -322,7 +319,7 @@ func TestAllowedIPsCoverEveryRoute(t *testing.T) {
 		"/agents", "/static/app.js", "/project-colors.css", "/no-such-page", "/mcp", "/oauth/authorize", "/oauth/token",
 		"/oauth/register", "/.well-known/oauth-authorization-server", "/.well-known/oauth-protected-resource/mcp",
 		"/.well-known/openid-configuration", "/api/v1/list_issues", "/api/unknown", "/no-such-page/deeper", "/_app/immutable/x.js",
-		"/api/ui/list_projects", "/api/ui/update_issue_status", "/api/ui/nope",
+		"/api/ui/list_projects", "/api/ui/apply_issue_action", "/api/ui/nope",
 	}
 
 	for _, path := range paths {
