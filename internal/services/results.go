@@ -26,9 +26,6 @@ type AgentsPage struct {
 	Owner  store.User   // whose agents are listed
 	Owners []store.User // whom the viewer may choose (only themselves for most)
 	Grants []store.Grant
-	// TokenSet: the viewer (whoever Owner is) has a personal token; the
-	// token form is always their own.
-	TokenSet bool
 }
 
 // The states of EmailStep.

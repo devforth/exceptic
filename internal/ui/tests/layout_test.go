@@ -125,13 +125,13 @@ func TestMenuGroupsAndCounter(t *testing.T) {
 	server := newTestServer(t, password)
 	server.login()
 
-	if page := server.page("/agents"); strings.Contains(page, `class="nav-count"`) {
+	if page := server.page("/account"); strings.Contains(page, `class="nav-count"`) {
 		t.Error("a counter with no issues")
 	}
 
 	server.ingestFixtures()
 
-	page := server.page("/agents")
+	page := server.page("/account")
 	ids := server.unresolvedIDs()
 	counter := fmt.Sprintf(`<b class="nav-count" aria-label="%d unresolved">%d</b>`, len(ids), len(ids))
 
@@ -154,7 +154,7 @@ func TestMenuGroupsAndCounter(t *testing.T) {
 
 	server.post("/issues/"+ids[0]+"/action", url.Values{"action": {"resolve"}})
 
-	if page := server.page("/agents"); !strings.Contains(page, fmt.Sprintf(`aria-label="%d unresolved"`, len(ids)-1)) {
+	if page := server.page("/account"); !strings.Contains(page, fmt.Sprintf(`aria-label="%d unresolved"`, len(ids)-1)) {
 		t.Error("the counter does not follow a resolved issue")
 	}
 }
@@ -169,7 +169,7 @@ func TestMenuMarksTheSection(t *testing.T) {
 	for path, item := range map[string]string{
 		"/issues": "/issues", "/projects/new": "/projects", "/projects/cleanups": "/projects",
 		"/notifications/new": "/notifications", "/notifications/log": "/notifications", "/users/new": "/users",
-		"/agents": "/agents", "/account": "/account",
+		"/account": "/account",
 	} {
 		if active := activeItem.FindAllStringSubmatch(server.page(path), -1); len(active) != 1 || active[0][1] != item {
 			t.Errorf("%s marks %v, want %s", path, active, item)

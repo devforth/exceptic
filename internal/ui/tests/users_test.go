@@ -2,8 +2,10 @@ package tests
 
 import (
 	"context"
+	"encoding/json"
 	"html"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"regexp"
 	"strings"
@@ -67,7 +69,7 @@ func TestRoles(t *testing.T) {
 	_, admin := server.createUser("ops", store.RoleAdmin)
 	userID, user := server.createUser("dev", store.RoleUser)
 
-	for _, path := range []string{"/issues", "/logs", "/agents", "/account"} {
+	for _, path := range []string{"/issues", "/logs", "/account"} {
 		user.page(path)
 	}
 
@@ -80,7 +82,7 @@ func TestRoles(t *testing.T) {
 	}
 
 	// The menu shows only what the role allows.
-	menu := user.page("/agents")
+	menu := user.page("/account")
 
 	for _, hidden := range []string{`href="/notifications"`, `href="/users"`} {
 		if strings.Contains(menu, hidden) {
@@ -235,77 +237,39 @@ func TestPasswordChangesAndAgents(t *testing.T) {
 	agentAccess(t, server, token, http.StatusUnauthorized)
 }
 
-// personalToken generates the personal token of the client's user.
+// personalToken generates the personal token of the client's user, as the
+// MCP page of the web app does.
 func personalToken(t *testing.T, client *testServer) string {
 	t.Helper()
 
-	match := personalTokenField.FindStringSubmatch(client.post("/agents/token", nil).Body.String())
+	request := httptest.NewRequest(http.MethodPost, "/api/ui/personal_token", strings.NewReader("{}"))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", "http://example.com")
+	response := client.send(request)
 
-	if match == nil {
-		t.Fatal("no personal token")
+	var token struct {
+		Token string `json:"token"`
 	}
 
-	return match[1]
+	if err := json.Unmarshal(response.Body.Bytes(), &token); err != nil || token.Token == "" {
+		t.Fatalf("no personal token: %d %s", response.Code, response.Body)
+	}
+
+	return token.Token
 }
 
-// Admins list the connected agents of any user; users only their own.
-func TestAgentsOfOtherUsers(t *testing.T) {
-	server := newTestServer(t, password)
-	server.login()
+// agentAccess checks what MCP answers token.
+func agentAccess(t *testing.T, server *testServer, token string, status int) {
+	t.Helper()
 
-	id, user := server.createUser("dev", store.RoleUser)
-	token := personalToken(t, user)
-	agentAccess(t, server, token, http.StatusOK)
+	request := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json, text/event-stream")
+	request.Header.Set("Authorization", "Bearer "+token)
 
-	own := server.page("/agents")
-
-	if strings.Contains(own, "/disconnect") || !strings.Contains(own, `<select name="user"`) {
-		t.Error("the superadmin's own list shows another user's agent, or no user select")
+	if response := server.send(request); response.Code != status {
+		t.Fatalf("MCP access: %d %s", response.Code, response.Body)
 	}
-
-	selected := regexp.MustCompile(`<option value="([a-z0-9]{8})" selected>`).FindStringSubmatch(own)
-
-	if selected == nil {
-		t.Fatalf("the superadmin is not the selected owner:\n%s", own)
-	}
-
-	root := selected[1]
-
-	page := server.page("/agents?user=" + id)
-	disconnect := disconnectAction.FindStringSubmatch(page)
-
-	if disconnect == nil {
-		t.Fatalf("the user's agent is not listed:\n%s", page)
-	}
-
-	// The client tabs keep whose apps are listed.
-	if !strings.Contains(page, `href="/agents?client=codex&amp;user=`+id+`" role="tab"`) || !strings.Contains(own, `href="/agents?client=codex" role="tab"`) {
-		t.Error("a client tab drops whose apps are listed")
-	}
-
-	if strings.Contains(user.page("/agents"), `<select name="user"`) {
-		t.Error("a user can choose whose agents to list")
-	}
-
-	if response := user.get("/agents?user=" + root); !strings.Contains(response.Body.String(), disconnect[1]) {
-		t.Error("?user= changed what a user sees")
-	}
-
-	ownerOnly := server.as("admin", password)
-	ownToken := personalToken(t, ownerOnly)
-	agentAccess(t, server, ownToken, http.StatusOK)
-
-	ownGrant := disconnectAction.FindStringSubmatch(server.page("/agents"))
-
-	if response := user.post(ownGrant[1], nil); response.Code != http.StatusNotFound {
-		t.Errorf("a user disconnected the superadmin's agent: %d", response.Code)
-	}
-
-	if response := server.post(disconnect[1], url.Values{"user": {id}}); response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/agents?client=claude&user="+id {
-		t.Fatalf("disconnect another user's agent: %d %q", response.Code, response.Header().Get("Location"))
-	}
-
-	agentAccess(t, server, token, http.StatusUnauthorized)
 }
 
 // The users list shows the username under the name only when they differ.
@@ -434,26 +398,6 @@ func TestAccountPasswordGuessing(t *testing.T) {
 
 	if response := server.post("/account/password", right); response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "Too many wrong passwords") {
 		t.Fatalf("after 10 guesses: %d", response.Code)
-	}
-}
-
-// Admins manage the agents of users and admins, not the superadmin's.
-func TestAdminsCannotTouchSuperadminAgents(t *testing.T) {
-	server := newTestServer(t, password)
-	server.login()
-
-	agentAccess(t, server, personalToken(t, server), http.StatusOK)
-
-	_, admin := server.createUser("ops", store.RoleAdmin)
-	root := superadminID(t, admin)
-	superadminGrant := disconnectAction.FindStringSubmatch(server.page("/agents"))
-
-	if page := admin.page("/agents?user=" + root); strings.Contains(page, superadminGrant[1]) || strings.Contains(page, `<option value="`+root+`"`) {
-		t.Errorf("an admin sees the superadmin's agents:\n%s", page)
-	}
-
-	if response := admin.post(superadminGrant[1], nil); response.Code != http.StatusNotFound {
-		t.Errorf("an admin disconnected the superadmin's agent: %d", response.Code)
 	}
 }
 

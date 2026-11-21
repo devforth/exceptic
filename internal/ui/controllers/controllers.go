@@ -30,11 +30,7 @@ type Controllers struct {
 	deliveries   *services.Deliveries
 	verification *services.Verification
 	logs         *services.Logs
-	agents       *services.Agents
 	users        *services.Users
-	// For the MCP page: whether ALLOWED_IPS limits access.
-	ipsRestricted bool
-	appName       string // APP_NAME
 
 	connectionViews presenters.Connections
 	projectViews    presenters.Projects
@@ -54,20 +50,17 @@ func New(dependencies Dependencies) *Controllers {
 	all := dependencies.Services
 
 	return &Controllers{
-		logger:        dependencies.Logger,
-		retention:     settings.Retention,
-		views:         dependencies.Views,
-		auth:          dependencies.Auth,
-		issues:        all.Issues,
-		projects:      all.Projects,
-		connections:   all.Connections,
-		deliveries:    all.Deliveries,
-		verification:  all.Verification,
-		logs:          all.Logs,
-		agents:        all.Agents,
-		users:         all.Users,
-		ipsRestricted: len(settings.AllowedIPs) > 0,
-		appName:       settings.AppName,
+		logger:       dependencies.Logger,
+		retention:    settings.Retention,
+		views:        dependencies.Views,
+		auth:         dependencies.Auth,
+		issues:       all.Issues,
+		projects:     all.Projects,
+		connections:  all.Connections,
+		deliveries:   all.Deliveries,
+		verification: all.Verification,
+		logs:         all.Logs,
+		users:        all.Users,
 		connectionViews: presenters.Connections{
 			Chat: all.Connections.Chat, Notifications: settings.Notifications, Recording: settings.Recording,
 			Projects: all.Projects, ProjectName: all.Projects.Name,

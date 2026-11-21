@@ -11,7 +11,6 @@ export const oldUI = {
 	cleanups: '/projects/cleanups',
 	notifications: '/notifications',
 	users: '/users',
-	mcp: '/agents',
 	account: '/account',
 	login: '/login',
 	logout: '/logout'
@@ -29,7 +28,7 @@ export function withQuery(path: string, params: Record<string, string>): string 
 }
 
 /** The routes of the app that are in the menu. */
-type AppRoute = '/(app)/projects' | '/(app)/logs';
+type AppRoute = '/(app)/projects' | '/(app)/logs' | '/(app)/agents';
 
 export type NavEntry = {
 	id: string;
@@ -70,7 +69,7 @@ export const navGroups: NavGroup[] = [
 				label: 'MCP',
 				title: 'MCP: connect a coding agent',
 				icon: 'mcp',
-				href: oldUI.mcp
+				route: '/(app)/agents'
 			}
 		]
 	}

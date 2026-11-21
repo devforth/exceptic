@@ -7,7 +7,6 @@ import (
 	"net/netip"
 	"strings"
 
-	"github.com/devforth/exceptic/internal/oauth"
 	"github.com/devforth/exceptic/internal/services"
 	"github.com/devforth/exceptic/internal/session"
 	"github.com/devforth/exceptic/internal/ui/controllers"
@@ -34,12 +33,6 @@ func Register(router *http.ServeMux, protect func(http.Handler) http.Handler, co
 		"POST /issues/{issueID}/action": controller.IssueAction, // deleting needs an admin (services.Issues)
 		"POST /issues/bulk":             controller.BulkIssueAction,
 		"GET /projects/cleanups":        controller.CleanupsPage,
-
-		"GET /agents":                       controller.AgentsPage,
-		"POST /agents/token":                controller.NewAgentToken,
-		"POST /agents/{grantID}/disconnect": controller.DisconnectAgent, // someone else's needs an admin (services.Agents)
-		"GET " + oauth.AuthorizePath:        controller.AuthorizePage,
-		"POST " + oauth.AuthorizePath:       controller.Authorize,
 
 		"GET " + services.ProjectColorsPath: controller.ProjectColors, // names the projects
 	}

@@ -42,6 +42,12 @@ type Grant struct {
 	LastUsedAt *time.Time
 }
 
+// Connected: an agent signed in with OAuth, or a personal token used at
+// least once; an unused personal token is no connected app yet.
+func (grant Grant) Connected() bool {
+	return grant.Kind != GrantToken || grant.LastUsedAt != nil
+}
+
 // GrantTokens are the hashes and expiry of a grant's tokens. A zero expiry
 // means none (the personal token).
 type GrantTokens struct {

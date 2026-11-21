@@ -536,3 +536,33 @@ func TestServerErrorsAreLogged(t *testing.T) {
 		t.Errorf("the error was not logged: %q", logs.String())
 	}
 }
+
+// Plain HTTP is unencrypted unless agents reach the server on this machine.
+func TestUnencrypted(t *testing.T) {
+	for address, want := range map[string]bool{
+		"https://errors.example.com": false, "http://errors.example.com": true, "http://192.0.2.1:8000": true,
+		"http://localhost:8000": false, "http://127.0.0.1:8000": false, "http://[::1]:8000": false, "http://[::ffff:127.0.0.1]": false,
+	} {
+		if got := Unencrypted(mustParseURL(t, address)); got != want {
+			t.Errorf("%s: %v", address, got)
+		}
+	}
+
+	authorization := &Server{ResourcePath: "/mcp"}
+
+	if got := authorization.ResourceAt(mustParseURL(t, "https://errors.example.com/monitoring")); got != "https://errors.example.com/monitoring/mcp" {
+		t.Errorf("resource below a path prefix: %s", got)
+	}
+}
+
+func mustParseURL(t *testing.T, address string) *url.URL {
+	t.Helper()
+
+	parsed, err := url.Parse(address)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return parsed
+}

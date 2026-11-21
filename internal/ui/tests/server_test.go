@@ -239,12 +239,7 @@ func (server *testServer) waitStored() {
 	}
 }
 
-var (
-	issueLink = regexp.MustCompile(`href="/issues/([a-z0-9]{8})"`)
-	// The personal token just generated, and the disconnect buttons, on the MCP page.
-	personalTokenField = regexp.MustCompile(`id="mcp-personal-token" value="Bearer ([^"]+)"`)
-	disconnectAction   = regexp.MustCompile(`action="(/agents/[a-z0-9]{8}/disconnect)"`)
-)
+var issueLink = regexp.MustCompile(`href="/issues/([a-z0-9]{8})"`)
 
 // issueIDs lists the issues linked from a page, each once and in order (a
 // list row links its issue from the title and from the open button).
