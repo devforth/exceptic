@@ -113,10 +113,15 @@ func TestOAuthAuthorizationFlow(t *testing.T) {
 		t.Fatalf("lost authorization parameters: %s", next)
 	}
 
-	response = server.post("/login", url.Values{"username": {"admin"}, "password": {password}, "next": {next}})
+	// The web app's login follows the next the server returns: the full consent address.
+	response = server.call("login", map[string]string{"username": "admin", "password": password, "next": next})
 
-	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != next {
-		t.Fatalf("login lost return URL: %d %s", response.Code, response.Header().Get("Location"))
+	var login struct {
+		Next string `json:"next"`
+	}
+
+	if err := json.Unmarshal(response.Body.Bytes(), &login); err != nil || login.Next != next {
+		t.Fatalf("login lost return URL: %d %s", response.Code, response.Body)
 	}
 
 	for _, cookie := range response.Result().Cookies() {

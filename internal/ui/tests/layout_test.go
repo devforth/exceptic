@@ -14,6 +14,7 @@ import (
 
 func TestStaticAndSecurityHeaders(t *testing.T) {
 	server := newTestServer(t, password)
+	server.login()
 
 	for _, path := range []string{"/static/htmx.min.js", "/static/app.css", "/static/app.js", "/static/flatpickr.min.js", "/static/flatpickr.min.css"} {
 		response := server.get(path)
@@ -23,7 +24,7 @@ func TestStaticAndSecurityHeaders(t *testing.T) {
 		}
 	}
 
-	response := server.get("/login")
+	response := server.get("/agents")
 
 	if csp := response.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'self'") {
 		t.Fatalf("CSP = %q", csp)
@@ -37,7 +38,7 @@ func TestStaticAndSecurityHeaders(t *testing.T) {
 		t.Fatalf("page cache headers: %q, Vary %q", response.Header().Get("Cache-Control"), response.Header().Get("Vary"))
 	}
 
-	if cache := server.get(assetPath(server.page("/login"), "app.css")).Header().Get("Cache-Control"); !strings.Contains(cache, "immutable") {
+	if cache := server.get(assetPath(server.page("/agents"), "app.css")).Header().Get("Cache-Control"); !strings.Contains(cache, "immutable") {
 		t.Fatalf("versioned static file: Cache-Control %q", cache)
 	}
 }
@@ -51,8 +52,9 @@ func assetPath(page, name string) string {
 
 func TestStaticAssetsAreVersioned(t *testing.T) {
 	server := newTestServer(t, password)
+	server.login()
 
-	page := server.page("/login")
+	page := server.page("/agents")
 	link := regexp.MustCompile(`href="(/static/app\.css\?v=[0-9a-f]{12})"`).FindStringSubmatch(page)
 
 	if link == nil {
@@ -168,8 +170,8 @@ func TestMenuMarksTheSection(t *testing.T) {
 
 	for path, item := range map[string]string{
 		"/issues": "/issues", "/projects/new": "/projects", "/projects/cleanups": "/projects",
-		"/notifications/new": "/notifications", "/notifications/log": "/notifications", "/users/new": "/users",
-		"/agents": "/agents", "/account": "/account",
+		"/notifications/new": "/notifications", "/notifications/log": "/notifications",
+		"/agents": "/agents",
 	} {
 		if active := activeItem.FindAllStringSubmatch(server.page(path), -1); len(active) != 1 || active[0][1] != item {
 			t.Errorf("%s marks %v, want %s", path, active, item)

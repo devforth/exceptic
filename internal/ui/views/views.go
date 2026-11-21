@@ -65,9 +65,8 @@ var templateFuncs = template.FuncMap{
 	"retryNow": func(id any, count int, back string) map[string]any {
 		return map[string]any{"ID": id, "Count": count, "Return": back}
 	},
-	"back":        link,
-	"editLink":    link,
-	"roleSummary": func(role string) string { return store.RoleSummaries[role] },
+	"back":     link,
+	"editLink": link,
 	"issueActions": func(status string, canDelete bool) issueActions {
 		return issueActions{Resolve: status == store.StatusUnresolved, Reopen: status != store.StatusUnresolved, CanDelete: canDelete}
 	},

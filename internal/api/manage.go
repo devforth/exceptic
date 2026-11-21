@@ -65,9 +65,14 @@ func (handler *handlers) management() []Endpoint {
 
 		Define(Endpoint{
 			Name:        "list_users",
-			Description: "Users of the panel with their role and last login.",
+			Description: "Users of the panel with their role, last login and whether you may change them (can_manage).",
 			ReadOnly:    true, Admin: true, Transports: ActsAsUser,
 		}, handler.listUsers),
+		Define(Endpoint{
+			Name:        "get_user",
+			Description: "A user with whether the viewer may change them.",
+			ReadOnly:    true, Admin: true, Transports: TransportUI,
+		}, handler.getUser),
 		Define(Endpoint{
 			Name:        "create_user",
 			Description: "Add a user with a role (admin or user). Returns a temporary password, shown only this once, that the user must change at the first login: give it to the user privately.",
@@ -96,16 +101,33 @@ func (handler *handlers) management() []Endpoint {
 // Account and agents.
 
 type userOutput struct {
-	ID                 string     `json:"id"`
-	Username           string     `json:"username"`
-	Name               string     `json:"name,omitempty"`
+	ID       string `json:"id"`
+	Username string `json:"username"`
+	Name     string `json:"name,omitempty"`
+	// DisplayName is the name, or the username without one.
+	DisplayName        string     `json:"display_name"`
 	Role               string     `json:"role"`
 	MustChangePassword bool       `json:"must_change_password,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
 	LastLoginAt        *time.Time `json:"last_login_at,omitempty"`
 }
 
 func userView(user store.User) userOutput {
-	return userOutput{ID: user.ID, Username: user.Username, Name: user.Name, Role: user.Role, MustChangePassword: user.MustChangePassword, LastLoginAt: user.LastLoginAt}
+	return userOutput{
+		ID: user.ID, Username: user.Username, Name: user.Name, DisplayName: user.DisplayName(), Role: user.Role,
+		MustChangePassword: user.MustChangePassword, CreatedAt: user.CreatedAt, LastLoginAt: user.LastLoginAt,
+	}
+}
+
+// managedUser is a user as an administrator sees them: CanManage says
+// whether the viewer may change them (store.User.CanManage).
+type managedUser struct {
+	User      userOutput `json:"user"`
+	CanManage bool       `json:"can_manage"`
+}
+
+func managedView(viewer, user store.User) managedUser {
+	return managedUser{User: userView(user), CanManage: viewer.CanManage(user)}
 }
 
 type noInput struct{}
@@ -325,15 +347,21 @@ func (handler *handlers) deleteProject(ctx context.Context, _ Call, input projec
 
 // Users.
 
-func (handler *handlers) listUsers(ctx context.Context, _ Call, _ noInput) (Page[userOutput], error) {
+func (handler *handlers) listUsers(ctx context.Context, call Call, _ noInput) (Page[managedUser], error) {
 	users, err := handler.services.Users.List(ctx)
-	output := Page[userOutput]{Items: []userOutput{}}
+	output := Page[managedUser]{Items: []managedUser{}}
 
 	for _, user := range users {
-		output.Items = append(output.Items, userView(user))
+		output.Items = append(output.Items, managedView(call.Viewer, user))
 	}
 
 	return output, err
+}
+
+func (handler *handlers) getUser(ctx context.Context, call Call, input userInput) (managedUser, error) {
+	user, err := handler.services.Users.Get(ctx, input.UserID)
+
+	return managedView(call.Viewer, user), err
 }
 
 type createUserInput struct {

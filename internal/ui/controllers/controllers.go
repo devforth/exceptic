@@ -31,7 +31,6 @@ type Controllers struct {
 	verification *services.Verification
 	logs         *services.Logs
 	agents       *services.Agents
-	users        *services.Users
 	// For the MCP page: whether ALLOWED_IPS limits access.
 	ipsRestricted bool
 	appName       string // APP_NAME
@@ -65,7 +64,6 @@ func New(dependencies Dependencies) *Controllers {
 		verification:  all.Verification,
 		logs:          all.Logs,
 		agents:        all.Agents,
-		users:         all.Users,
 		ipsRestricted: len(settings.AllowedIPs) > 0,
 		appName:       settings.AppName,
 		connectionViews: presenters.Connections{

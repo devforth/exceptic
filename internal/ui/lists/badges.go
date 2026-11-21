@@ -14,14 +14,13 @@ const (
 	KindProject = "project"
 	KindLevel   = "level"
 	KindStatus  = "status"
-	KindRole    = "role"
 )
 
-// Badge is a project, level, status or role badge, the one "badge" partial
+// Badge is a project, level or status badge, the one "badge" partial
 // for all: a link when URL is set, a plain label otherwise (inside checkboxes
 // and chips), with a × when RemoveURL is set (chips).
 type Badge struct {
-	Kind      string // KindProject, KindLevel, KindStatus or KindRole
+	Kind      string // KindProject, KindLevel or KindStatus
 	Name      string
 	URL       string
 	RemoveURL string
@@ -48,8 +47,6 @@ func (badge Badge) Class() string {
 		return "project"
 	case KindStatus:
 		return "status status-" + badge.Name
-	case KindRole:
-		return "badge role-" + badge.Name
 	}
 
 	return "badge " + helpers.LevelClass(badge.Name)

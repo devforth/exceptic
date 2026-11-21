@@ -39,6 +39,9 @@ Every component with its variants, on sample data. Served only by the dev server
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import Pager from '#lib/components/Pager.svelte';
 	import Picker from '#lib/components/Picker.svelte';
+	import RoleBadge from '#lib/components/RoleBadge.svelte';
+	import RoleChoices from '#lib/components/RoleChoices.svelte';
+	import type { Role } from '#lib/components/role.ts';
 	import RowMenu from '#lib/components/RowMenu.svelte';
 	import SearchField from '#lib/components/SearchField.svelte';
 	import SecretReveal from '#lib/components/SecretReveal.svelte';
@@ -172,7 +175,7 @@ Every component with its variants, on sample data. Served only by the dev server
 	let samplePerPage = $state(20);
 	let sampleDialog = $state(false);
 	let sampleNarrowDialog = $state(false);
-	let sampleRole = $state('user');
+	let sampleRole: Role = $state('user');
 	let sampleEmail = $state(true);
 	let sampleEventLevels: string[] = $state(['fatal', 'error']);
 	let sampleLogLevels: string[] = $state([]);
@@ -219,11 +222,6 @@ Every component with its variants, on sample data. Served only by the dev server
 		confirmLabel: 'Reset',
 		tone: 'primary'
 	};
-
-	const sampleRoles = [
-		{ name: 'admin', description: 'projects, notifications, users and deleting issues' },
-		{ name: 'user', description: 'issue statuses, logs and their own coding agents' }
-	];
 
 	type SampleFact = { label: string; value: string };
 
@@ -408,6 +406,11 @@ Every component with its variants, on sample data. Served only by the dev server
 			<Badge tone="project" label="worker" href="#badges" title="Issues of worker" />
 			<Badge tone="error" label="error" href="#badges" />
 		</Row>
+		<Row caption="RoleBadge: the roles an administrator gives plain, the superadmin standing out">
+			<RoleBadge role="superadmin" />
+			<RoleBadge role="admin" />
+			<RoleBadge role="user" />
+		</Row>
 		<Row caption="StatusText: a state as a colored word">
 			{#each statusTones as tone (tone)}
 				<StatusText {tone} title="A {tone} state">{tone}</StatusText>
@@ -482,19 +485,7 @@ Every component with its variants, on sample data. Served only by the dev server
 				<TextField label="Bot token" name="bot_token" type="password" saved="1234…wxyz" />
 			</Card>
 			<Card>
-				<ChoiceGroup legend="Role" hint="What the user may do.">
-					{#each sampleRoles as role (role.name)}
-						<Choice
-							type="radio"
-							name="role"
-							value={role.name}
-							label={role.name}
-							description={role.description}
-							checked={sampleRole === role.name}
-							onchange={() => (sampleRole = role.name)}
-						/>
-					{/each}
-				</ChoiceGroup>
+				<RoleChoices bind:value={sampleRole} />
 				<ChoiceGroup legend="Send to" inline error="Choose where to send.">
 					<Choice
 						type="checkbox"

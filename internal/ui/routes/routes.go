@@ -15,14 +15,17 @@ import (
 	"github.com/devforth/exceptic/internal/ui/views"
 )
 
+// AccountPath is the web app's account page, the only page open with a
+// temporary password: the old pages send such a user there.
+const AccountPath = "/account"
+
 // Register adds the UI routes. protect is the IP allowlist.
 func Register(router *http.ServeMux, protect func(http.Handler) http.Handler, controller *controllers.Controllers, auth *session.Auth, trustedProxies []netip.Prefix) {
 	registrar := registrar{router: router, protect: protect, sameOrigin: middleware.SameOrigin(trustedProxies)}
 
-	// Open to anyone who passes the IP allowlist: the login itself.
+	// Open to anyone who passes the IP allowlist: the old pages' Log out (the
+	// login and the account page are the web app's).
 	public := group{
-		"GET /login":   controller.LoginPage,
-		"POST /login":  controller.Login,
 		"POST /logout": controller.Logout,
 	}
 
@@ -68,29 +71,11 @@ func Register(router *http.ServeMux, protect func(http.Handler) http.Handler, co
 		"POST /notifications/{connectionID}/retry":     controller.RetryConnection,
 		"POST /notifications/{connectionID}/active":    controller.SetConnectionActive,
 		"POST /notifications/{connectionID}/delete":    controller.DeleteConnection,
-
-		// Whom an admin may change is checked by services.Users.
-		"GET /users":                    controller.UsersPage,
-		"GET /users/new":                controller.NewUserPage,
-		"POST /users":                   controller.CreateUser,
-		"GET /users/{userID}":           controller.UserPage,
-		"POST /users/{userID}":          controller.UpdateUser,
-		"POST /users/{userID}/password": controller.ResetUserPassword,
-		"POST /users/{userID}/delete":   controller.DeleteUser,
 	}
 
-	// The account page: the only one open to a user with a temporary
-	// password, who must choose their own there first.
-	account := group{
-		"GET " + controllers.AccountPath:                controller.AccountPage,
-		"POST " + controllers.AccountPath + "/name":     controller.UpdateAccountName,
-		"POST " + controllers.AccountPath + "/password": controller.ChangeAccountPassword,
-	}
-
-	login, passwordChanged := middleware.RequireLogin(auth), middleware.RequirePasswordChanged(controllers.AccountPath)
+	login, passwordChanged := middleware.RequireLogin(auth), middleware.RequirePasswordChanged(AccountPath)
 
 	registrar.add(public)
-	registrar.add(account, login)
 	registrar.add(dashboard, login, passwordChanged)
 	registrar.add(admin, login, passwordChanged, middleware.RequireAdmin(controller.NotFoundPage))
 

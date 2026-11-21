@@ -7,8 +7,9 @@ account and Log out. It collapses to icons (the choice is kept in this browser);
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import type { Out } from '#lib/api/client.ts';
+	import { send, type Out } from '#lib/api/client.ts';
 	import { navGroups, oldUI, type NavEntry } from '#lib/nav.ts';
+	import { toast } from '#lib/toast.svelte.ts';
 	import Button from './Button.svelte';
 	import NavLink from './NavLink.svelte';
 
@@ -53,6 +54,19 @@ account and Log out. It collapses to icons (the choice is kept in this browser);
 	}
 
 	const unresolved = $derived(session.unresolved_issues);
+	const account = resolve('/(app)/account');
+
+	// The session ends on the server, then the login is loaded afresh.
+	async function logOut(event: SubmitEvent) {
+		event.preventDefault();
+
+		try {
+			await send('logout');
+			location.assign(resolve('/login'));
+		} catch {
+			toast.show('Could not log out: try again.');
+		}
+	}
 </script>
 
 <aside
@@ -133,14 +147,15 @@ account and Log out. It collapses to icons (the choice is kept in this browser);
 
 	<nav aria-label="Account" class="max-sidebar:flex-none">
 		<NavLink
-			label={session.display_name}
+			label={session.user.display_name}
 			icon="account"
-			href={oldUI.account}
-			title="Your account: {session.display_name} ({session.user.role})"
+			href={account}
+			title="Your account: {session.user.display_name} ({session.user.role})"
+			active={page.url.pathname === account}
 			{collapsed}
 		/>
 	</nav>
-	<form method="post" action={oldUI.logout} class="max-sidebar:flex-none">
+	<form onsubmit={logOut} class="max-sidebar:flex-none">
 		<NavLink label="Log out" icon="logout" {collapsed} />
 	</form>
 </aside>

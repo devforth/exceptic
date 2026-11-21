@@ -10,11 +10,7 @@ export const oldUI = {
 	project: (id: number) => `/projects/${id}`,
 	cleanups: '/projects/cleanups',
 	notifications: '/notifications',
-	users: '/users',
-	mcp: '/agents',
-	account: '/account',
-	login: '/login',
-	logout: '/logout'
+	mcp: '/agents'
 } as const;
 
 /** Pages of the app that another step adds: plain paths until their routes exist, since
@@ -29,7 +25,7 @@ export function withQuery(path: string, params: Record<string, string>): string 
 }
 
 /** The routes of the app that are in the menu. */
-type AppRoute = '/(app)/projects' | '/(app)/logs';
+type AppRoute = '/(app)/projects' | '/(app)/logs' | '/(app)/users';
 
 export type NavEntry = {
 	id: string;
@@ -64,7 +60,7 @@ export const navGroups: NavGroup[] = [
 				href: oldUI.notifications,
 				adminOnly: true
 			},
-			{ id: 'users', label: 'Users', icon: 'users', href: oldUI.users, adminOnly: true },
+			{ id: 'users', label: 'Users', icon: 'users', route: '/(app)/users', adminOnly: true },
 			{
 				id: 'mcp',
 				label: 'MCP',

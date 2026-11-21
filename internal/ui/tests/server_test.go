@@ -162,6 +162,24 @@ func (server *testServer) page(target string) string {
 	return response.Body.String()
 }
 
+// call sends a change to the web app's API (/api/ui/<name>) as its pages do:
+// JSON with the page's Origin.
+func (server *testServer) call(name string, input any) *httptest.ResponseRecorder {
+	server.t.Helper()
+
+	body, err := json.Marshal(input)
+
+	if err != nil {
+		server.t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/ui/"+name, bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", "http://example.com")
+
+	return server.send(request)
+}
+
 // login logs in as the superadmin created from the env of the test server.
 func (server *testServer) login() {
 	server.t.Helper()
@@ -171,9 +189,9 @@ func (server *testServer) login() {
 func (server *testServer) loginAs(username, userPassword string) {
 	server.t.Helper()
 
-	response := server.post("/login", url.Values{"username": {username}, "password": {userPassword}, "next": {"/issues"}})
+	response := server.call("login", map[string]string{"username": username, "password": userPassword})
 
-	if response.Code != http.StatusSeeOther {
+	if response.Code != http.StatusOK {
 		server.t.Fatalf("login as %s: %d %s", username, response.Code, response.Body)
 	}
 
