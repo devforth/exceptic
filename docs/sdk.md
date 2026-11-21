@@ -8,6 +8,8 @@ Each service (backend, frontend, worker, …) should be its own project: the UI 
 https://<public_key>@errors.example.com/<project id>
 ```
 
+The project's **Show installation code** (⋯ on the Projects page) shows the install command, the setup code with the DSN filled in and a test line for Node.js, browser, Python, Go, PHP and Ruby, and copies the same as instructions for a coding agent.
+
 Tested with the Node.js and browser SDKs, version 11. Other SDKs send the same envelope format and should work; please report one that does not.
 
 ## Node.js
@@ -85,7 +87,7 @@ import sentry_sdk
 sentry_sdk.init(dsn="https://<public_key>@errors.example.com/3", enable_logs=True)
 ```
 
-Go, PHP, Ruby, Java, .NET and the rest: follow the SDK's own guide and use the DSN from the Projects page.
+Go, PHP and Ruby: see the project's installation code. Java, .NET and the rest: follow the SDK's own guide with the DSN from the Projects page.
 
 ## What is stored
 

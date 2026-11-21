@@ -1338,7 +1338,7 @@ export const help = {
 			'Channel ID': 'The channel the Slack bot posts to (C0123456789, at the bottom of the channel details). Invite the bot to it first.',
 			'Chat ID': 'The chat the bot writes to: a number (negative for groups; supergroups and channels start with -100) or @channel_name of a public channel. To find the number, write a message in the chat and press Find chat ID: it is chat.id in the answer.',
 			'Email address': 'Gets a 6-digit code first; the connection sends nothing until the code is entered. An address confirmed before is accepted at once.',
-			'Include Open issue link': 'Adds a link to the issue page (needs PUBLIC_URL). Off by default for chats, which people outside the team may read.',
+			'Include Open issue link': 'Adds a link to the issue page; offered only when PUBLIC_URL is set. Off by default for chats, which people outside the team may read.',
 			'Incoming webhook URL': 'A Slack incoming webhook; it posts to the channel chosen when it was created. Mattermost and Rocket.Chat webhooks work too. Stored encrypted.',
 			'Levels': 'Levels that are sent. Events of other levels are still stored, they only do not notify.',
 			'Projects': 'Projects whose issues are sent. All projects includes the ones added later.',

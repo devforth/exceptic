@@ -29,4 +29,4 @@ A connection sends new issues and issues that happen again after being resolved 
 | Projects | Projects whose issues are sent. All projects includes the ones added later. |
 | Levels | Levels that are sent. Events of other levels are still stored, they only do not notify. |
 | Active | Off: nothing is sent, and messages waiting for a retry fail. |
-| Include Open issue link | Adds a link to the issue page (needs PUBLIC_URL). Off by default for chats, which people outside the team may read. |
+| Include Open issue link | Adds a link to the issue page; offered only when PUBLIC_URL is set. Off by default for chats, which people outside the team may read. |

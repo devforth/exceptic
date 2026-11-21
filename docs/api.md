@@ -10,7 +10,7 @@ The API and the [MCP tools](mcp.md) are the same endpoints with the same names, 
 
 ## Conventions
 
-- Each endpoint is `/api/v1/<name>`. `/api/ui/` serves the endpoints the web interface needs, with its login session; it is not for scripts. Endpoints that only read are `GET` with the input as query parameters (`?project=backend&limit=50`; a list takes repeated or comma-separated values: `issue_ids=k3x9q2mf,a7c2d4e9`). Endpoints that change data are `POST` with the input as a JSON object.
+- Each endpoint is `/api/v1/<name>`. `/api/ui/` is the web interface's own API (the endpoints below and its own, such as `get_issue_details`, plus its login), bound to its login session and same-origin checks; it is not for scripts. Endpoints that only read are `GET` with the input as query parameters (`?project=backend&limit=50`; a list takes repeated or comma-separated values: `issue_ids=k3x9q2mf,a7c2d4e9`). Endpoints that change data are `POST` with the input as a JSON object.
 - Errors: a status code with `{"error": "message"}`: 400 for invalid input (unknown parameters too, and `update_issue_status` with any ID not found), 401 without a valid token, 403 from an address outside `ALLOWED_IPS`, 404 for missing records and unknown endpoints, 500 for a server failure (logged).
 - Lists return `{"items": [...], "next_cursor": "..."}`. Pass `cursor=<next_cursor>` for the next page; there is no `next_cursor` on the last one. `limit` is 1–100, default 20.
 - `project` takes project ids (`1`) or names (`backend`), `level` levels; each takes several values (`?project=backend&project=frontend`), and none means every one.
@@ -26,7 +26,7 @@ The API and the [MCP tools](mcp.md) are the same endpoints with the same names, 
 | `GET list_issues` | see below | Issues: `id`, `project`, `title`, `location`, `level`, `status`, `event_count`, `first_seen`, `last_seen`, `resolved_at`. |
 | `GET get_issues` | `issue_ids` (1–100) | `{"issues": [...], "missing_issue_ids": [...]}`. |
 | `GET get_issue` | `issue_id`, `event_id` | The latest (or given) event of an issue as a text prompt for a coding agent: exception, stack, request, breadcrumbs, related logs, status, event count, first and last seen. |
-| `GET list_issue_events` | `issue_id`, `limit`, `cursor` | Events of an issue, newest first: `event_id`, `timestamp`, `level`, `environment`, `release`, `trace_id`. |
+| `GET list_issue_events` | `issue_id`, `limit`, `cursor` | Events of an issue, newest first: `event_id`, `timestamp`, `level`, `environment`, `release`, `trace_id`, `received_at`. |
 | `GET get_event` | `project`, `event_id` | Like `get_issue`, for an event ID (32 hex characters, with or without dashes). |
 | `GET list_logs` | `project`, `level`, `query` (text in the line), `trace_id`, `since`, `until`, `limit`, `cursor` or `offset` (logs to skip, for numbered pages) | Logs, newest first: `time`, `project`, `level`, `body`, `trace_id`, `issue` (`id` and `title` of the error raised in the same request, when there is one). |
 | `POST update_issue_status` | `issue_ids` (1–100), `status` | Set `resolved`, `ignored` or `unresolved` on all of them or none; returns the updated issues. |

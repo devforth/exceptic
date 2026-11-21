@@ -57,19 +57,19 @@ An agent acts as the user who connected it and is offered only the tools of that
 |---|---|---|
 | `list_issues`, `get_issues` | all | Issues filtered by project, status, level, text and dates; several by ID. |
 | `get_issue`, `get_event` | all | An issue with its latest (or a given) event: exception, stack with source, request, breadcrumbs, related logs, the status, event count and first and last seen, written as a prompt for the agent. |
-| `list_issue_events`, `list_logs` | all | Events of an issue; logs filtered by project, level, text and trace. |
+| `list_issue_events`, `list_logs` | all | Events of an issue (with the time the server received each); logs filtered by project, level, text and trace. |
 | `list_projects` | all | Projects with their issue counts and DSNs, so an agent can connect an app itself. |
 | `update_issue_status` | all | Resolve, ignore or reopen up to 100 issues at once. |
 | `get_account`, `update_account_name` | all | Who the agent acts for; change the display name. |
-| `list_agents`, `disconnect_agent` | all | Connected agents and personal tokens (admins: also of users they manage). |
+| `list_agents`, `disconnect_agent` | all | Connected agents and personal tokens (admins: also of users they manage, listed in `owners`; `connected` is false for a personal token never used). |
 | `delete_issue` | admin | Delete an issue with its events. |
-| `get_project`, `create_project`, `update_project`, `delete_project` | admin | Project settings: name, color, recorded levels. |
-| `list_users`, `create_user`, `update_user`, `reset_user_password`, `delete_user` | admin | Users and roles; a new or reset password is temporary and returned once. |
-| `list_connections`, `create_connection`, `update_connection`, `send_test_message`, `retry_connection`, `delete_connection`, `list_deliveries` | admin | Notification connections and the delivery log. |
-| `start_email_verification`, `confirm_email` | admin | Confirm an email address with the code its owner received. |
+| `get_project`, `create_project`, `update_project`, `delete_project` | admin | Project settings: name, color (`shown_color` is the one it shows, its palette color when none is set), recorded levels. |
+| `list_users`, `create_user`, `update_user`, `reset_user_password`, `delete_user` | admin | Users and roles; a new or reset password is temporary and returned once. A user is `{id, username, name, display_name, role, must_change_password, created_at, last_login_at}`; `list_users` items are `{user, can_manage}`, `can_manage` false for yourself and the superadmin. |
+| `list_connections`, `create_connection`, `update_connection`, `set_connection_active`, `send_test_message`, `retry_connection`, `delete_connection`, `list_deliveries` | admin | Notification connections and the delivery log. A connection has `destination` (the address, the chat or the Slack channel) and `delivery.failing`; `all_projects` true sends for every project, future ones included, false only for `projects` (names or IDs); `set_connection_active` turns one on or off and changes nothing else (an unconfirmed address cannot be turned on). Delivery log rows have `retrying` and `updated_at`, a summary its `items` and `more`. |
+| `start_email_verification`, `confirm_email` | admin | Confirm an email address with the code its owner received: `state` (`code` or `verified`), `notice`, `verified_at`. |
 | `fetch_skill` | all | Detailed guidance for the agent on analyzing errors, fetching data and changing statuses. |
 
-Not available to agents: changing your own password (the UI asks for the current one) and generating personal tokens. Tools that delete data or reset passwords, and those that change users, project settings or notification connections, tell the agent to show what will change and wait for your confirmation in chat.
+Not available to agents: changing your own password (the web interface asks for the current one) and generating personal tokens. Tools that delete data or reset passwords, and those that change users, project settings or notification connections, tell the agent to show what will change and wait for your confirmation in chat.
 
 Notifications and the issue page carry the request for an agent, e.g. `Exceptic MCP: get_issue {"issue_id":"k3x9q2mf"}`, to paste into the agent.
 
