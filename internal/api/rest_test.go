@@ -40,6 +40,17 @@ type restServer struct {
 
 func newRESTServer(t *testing.T, allowedIPs ...string) *restServer {
 	t.Helper()
+
+	return newRESTServerWith(t, func(settings *config.Config) {
+		for _, value := range allowedIPs {
+			settings.AllowedIPs = append(settings.AllowedIPs, netip.MustParsePrefix(value))
+		}
+	})
+}
+
+// newRESTServerWith starts the server with the test settings changed by configure.
+func newRESTServerWith(t *testing.T, configure func(settings *config.Config)) *restServer {
+	t.Helper()
 	database := storetest.Open(t)
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -50,13 +61,7 @@ func newRESTServer(t *testing.T, allowedIPs ...string) *restServer {
 		APIToken:       token,
 	}
 
-	var allowed []netip.Prefix
-
-	for _, value := range allowedIPs {
-		allowed = append(allowed, netip.MustParsePrefix(value))
-	}
-
-	settings.AllowedIPs = allowed
+	configure(settings)
 
 	built, err := app.New(context.Background(), app.Options{Settings: settings, Logger: logger, Store: database, Version: "test", Web: fixtures.WebApp(t)})
 

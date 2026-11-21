@@ -408,6 +408,9 @@ Every component with its variants, on sample data. Served only by the dev server
 			<Badge tone="project" label="worker" href="#badges" title="Issues of worker" />
 			<Badge tone="error" label="error" href="#badges" />
 		</Row>
+		<Row caption="project tone with color: a color not saved yet (the project form's preview)">
+			<Badge tone="project" label="mobile" color="#0d9488" />
+		</Row>
 		<Row caption="StatusText: a state as a colored word">
 			{#each statusTones as tone (tone)}
 				<StatusText {tone} title="A {tone} state">{tone}</StatusText>
@@ -582,6 +585,16 @@ Every component with its variants, on sample data. Served only by the dev server
 				<p>Database: <b>1.2 GB</b> of 2.0 GB</p>
 				<UsageBar percent={60} label="Database size against its limit" />
 			</Card>
+		</Row>
+		<Row caption="UsageBar with segments: each project's part in its color, the rest grey" wide>
+			<UsageBar
+				segments={[
+					{ label: 'backend: 250 MB', percent: 25, color: '#2563eb' },
+					{ label: 'frontend: 110 MB', percent: 11, color: '#db2777' },
+					{ label: 'Other: 40 MB', percent: 4 }
+				]}
+				label="backend 250 MB, frontend 110 MB, other 40 MB of 1.0 GB"
+			/>
 		</Row>
 	</Section>
 

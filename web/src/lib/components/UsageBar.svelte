@@ -1,23 +1,41 @@
 <!--
 @component
-How full something is: a bar filled to percent, read as a meter by screen readers. The width
-is set through the DOM (style: directive), which the CSP allows, unlike a style attribute.
+How full something is: a bar filled to percent, or split into segments (each project's part in
+its color, the rest grey), read as a meter by screen readers. Widths and colors are set through
+the DOM (style: directive), which the CSP allows, unlike a style attribute.
 -->
 <script lang="ts">
-	type Props = { percent: number; label: string };
+	import type { UsageSegment } from './usage.ts';
 
-	let { percent, label }: Props = $props();
+	type Props = { percent?: number; segments?: UsageSegment[]; label: string };
 
-	const filled = $derived(Math.min(100, Math.max(0, percent)));
+	let { percent = 0, segments, label }: Props = $props();
+
+	const clamp = (value: number) => Math.min(100, Math.max(0, value));
+
+	const filled = $derived(
+		clamp(segments ? segments.reduce((total, segment) => total + segment.percent, 0) : percent)
+	);
 </script>
 
 <div
 	role="meter"
 	aria-label={label}
-	aria-valuenow={filled}
+	aria-valuenow={Math.round(filled)}
 	aria-valuemin={0}
 	aria-valuemax={100}
-	class="h-2 w-full max-w-[520px] overflow-hidden rounded-full bg-code-bg forced-colors:border"
+	class="flex h-2 w-full max-w-[520px] overflow-hidden rounded-full bg-code-bg forced-colors:border"
 >
-	<div class="h-full rounded-full bg-accent" style:width="{filled}%"></div>
+	{#if segments}
+		{#each segments as segment, index (index)}
+			<div
+				class="h-full bg-project not-last:border-r not-last:border-surface"
+				title={segment.label}
+				style:width="{clamp(segment.percent)}%"
+				style:--project-color={segment.color}
+			></div>
+		{/each}
+	{:else}
+		<div class="h-full rounded-full bg-accent" style:width="{filled}%"></div>
+	{/if}
 </div>

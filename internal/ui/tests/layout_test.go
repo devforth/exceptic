@@ -108,8 +108,6 @@ func TestBackLinks(t *testing.T) {
 
 	for path, want := range map[string]string{
 		"/issues/" + server.unresolvedIDs()[0]: `<a href="/issues" data-back`,
-		"/projects/1":                          `<a href="/projects" data-back`,
-		"/projects/cleanups":                   `<a href="/projects" data-back`,
 		"/notifications/new":                   `<a href="/notifications" data-back`,
 		"/notifications/log":                   `<a href="/notifications" data-back`,
 	} {
@@ -167,7 +165,7 @@ func TestMenuMarksTheSection(t *testing.T) {
 	activeItem := regexp.MustCompile(`href="([^"]+)"[^>]*class="active" aria-current="page"`)
 
 	for path, item := range map[string]string{
-		"/issues": "/issues", "/projects/new": "/projects", "/projects/cleanups": "/projects",
+		"/issues":            "/issues",
 		"/notifications/new": "/notifications", "/notifications/log": "/notifications", "/users/new": "/users",
 		"/agents": "/agents", "/account": "/account",
 	} {

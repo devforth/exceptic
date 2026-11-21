@@ -33,7 +33,6 @@ func Register(router *http.ServeMux, protect func(http.Handler) http.Handler, co
 		"GET /issues/{issueID}":         controller.IssuePage,
 		"POST /issues/{issueID}/action": controller.IssueAction, // deleting needs an admin (services.Issues)
 		"POST /issues/bulk":             controller.BulkIssueAction,
-		"GET /projects/cleanups":        controller.CleanupsPage,
 
 		"GET /agents":                       controller.AgentsPage,
 		"POST /agents/token":                controller.NewAgentToken,
@@ -46,12 +45,6 @@ func Register(router *http.ServeMux, protect func(http.Handler) http.Handler, co
 
 	// Settings only admins (and the superadmin) may change.
 	admin := group{
-		"GET /projects/new":                 controller.NewProjectPage,
-		"POST /projects":                    controller.CreateProject,
-		"GET /projects/{projectID}":         controller.ProjectPage,
-		"POST /projects/{projectID}":        controller.UpdateProject,
-		"POST /projects/{projectID}/delete": controller.DeleteProject,
-
 		"GET /notifications":                           controller.ConnectionsPage,
 		"GET /notifications/log":                       controller.DeliveriesPage,
 		"GET /notifications/new":                       controller.NewConnectionPage,

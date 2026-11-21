@@ -48,15 +48,21 @@ func (project Project) DSN(base *url.URL) string {
 }
 
 // ProjectPalette gives projects distinct colors until one is chosen in the
-// UI; all read well on light and dark backgrounds.
-var ProjectPalette = []string{
-	"#2563eb", "#db2777", "#16a34a", "#ea580c", "#7c3aed",
-	"#0891b2", "#ca8a04", "#dc2626", "#4f46e5", "#0d9488",
+// UI, where its colors are the presets; all read well on light and dark backgrounds.
+var ProjectPalette = []PaletteColor{
+	{"Blue", "#2563eb"}, {"Pink", "#db2777"}, {"Green", "#16a34a"}, {"Orange", "#ea580c"}, {"Violet", "#7c3aed"},
+	{"Cyan", "#0891b2"}, {"Amber", "#ca8a04"}, {"Red", "#dc2626"}, {"Indigo", "#4f46e5"}, {"Teal", "#0d9488"},
+}
+
+// PaletteColor is a color of the palette with its name.
+type PaletteColor struct {
+	Name  string
+	Value string // #rrggbb
 }
 
 // DefaultProjectColor is the palette color of a project id.
 func DefaultProjectColor(id int) string {
-	return ProjectPalette[(max(id, 1)-1)%len(ProjectPalette)]
+	return ProjectPalette[(max(id, 1)-1)%len(ProjectPalette)].Value
 }
 
 var colorRe = regexp.MustCompile(`^#[0-9a-f]{6}$`)

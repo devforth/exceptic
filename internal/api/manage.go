@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 	"time"
 
@@ -42,7 +43,7 @@ func (handler *handlers) management() []Endpoint {
 
 		Define(Endpoint{
 			Name:        "get_project",
-			Description: "Settings of a project: DSN, color (missing when it follows the palette) and recorded levels.",
+			Description: "Settings of a project: DSN, color (missing when it follows the palette), the color it shows and recorded levels.",
 			ReadOnly:    true, Admin: true, Transports: ActsAsUser,
 		}, handler.getProject),
 		Define(Endpoint{
@@ -200,14 +201,16 @@ type projectSettings struct {
 
 	// Color is missing when the project follows the palette.
 	Color string `json:"color,omitempty"`
+	// ShownColor is the color it shows: its own or the palette's, #rrggbb.
+	ShownColor string `json:"shown_color"`
 }
 
-// findProject reads the project given by name or ID.
+// findProject reads the project given by name or ID; an unknown one is not found.
 func (handler *handlers) findProject(ctx context.Context, nameOrID string) (store.Project, error) {
 	project, ok := handler.projects.List().Find(nameOrID)
 
 	if !ok {
-		return store.Project{}, Invalid("unknown project %q (see list_projects)", nameOrID)
+		return store.Project{}, fmt.Errorf("unknown project %q (see list_projects): %w", nameOrID, ErrNotFound)
 	}
 
 	return handler.services.Projects.Get(ctx, project.ID)
@@ -216,7 +219,64 @@ func (handler *handlers) findProject(ctx context.Context, nameOrID string) (stor
 func (handler *handlers) settings(call Call, project store.Project) projectSettings {
 	shown := config.Project{ID: project.ID, Name: project.Name, PublicKey: project.PublicKey, EventLevels: project.EventLevels, LogLevels: project.LogLevels}
 
-	return projectSettings{projectView: handler.projectView(call, shown), Color: project.Color}
+	return projectSettings{projectView: handler.projectView(call, shown), Color: project.Color, ShownColor: handler.services.Projects.Color(project)}
+}
+
+// projectDefaults is what the form of a new project starts with.
+type projectDefaults struct {
+	ShownColor  string   `json:"shown_color"`
+	EventLevels []string `json:"event_levels"`
+	LogLevels   []string `json:"log_levels"`
+}
+
+func (handler *handlers) getProjectDefaults(context.Context, Call, noInput) (projectDefaults, error) {
+	defaults := handler.services.Projects.FormValues(store.Project{})
+
+	return projectDefaults{ShownColor: handler.services.Projects.Color(store.Project{}), EventLevels: defaults["event_level"], LogLevels: defaults["log_level"]}, nil
+}
+
+type projectIDInput struct {
+	Project int `json:"project" jsonschema:"Project ID."`
+}
+
+// projectSetup is how an app is connected to a project.
+type projectSetup struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+	DSN  string `json:"dsn"`
+	// Received: the project has stored an error or a log.
+	Received  bool          `json:"received"`
+	Platforms []sdkPlatform `json:"platforms"`
+}
+
+type sdkPlatform struct {
+	ID      string `json:"id"`
+	Label   string `json:"label"`
+	Install string `json:"install"`
+	Where   string `json:"where"`
+	Init    string `json:"init"`
+	Test    string `json:"test"`
+	// AgentPrompt asks a coding agent to do the same.
+	AgentPrompt string `json:"agent_prompt"`
+}
+
+func (handler *handlers) getProjectSetup(ctx context.Context, call Call, input projectIDInput) (projectSetup, error) {
+	project, ok := handler.projects.List().ByID(input.Project)
+
+	if !ok || call.Address == nil {
+		return projectSetup{}, ErrNotFound
+	}
+
+	received, err := handler.services.Projects.Received(ctx, project.ID)
+	setup := projectSetup{ID: project.ID, Name: project.Name, DSN: project.DSN(call.Address), Received: received, Platforms: []sdkPlatform{}}
+
+	for _, sdk := range services.SDKSetups(setup.DSN) {
+		setup.Platforms = append(setup.Platforms, sdkPlatform{
+			ID: sdk.Platform, Label: sdk.Label, Install: sdk.Install, Where: sdk.Where, Init: sdk.Init, Test: sdk.Test, AgentPrompt: sdk.AgentPrompt,
+		})
+	}
+
+	return setup, err
 }
 
 func (handler *handlers) getProject(ctx context.Context, call Call, input projectInput) (projectSettings, error) {
@@ -272,7 +332,10 @@ func (handler *handlers) saveProject(ctx context.Context, call Call, form url.Va
 		return projectSettings{}, err
 	}
 
-	return handler.settings(call, saved), nil
+	// As stored: a new project's key is made by the store.
+	saved, err = handler.services.Projects.Get(ctx, saved.ID)
+
+	return handler.settings(call, saved), err
 }
 
 func (handler *handlers) createProject(ctx context.Context, call Call, input createProjectInput) (projectSettings, error) {

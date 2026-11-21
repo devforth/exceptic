@@ -116,10 +116,29 @@ func Endpoints(projects config.ProjectList, all *services.All) []Endpoint {
 		}, handler.listLogLevels),
 		Define(Endpoint{
 			Name:        "get_storage",
-			Description: "How much the database holds, its size limit (MAX_DATABASE_SIZE) and where the cleanup stops.",
+			Description: "How much the database holds, each project's part and when it last received, its size limit (MAX_DATABASE_SIZE) and where the cleanup stops.",
 			ReadOnly:    true,
 			Transports:  TransportUI,
 		}, handler.getStorage),
+		Define(Endpoint{
+			Name:        "list_cleanups",
+			Description: "The latest runs of the cleanup by size, newest first, with the steps that deleted something.",
+			ReadOnly:    true,
+			Transports:  TransportUI,
+		}, handler.listCleanups),
+		Define(Endpoint{
+			Name:        "get_project_setup",
+			Description: "How to connect an app to a project: the SDK of each platform with its DSN, and whether the project has received anything.",
+			ReadOnly:    true,
+			Transports:  TransportUI,
+		}, handler.getProjectSetup),
+		Define(Endpoint{
+			Name:        "get_project_defaults",
+			Description: "What the form of a new project starts with: the color it would show and the levels recorded by default.",
+			ReadOnly:    true,
+			Admin:       true,
+			Transports:  TransportUI,
+		}, handler.getProjectDefaults),
 
 		// REST only: their output must not reach a model provider.
 		Define(Endpoint{

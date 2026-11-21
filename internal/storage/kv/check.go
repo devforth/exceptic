@@ -29,42 +29,47 @@ func (schema *Schema) Check(reader Reader) ([]string, error) {
 	return problems, nil
 }
 
-// Counted adds up the record sizes per counter over every collection of the schema.
-func (schema *Schema) Counted(reader Reader) (map[string]int64, error) {
-	counted := map[string]int64{}
+// Counted adds up the record sizes per counter and per group counter over
+// every collection of the schema.
+func (schema *Schema) Counted(reader Reader) (counters, groups map[string]int64, err error) {
+	counters, groups = map[string]int64{}, map[string]int64{}
 
 	for _, collection := range schema.collections {
-		sizes, err := collection.Counted(reader)
+		sizes, groupSizes, err := collection.Counted(reader)
 
 		if err != nil {
-			return counted, err
+			return counters, groups, err
 		}
 
 		for counter, size := range sizes {
-			counted[counter] += size
+			counters[counter] += size
+		}
+
+		for counter, size := range groupSizes {
+			groups[counter] += size
 		}
 	}
 
-	return counted, nil
+	return counters, groups, nil
 }
 
-// Counted adds up the stored record sizes per counter; Counters should hold the same.
-func (collection *Collection[T]) Counted(reader Reader) (map[string]int64, error) {
-	counted := map[string]int64{}
+// Counted adds up the stored record sizes per counter and per group counter,
+// as Write counts them; DB.Counters and DB.Groups should hold the same.
+func (collection *Collection[T]) Counted(reader Reader) (counters, groups map[string]int64, err error) {
+	counters, groups = map[string]int64{}, map[string]int64{}
 
-	if collection.definition.Counter == nil {
-		return counted, nil
+	if !collection.counted() {
+		return counters, groups, nil
 	}
 
-	err := collection.Primary().Each(reader, func(entry Entry[T]) (bool, error) {
-		key := collection.primaryKey(entry.Key)
-		size := recordSize(len(key), entry.Size, collection.indexKeys(entry.Record))
-		counted[string(collection.definition.Counter(entry.Record))] += int64(size)
+	err = collection.Primary().Each(reader, func(entry Entry[T]) (bool, error) {
+		batch := &Batch{counts: counters, groups: groups}
+		collection.tally(batch, entry.Record, collection.primaryKey(entry.Key), entry.Size, 1)
 
 		return true, nil
 	})
 
-	return counted, err
+	return counters, groups, err
 }
 
 // Check verifies that records and index keys point to each other.
@@ -78,7 +83,13 @@ func (collection *Collection[T]) Check(reader Reader) ([]string, error) {
 			problems = append(problems, fmt.Sprintf("%s %x: stored under another key than its own", collection.name, primary))
 		}
 
+		reached := collection.reached(primary)
+
 		for _, key := range collection.indexKeys(entry.Record) {
+			if key.backfilled && !reached {
+				continue
+			}
+
 			holder, err := reader.Get(key.key)
 
 			switch {

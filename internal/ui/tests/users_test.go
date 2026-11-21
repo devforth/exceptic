@@ -71,7 +71,7 @@ func TestRoles(t *testing.T) {
 		user.page(path)
 	}
 
-	for _, path := range []string{"/notifications", "/notifications/new", "/notifications/log", "/projects/new", "/projects/1", "/users", "/users/" + userID} {
+	for _, path := range []string{"/notifications", "/notifications/new", "/notifications/log", "/users", "/users/" + userID} {
 		if response := user.get(path); response.Code != http.StatusNotFound {
 			t.Errorf("user GET %s: %d", path, response.Code)
 		}
@@ -86,10 +86,6 @@ func TestRoles(t *testing.T) {
 		if strings.Contains(menu, hidden) {
 			t.Errorf("a user sees %s", hidden)
 		}
-	}
-
-	if response := user.post("/projects", url.Values{"name": {"sneaky"}}); response.Code != http.StatusNotFound {
-		t.Errorf("a user created a project: %d", response.Code)
 	}
 }
 

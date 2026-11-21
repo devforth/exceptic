@@ -1,7 +1,8 @@
 <!--
 @component
 A short label: a level or state filled in its tone, or a project outlined in its color (from
-the session, set through the style: directive, which the CSP allows). With an href it is a link.
+the session, or `color` for one not saved yet; set through the style: directive, which the CSP
+allows). With an href it is a link.
 -->
 <script lang="ts">
 	import { page } from '$app/state';
@@ -13,9 +14,11 @@ the session, set through the style: directive, which the CSP allows). With an hr
 		label: string;
 		href?: string;
 		title?: string;
+		/** project: this color instead of the saved one (a preview), #rrggbb. */
+		color?: string;
 	};
 
-	let { tone, label, href, title }: Props = $props();
+	let { tone, label, href, title, color: chosen }: Props = $props();
 
 	const filled = 'px-[7px] py-px align-[2px] lowercase';
 
@@ -38,7 +41,9 @@ the session, set through the style: directive, which the CSP allows). With an hr
 	]);
 
 	const project = $derived(tone === 'project' ? label : undefined);
-	const color = $derived(project ? page.data.session?.project_colors?.[project] : undefined);
+	const color = $derived(
+		project ? (chosen ?? page.data.session?.project_colors?.[project]) : undefined
+	);
 </script>
 
 {#if href}

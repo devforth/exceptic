@@ -74,10 +74,6 @@ var templateFuncs = template.FuncMap{
 	"bulkActions": func(canDelete bool) issueActions {
 		return issueActions{Bulk: true, Resolve: true, Reopen: true, CanDelete: canDelete}
 	},
-	"deleteProject": func(id int, name, label string) deleteButton {
-		return deleteButton{URL: fmt.Sprintf("/projects/%d/delete", id), Name: name, Label: label,
-			Confirm: "Delete the project " + name + " with all its issues, events and logs? Its DSN stops working. This cannot be undone."}
-	},
 	"deleteConnection": func(id, name, label string) deleteButton {
 		return deleteButton{URL: "/notifications/" + id + "/delete", Name: name, Label: label,
 			Confirm: "Delete the connection " + name + "? Its queued messages are dropped; a confirmed address stays confirmed."}

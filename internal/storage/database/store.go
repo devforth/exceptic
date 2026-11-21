@@ -127,14 +127,7 @@ func (database *Store) checkFormat(key kv.Key) error {
 		return err
 	}
 
-	iterator := database.db.Iterate(nil, nil)
-	used := iterator.First()
-
-	if err := iterator.Close(); err != nil {
-		return err
-	}
-
-	if used {
+	if !database.db.Fresh() {
 		return fmt.Errorf("%w: written by a development version before format %s", errFormat, storeFormat)
 	}
 

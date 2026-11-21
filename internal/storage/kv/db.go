@@ -13,12 +13,17 @@ type DB struct {
 	Engine
 
 	counterPrefix Key
+	groupPrefix   Key
+	meta          Key
 	sequenceKey   Key
+	// fresh: the engine held no key when opened.
+	fresh bool
 
 	writeMutex sync.Mutex // one DB.Update at a time
 
 	countersMutex sync.RWMutex
 	counters      map[string]int64
+	groups        map[string]int64
 
 	written atomic.Int64
 
@@ -34,8 +39,15 @@ const sequenceBlock = 10_000
 func OpenDB(engine Engine, schema *Schema) (*DB, error) {
 	meta := schema.Reserve("meta")
 	db := &DB{
-		Engine: engine, counterPrefix: schema.Reserve("count"), sequenceKey: meta.With(Text("sequence")),
-		counters: map[string]int64{},
+		Engine: engine, counterPrefix: schema.Reserve("count"), groupPrefix: schema.Reserve("group"), meta: meta,
+		sequenceKey: meta.With(Text("sequence")), counters: map[string]int64{}, groups: map[string]int64{},
+	}
+
+	iterator := engine.Iterate(nil, nil)
+	db.fresh = !iterator.First()
+
+	if err := iterator.Close(); err != nil {
+		return nil, err
 	}
 
 	value, err := engine.Get(db.sequenceKey)
@@ -51,18 +63,27 @@ func OpenDB(engine Engine, schema *Schema) (*DB, error) {
 
 	db.reserved = db.next
 
-	iterator := engine.Iterate(db.counterPrefix, prefixEnd(db.counterPrefix))
+	for prefix, values := range map[string]map[string]int64{string(db.counterPrefix): db.counters, string(db.groupPrefix): db.groups} {
+		iterator := engine.Iterate([]byte(prefix), prefixEnd([]byte(prefix)))
 
-	for valid := iterator.First(); valid; valid = iterator.Next() {
-		db.counters[string(iterator.Key()[len(db.counterPrefix):])] = int64(binary.BigEndian.Uint64(iterator.Value()))
+		for valid := iterator.First(); valid; valid = iterator.Next() {
+			values[string(iterator.Key()[len(prefix):])] = int64(binary.BigEndian.Uint64(iterator.Value()))
+		}
+
+		if err := iterator.Close(); err != nil {
+			return nil, err
+		}
 	}
 
-	if err := iterator.Close(); err != nil {
+	if err := schema.openBackfills(db); err != nil {
 		return nil, err
 	}
 
 	return db, nil
 }
+
+// Fresh reports whether the engine held no key when the DB was opened.
+func (db *DB) Fresh() bool { return db.fresh }
 
 // Next returns a sequence number larger than any before, also across restarts.
 func (db *DB) Next() (uint64, error) {
@@ -107,26 +128,10 @@ func (db *DB) Update(sync bool, change func(batch *Batch) error) error {
 		return err
 	}
 
-	totals := map[string]int64{}
-
 	db.countersMutex.RLock()
-
-	for counter, delta := range batch.counts {
-		totals[counter] = db.counters[counter] + delta
-	}
-
+	totals := db.totals(batch, db.counterPrefix, db.counters, batch.counts)
+	groupTotals := db.totals(batch, db.groupPrefix, db.groups, batch.groups)
 	db.countersMutex.RUnlock()
-
-	for counter, total := range totals {
-		key := db.counterPrefix.With()
-		key = append(key, counter...)
-
-		if total == 0 {
-			batch.Delete(key)
-		} else {
-			batch.Put(key, binary.BigEndian.AppendUint64(nil, uint64(total)))
-		}
-	}
 
 	if err := db.Write(batch, sync); err != nil {
 		return err
@@ -137,15 +142,8 @@ func (db *DB) Update(sync bool, change func(batch *Batch) error) error {
 	}
 
 	db.countersMutex.Lock()
-
-	for counter, total := range totals {
-		if total == 0 {
-			delete(db.counters, counter)
-		} else {
-			db.counters[counter] = total
-		}
-	}
-
+	keep(db.counters, totals)
+	keep(db.groups, groupTotals)
 	db.countersMutex.Unlock()
 
 	for _, apply := range batch.after {
@@ -153,6 +151,36 @@ func (db *DB) Update(sync bool, change func(batch *Batch) error) error {
 	}
 
 	return nil
+}
+
+// totals are the counters after the batch's changes, written into it under prefix.
+func (db *DB) totals(batch *Batch, prefix Key, counters, changes map[string]int64) map[string]int64 {
+	totals := make(map[string]int64, len(changes))
+
+	for counter, delta := range changes {
+		total := counters[counter] + delta
+		totals[counter] = total
+		key := append(prefix.With(), counter...)
+
+		if total == 0 {
+			batch.Delete(key)
+		} else {
+			batch.Put(key, binary.BigEndian.AppendUint64(nil, uint64(total)))
+		}
+	}
+
+	return totals
+}
+
+// keep puts written totals into counters; a counter at zero is not kept.
+func keep(counters, totals map[string]int64) {
+	for counter, total := range totals {
+		if total == 0 {
+			delete(counters, counter)
+		} else {
+			counters[counter] = total
+		}
+	}
 }
 
 // Written returns the bytes updates have added to counters since the DB was opened.
@@ -174,4 +202,22 @@ func (db *DB) Counters() map[string]int64 {
 	defer db.countersMutex.RUnlock()
 
 	return maps.Clone(db.counters)
+}
+
+// Group returns the value of a group counter (Definition.Group).
+func (db *DB) Group(counter Key) int64 {
+	db.countersMutex.RLock()
+
+	defer db.countersMutex.RUnlock()
+
+	return db.groups[string(counter)]
+}
+
+// Groups returns a copy of every group counter.
+func (db *DB) Groups() map[string]int64 {
+	db.countersMutex.RLock()
+
+	defer db.countersMutex.RUnlock()
+
+	return maps.Clone(db.groups)
 }

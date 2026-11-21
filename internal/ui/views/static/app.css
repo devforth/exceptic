@@ -292,7 +292,6 @@ details.stacktrace > :not(summary) { margin-left: 6px; padding-left: 14px; borde
 .delivery-sent { color: var(--success); }
 .delivery-pending, .delivery-retrying { color: var(--warning); }
 .delivery-failed { color: var(--error); }
-.color-field input[type="color"] { width: 48px; height: 32px; padding: 2px; }
 .storage meter { width: 100%; max-width: 420px; height: 10px; }
 input.mono-field { width: 100%; margin-top: 4px; font-family: ui-monospace, monospace; }
 
@@ -338,9 +337,6 @@ dialog.log-viewer pre { height: calc(100% - 52px); margin: 0; padding: 14px; ove
 .popup::backdrop { background: rgb(0 0 0 / .3); }
 .popup .table-scroll { margin: 0; border: none; border-radius: 0; }
 .popup > p { margin: 8px 14px 12px; }
-.cleanup-done { color: var(--success); }
-.cleanup-running { color: var(--warning); }
-.cleanup-failed { color: var(--error); }
 .log-actions { display: flex; gap: 12px; margin-top: 4px; }
 
 /* Issues list: checkboxes and the bulk action bar. */
@@ -531,8 +527,6 @@ th[aria-sort] { color: var(--text); }
 .status-history li { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--border); }
 .status-history li:last-child { border-bottom: none; }
 /* A DSN with its copy button (projects). */
-.dsn-row { margin-top: 4px; align-items: center; }
-.dsn-row .copy-button { height: 34px; }
 /* The 404 page: in the middle of the screen. */
 .not-found { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 70vh; margin: 0; text-align: center; }
 .not-found h1 { margin: 0; }

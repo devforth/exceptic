@@ -2,8 +2,6 @@ package lists
 
 import (
 	"slices"
-
-	"github.com/devforth/exceptic/internal/platform/config"
 )
 
 // Option is a checkbox of a multi-select: a project or a level.
@@ -65,16 +63,4 @@ func NewLevelPicker(all, present, chosen []string) Picker {
 // NewProjectPicker offers the projects of names.
 func NewProjectPicker(names, chosen []string) Picker {
 	return NewPicker("project", "project", "All projects", "Projects", names, chosen)
-}
-
-// LevelOptions lists the known levels highest first, chosen when recorded
-// (nil records every level).
-func LevelOptions(known, recorded []string) []Option {
-	levels := config.HighestFirst(known)
-
-	if recorded == nil {
-		return Options(levels, levels)
-	}
-
-	return Options(levels, recorded)
 }

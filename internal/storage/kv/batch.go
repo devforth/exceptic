@@ -8,6 +8,7 @@ type Batch struct {
 	// latest is the last write of each key; it refers to the slices given, not copies.
 	latest map[string]write
 	counts map[string]int64 // counter -> change; written by DB.Update
+	groups map[string]int64 // group counter -> change
 	total  int64            // sum of counts
 	after  []func()
 }
@@ -19,7 +20,7 @@ type write struct {
 
 // NewBatch starts a batch of engine.
 func NewBatch(engine Engine) *Batch {
-	return &Batch{reader: engine, native: engine.NewWriteBatch(), latest: map[string]write{}, counts: map[string]int64{}}
+	return &Batch{reader: engine, native: engine.NewWriteBatch(), latest: map[string]write{}, counts: map[string]int64{}, groups: map[string]int64{}}
 }
 
 // Put writes key. The batch keeps key and value without copying them: the
@@ -40,6 +41,13 @@ func (batch *Batch) Count(counter Key, delta int64) {
 	if delta != 0 {
 		batch.counts[string(counter)] += delta
 		batch.total += delta
+	}
+}
+
+// Group adds delta to a group counter (Definition.Group) when the batch is written.
+func (batch *Batch) Group(counter Key, delta int64) {
+	if delta != 0 {
+		batch.groups[string(counter)] += delta
 	}
 }
 
