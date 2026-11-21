@@ -1,8 +1,9 @@
 <!--
 @component
 A short label: a level or state filled in its tone, or a project outlined in its color (from
-the session, set through the style: directive, which the CSP allows). With an href it is a link;
-a mark is a sign before the label (an issue status), hidden from screen readers.
+the session, or `color` for one not saved yet; set through the style: directive, which the CSP
+allows). With an href it is a link; a mark is a sign before the label (an issue status), hidden
+from screen readers.
 -->
 <script lang="ts">
 	import { page } from '$app/state';
@@ -15,9 +16,11 @@ a mark is a sign before the label (an issue status), hidden from screen readers.
 		href?: string;
 		title?: string;
 		mark?: string;
+		/** project: this color instead of the saved one (a preview), #rrggbb. */
+		color?: string;
 	};
 
-	let { tone, label, href, title, mark }: Props = $props();
+	let { tone, label, href, title, mark, color: chosen }: Props = $props();
 
 	const filled = 'px-[7px] py-px align-[2px] lowercase';
 
@@ -40,7 +43,9 @@ a mark is a sign before the label (an issue status), hidden from screen readers.
 	]);
 
 	const project = $derived(tone === 'project' ? label : undefined);
-	const color = $derived(project ? page.data.session?.project_colors?.[project] : undefined);
+	const color = $derived(
+		project ? (chosen ?? page.data.session?.project_colors?.[project]) : undefined
+	);
 </script>
 
 {#snippet text()}{#if mark}<span class="mr-1" aria-hidden="true">{mark}</span>{/if}{label}{/snippet}

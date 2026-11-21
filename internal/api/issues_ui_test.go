@@ -23,21 +23,6 @@ import (
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
-// read sends a read of the web app and decodes its answer, failing unless it is 200.
-func (user uiUser) read(target string, result any) {
-	user.server.t.Helper()
-
-	response := user.call(http.MethodGet, target, "")
-
-	if response.Code != http.StatusOK {
-		user.server.t.Fatalf("GET %s: %d %s", target, response.Code, response.Body)
-	}
-
-	if err := json.Unmarshal(response.Body.Bytes(), result); err != nil {
-		user.server.t.Fatalf("GET %s: %v", target, err)
-	}
-}
-
 // act runs apply_issue_action and returns the status code.
 func (user uiUser) act(action string, ids ...string) int {
 	user.server.t.Helper()

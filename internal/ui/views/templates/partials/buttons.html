@@ -17,7 +17,7 @@
 {{/* "Retry now" for the messages of a connection waiting for a retry (retryNow id count return; "" = the connection page). */}}
 {{define "retry-now"}}<form class="inline-action" method="post" action="/notifications/{{.ID}}/retry">{{with .Return}}<input type="hidden" name="return" value="{{.}}">{{end}}<button type="submit" title="{{.Count}} message(s) wait for a retry: send them again now">Retry now ({{.Count}})</button></form>{{end}}
 
-{{/* A delete form (deleteProject or deleteConnection) that asks first; without a Label the button is a trash icon. */}}
+{{/* A delete form (deleteConnection) that asks first; without a Label the button is a trash icon. */}}
 {{define "delete-button"}}<form method="post" action="{{.URL}}">
   <button type="submit" class="danger" data-confirm="{{.Confirm}}"{{if not .Label}} title="Delete" aria-label="Delete {{.Name}}"{{end}}>{{with .Label}}{{.}}{{else}}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18 M9 6V3h6v3 M5 6l1 15h12l1-15 M10 10v7 M14 10v7"/></svg>{{end}}</button>
 </form>{{end}}

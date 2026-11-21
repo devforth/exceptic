@@ -71,6 +71,27 @@ func (user uiUser) call(method, name, body string) *httptest.ResponseRecorder {
 	return response
 }
 
+// request calls the web app's API and decodes its answer, failing on another status than 200.
+func (user uiUser) request(method, name, body string, result any) {
+	user.server.t.Helper()
+
+	response := user.call(method, name, body)
+
+	if response.Code != http.StatusOK {
+		user.server.t.Fatalf("%s %s %s: %d %s", method, name, body, response.Code, response.Body)
+	}
+
+	if err := json.Unmarshal(response.Body.Bytes(), result); err != nil {
+		user.server.t.Fatalf("%s %s: %v", method, name, err)
+	}
+}
+
+// read is a request that reads (GET).
+func (user uiUser) read(target string, result any) {
+	user.server.t.Helper()
+	user.request(http.MethodGet, target, "", result)
+}
+
 func (user uiUser) callRoute(endpoint api.Endpoint, body string) *httptest.ResponseRecorder {
 	method, _, _ := strings.Cut(api.Route(api.TransportUI, endpoint), " ")
 

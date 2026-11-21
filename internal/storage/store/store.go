@@ -108,6 +108,7 @@ type Store interface {
 
 	// DatabaseSize is what the database takes on disk.
 	DatabaseSize(ctx context.Context) (int64, error)
+	ProjectUsage(ctx context.Context) (ProjectUsage, error)
 	// CleanupHistory returns the latest runs of the cleanup by size, newest first.
 	CleanupHistory(ctx context.Context, limit int) ([]CleanupRun, error)
 	Ping(ctx context.Context) error

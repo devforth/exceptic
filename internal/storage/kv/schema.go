@@ -14,10 +14,12 @@ type Schema struct {
 	collections []checkable
 }
 
-// checkable is a collection of any record type, for Schema.Check and Schema.Counted.
+// checkable is a collection of any record type, for Schema.Check, Schema.Counted and the backfills.
 type checkable interface {
 	Check(reader Reader) ([]string, error)
-	Counted(reader Reader) (map[string]int64, error)
+	Counted(reader Reader) (counters, groups map[string]int64, err error)
+	markBackfilled(db *DB, batch *Batch)
+	openBackfill(db *DB) error
 }
 
 // NewSchema starts an empty schema.

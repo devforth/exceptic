@@ -6,7 +6,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strconv"
 
 	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/services"
@@ -36,7 +35,6 @@ type Controllers struct {
 	appName       string // APP_NAME
 
 	connectionViews presenters.Connections
-	projectViews    presenters.Projects
 }
 
 // Dependencies are the parts Controllers is built from.
@@ -69,10 +67,6 @@ func New(dependencies Dependencies) *Controllers {
 		connectionViews: presenters.Connections{
 			Chat: all.Connections.Chat, Notifications: settings.Notifications, Recording: settings.Recording,
 			Projects: all.Projects, ProjectName: all.Projects.Name,
-		},
-		projectViews: presenters.Projects{
-			Recording: settings.Recording,
-			FromEnv:   all.Projects.FromEnv, Color: all.Projects.Color,
 		},
 	}
 }
@@ -119,19 +113,6 @@ func (controller *Controllers) pathID(w http.ResponseWriter, r *http.Request, na
 		controller.NotFoundPage(w, r)
 
 		return "", false
-	}
-
-	return id, true
-}
-
-// projectID reads a positive project id from the path; a 404 page otherwise (false).
-func (controller *Controllers) projectID(w http.ResponseWriter, r *http.Request) (int, bool) {
-	id, err := strconv.Atoi(r.PathValue("projectID"))
-
-	if err != nil || id <= 0 {
-		controller.NotFoundPage(w, r)
-
-		return 0, false
 	}
 
 	return id, true

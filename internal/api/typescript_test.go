@@ -260,6 +260,13 @@ func writeRules(file *strings.Builder) error {
 	}
 
 	fmt.Fprintf(file, "] as const;\n\n/** The most issues one action takes. */\nexport const maxActionIssues = %d;\n\n", services.MaxActionIssues)
+	file.WriteString("/** The palette of project colors: a project follows it by its ID until it has its own color. */\nexport const projectPalette = [\n")
+
+	for _, color := range config.ProjectPalette {
+		fmt.Fprintf(file, "\t{ name: %s, color: %s },\n", quote(color.Name), quote(color.Value))
+	}
+
+	file.WriteString("] as const;\n\n")
 	file.WriteString("/** What each role may do. */\nexport const roleSummaries = {\n")
 
 	for _, role := range slices.Sorted(maps.Keys(store.RoleSummaries)) {

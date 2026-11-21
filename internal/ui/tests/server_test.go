@@ -212,19 +212,6 @@ func (server *testServer) ingestFixtures() {
 	server.waitStored()
 }
 
-func (server *testServer) sendEnvelope(target string, body []byte) {
-	server.t.Helper()
-
-	response := httptest.NewRecorder()
-	server.handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, target, bytes.NewReader(body)))
-
-	if response.Code != http.StatusOK {
-		server.t.Fatalf("ingest %s: %d %s", target, response.Code, response.Body)
-	}
-
-	server.waitStored()
-}
-
 // waitStored waits until the pipeline has stored everything the server accepted.
 func (server *testServer) waitStored() {
 	server.t.Helper()

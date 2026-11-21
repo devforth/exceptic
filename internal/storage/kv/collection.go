@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
+	"sync/atomic"
 )
 
 // Definition declares a collection: name, primary key, indexes and encoding.
@@ -20,6 +22,12 @@ type Definition[T any] struct {
 	DecodeHead func([]byte) (T, error)
 	// Counter, when set, counts the bytes a record takes, index keys included.
 	Counter func(T) Key
+	// Group, when set, counts the same bytes once more under another key
+	// (such as the record's project), apart from Counter's: groups add up
+	// to no total of the database (DB.Groups).
+	Group func(T) Key
+	// Backfill names what the collection gained after records were stored.
+	Backfill *Backfill
 }
 
 // Index declares an index; its keys hold the record's primary key as their value.
@@ -39,11 +47,15 @@ type Collection[T any] struct {
 	definition Definition[T]
 	indexes    map[string]*index[T]
 	order      []*index[T]
+	// position is where the backfill goes on: records at or after it are not
+	// reached yet; nil once done (backfill.go).
+	position atomic.Pointer[Key]
 }
 
 type index[T any] struct {
 	Index[T]
-	prefix Key
+	prefix     Key
+	backfilled bool // added by the collection's Backfill
 }
 
 // Define registers a collection under "<name>/" and its indexes under "<name>.<index>/".
@@ -71,6 +83,12 @@ func Define[T any](schema *Schema, definition Definition[T]) *Collection[T] {
 		schema.register(string(prefix), "index "+definition.Name+"."+declared.Name)
 
 		entry := &index[T]{Index: declared, prefix: prefix}
+		entry.backfilled = definition.Backfill != nil && slices.Contains(definition.Backfill.Indexes, declared.Name)
+
+		if entry.backfilled && declared.Unique {
+			panic(fmt.Sprintf("kv: backfilled index %s.%s cannot be unique", definition.Name, declared.Name))
+		}
+
 		collection.indexes[declared.Name] = entry
 		collection.order = append(collection.order, entry)
 	}
@@ -98,7 +116,7 @@ func (collection *Collection[T]) indexKeys(record T) []indexKey {
 
 	for _, entry := range collection.order {
 		if key := entry.Key(record); key != nil {
-			keys = append(keys, indexKey{key: entry.fullKey(key), index: entry.Name, unique: entry.Unique})
+			keys = append(keys, indexKey{key: entry.fullKey(key), index: entry.Name, unique: entry.Unique, backfilled: entry.backfilled})
 		}
 	}
 
@@ -106,9 +124,10 @@ func (collection *Collection[T]) indexKeys(record T) []indexKey {
 }
 
 type indexKey struct {
-	key    []byte
-	index  string
-	unique bool
+	key        []byte
+	index      string
+	unique     bool
+	backfilled bool
 }
 
 // ErrConflict means a unique index already holds the key for another record.
@@ -264,7 +283,7 @@ func (collection *Collection[T]) Write(batch *Batch, record T, old *Entry[T]) (E
 	}
 
 	if old != nil {
-		collection.uncount(batch, old.Record, len(key), old.Size)
+		collection.tally(batch, old.Record, key, old.Size, -1)
 
 		kept := map[string]bool{}
 
@@ -285,7 +304,7 @@ func (collection *Collection[T]) Write(batch *Batch, record T, old *Entry[T]) (E
 		batch.Put(entry.key, key)
 	}
 
-	collection.count(batch, record, recordSize(len(key), len(value), keys))
+	collection.tally(batch, record, key, len(value), 1)
 
 	return Entry[T]{Key: key[len(collection.prefix):], Record: record, Size: len(value)}, nil
 }
@@ -301,7 +320,7 @@ type Entry[T any] struct {
 func (collection *Collection[T]) Delete(batch *Batch, record T) error {
 	size := 0
 
-	if collection.definition.Counter != nil {
+	if collection.counted() {
 		value, err := collection.definition.Encode(record)
 
 		if err != nil {
@@ -329,7 +348,7 @@ func (collection *Collection[T]) remove(batch *Batch, record T, valueSize int) {
 		batch.Delete(entry.key)
 	}
 
-	collection.uncount(batch, record, len(key), valueSize)
+	collection.tally(batch, record, key, valueSize, -1)
 }
 
 // DeleteKey deletes the record under key; false when there is none.
@@ -365,14 +384,41 @@ func recordSize(keySize, valueSize int, keys []indexKey) int {
 	return size
 }
 
-func (collection *Collection[T]) count(batch *Batch, record T, size int) {
+func (collection *Collection[T]) counted() bool {
+	return collection.definition.Counter != nil || collection.definition.Group != nil
+}
+
+// tally adds (sign 1) or takes away (-1) the bytes of the record stored
+// under primary to its counters. A record the backfill has not reached is
+// counted as before it: without the backfilled indexes, in no group the
+// backfill adds.
+func (collection *Collection[T]) tally(batch *Batch, record T, primary []byte, valueSize int, sign int64) {
+	if !collection.counted() {
+		return
+	}
+
+	keys := collection.indexKeys(record)
+	reached := collection.reached(primary)
+
+	if !reached {
+		keys = slices.DeleteFunc(keys, func(entry indexKey) bool { return entry.backfilled })
+	}
+
+	size := sign * int64(recordSize(len(primary), valueSize, keys))
+
 	if collection.definition.Counter != nil {
-		batch.Count(collection.definition.Counter(record), int64(size))
+		batch.Count(collection.definition.Counter(record), size)
+	}
+
+	if group := collection.group(record); group != nil && (reached || !collection.definition.Backfill.Group) {
+		batch.Group(group, size)
 	}
 }
 
-func (collection *Collection[T]) uncount(batch *Batch, record T, keySize, valueSize int) {
-	if collection.definition.Counter != nil {
-		batch.Count(collection.definition.Counter(record), -int64(recordSize(keySize, valueSize, collection.indexKeys(record))))
+func (collection *Collection[T]) group(record T) Key {
+	if collection.definition.Group == nil {
+		return nil
 	}
+
+	return collection.definition.Group(record)
 }

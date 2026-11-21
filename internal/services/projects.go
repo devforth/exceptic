@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/server"
@@ -171,11 +172,6 @@ func (service *Projects) Name(projectID int) string {
 	return fmt.Sprintf("project %d", projectID)
 }
 
-// DSN is the DSN of a project at the server's address (see address).
-func (service *Projects) DSN(r *http.Request, project config.Project) string {
-	return project.DSN(service.address(r))
-}
-
 // URL is the address of path on this server, such as the MCP endpoint.
 func (service *Projects) URL(r *http.Request, path string) string {
 	return service.address(r).JoinPath(path).String()
@@ -225,6 +221,25 @@ type Storage struct {
 	Percent     int // of the limit
 	// CleanupStopPercent: at the limit the cleanup deletes down to this percent of it.
 	CleanupStopPercent int
+	// Projects are the current projects' parts of UsedBytes, in list order;
+	// Other is the rest (the ingest queue, data of deleted projects, users,
+	// notifications). Without parts while Counting.
+	Projects   []ProjectStorage
+	OtherBytes int64
+	Other      string
+	// Counting: data stored before the project sizes is still being counted.
+	Counting bool
+}
+
+// ProjectStorage is a project's part of the database on disk: its issues,
+// events and logs, in the proportion of their bytes before compression.
+type ProjectStorage struct {
+	ID    int
+	Name  string
+	Bytes int64
+	Size  string
+	// LastReceived is when its newest issue or log came; nil when none is stored.
+	LastReceived *time.Time
 }
 
 func (service *Projects) Storage(ctx context.Context) (Storage, error) {
@@ -234,14 +249,48 @@ func (service *Projects) Storage(ctx context.Context) (Storage, error) {
 		return Storage{}, err
 	}
 
-	storage := Storage{UsedBytes: used, Used: config.FormatSize(used), CleanupStopPercent: config.CleanupStopPercent}
+	usage, err := service.store.ProjectUsage(ctx)
+
+	if err != nil {
+		return Storage{}, err
+	}
+
+	storage := Storage{UsedBytes: used, Used: config.FormatSize(used), CleanupStopPercent: config.CleanupStopPercent, Counting: usage.Counting}
 
 	if limit := service.retention.MaxDatabaseBytes; limit > 0 {
 		storage.LimitBytes, storage.Limit = limit, config.FormatSize(limit)
 		storage.Percent = int(min(100, used*100/limit))
 	}
 
+	storage.OtherBytes = used
+
+	for _, project := range service.List() {
+		part := ProjectStorage{ID: project.ID, Name: project.Name}
+
+		if last, ok := usage.LastReceived[project.ID]; ok {
+			part.LastReceived = &last
+		}
+
+		if !usage.Counting && usage.Counted > 0 {
+			part.Bytes = min(storage.OtherBytes, int64(float64(used)*float64(usage.Bytes[project.ID])/float64(usage.Counted)))
+			part.Size = config.FormatSize(part.Bytes)
+			storage.OtherBytes -= part.Bytes
+		}
+
+		storage.Projects = append(storage.Projects, part)
+	}
+
+	storage.Other = config.FormatSize(storage.OtherBytes)
+
 	return storage, nil
+}
+
+// Received reports whether a project has stored anything: an error or a log.
+func (service *Projects) Received(ctx context.Context, projectID int) (bool, error) {
+	usage, err := service.store.ProjectUsage(ctx)
+	_, received := usage.LastReceived[projectID]
+
+	return received, err
 }
 
 // Cleanups are every run of the cleanup by size the store keeps, newest first.

@@ -144,6 +144,7 @@ export interface Endpoints {
 			event_levels: string[] | null;
 			log_levels: string[] | null;
 			color?: string;
+			shown_color: string;
 		};
 	};
 	create_user: {
@@ -391,6 +392,36 @@ export interface Endpoints {
 			event_levels: string[] | null;
 			log_levels: string[] | null;
 			color?: string;
+			shown_color: string;
+		};
+	};
+	get_project_defaults: {
+		in: Record<string, never>;
+		out: {
+			shown_color: string;
+			event_levels: string[] | null;
+			log_levels: string[] | null;
+		};
+	};
+	get_project_setup: {
+		in: {
+			/** Project ID. */
+			project: number;
+		};
+		out: {
+			id: number;
+			name: string;
+			dsn: string;
+			received: boolean;
+			platforms: {
+				id: string;
+				label: string;
+				install: string;
+				where: string;
+				init: string;
+				test: string;
+				agent_prompt: string;
+			}[] | null;
 		};
 	};
 	get_session: {
@@ -421,6 +452,16 @@ export interface Endpoints {
 			limit?: string;
 			percent?: number;
 			cleanup_stop_percent: number;
+			projects: ({
+				id: number;
+				name: string;
+				bytes: number;
+				size?: string;
+				last_received?: IsoTime | null;
+			})[] | null;
+			other_bytes: number;
+			other: string;
+			counting?: boolean;
 		};
 	};
 	list_agents: {
@@ -436,6 +477,38 @@ export interface Endpoints {
 				kind: string;
 				created_at: IsoTime;
 				last_used_at?: IsoTime | null;
+			})[] | null;
+		};
+	};
+	list_cleanups: {
+		in: Record<string, never>;
+		out: {
+			stop_percent: number;
+			kept: number;
+			runs: ({
+				id: number;
+				started_at: IsoTime;
+				status: string;
+				limit: string;
+				size_before: string;
+				compacted: string;
+				size_after: string;
+				stop: string;
+				needed: string;
+				deleted_steps: string;
+				result: string;
+				took: string;
+				error?: string;
+				steps: ({
+					number: number;
+					name: string;
+					freed: string;
+					took: string;
+					projects: {
+						project: string;
+						deleted: string;
+					}[] | null;
+				})[] | null;
 			})[] | null;
 		};
 	};
@@ -787,6 +860,7 @@ export interface Endpoints {
 			event_levels: string[] | null;
 			log_levels: string[] | null;
 			color?: string;
+			shown_color: string;
 		};
 	};
 	update_user: {
@@ -829,9 +903,12 @@ export const endpoints = {
 	get_issue_details: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	get_issues: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	get_project: { method: 'GET', text: false, admin: true, destructive: false, confirm: false },
+	get_project_defaults: { method: 'GET', text: false, admin: true, destructive: false, confirm: false },
+	get_project_setup: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	get_session: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	get_storage: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	list_agents: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
+	list_cleanups: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	list_connections: { method: 'GET', text: false, admin: true, destructive: false, confirm: false },
 	list_deliveries: { method: 'GET', text: false, admin: true, destructive: false, confirm: false },
 	list_issue_events: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
@@ -1010,6 +1087,20 @@ export const issueStatuses = [
 
 /** The most issues one action takes. */
 export const maxActionIssues = 1000;
+
+/** The palette of project colors: a project follows it by its ID until it has its own color. */
+export const projectPalette = [
+	{ name: 'Blue', color: '#2563eb' },
+	{ name: 'Pink', color: '#db2777' },
+	{ name: 'Green', color: '#16a34a' },
+	{ name: 'Orange', color: '#ea580c' },
+	{ name: 'Violet', color: '#7c3aed' },
+	{ name: 'Cyan', color: '#0891b2' },
+	{ name: 'Amber', color: '#ca8a04' },
+	{ name: 'Red', color: '#dc2626' },
+	{ name: 'Indigo', color: '#4f46e5' },
+	{ name: 'Teal', color: '#0d9488' },
+] as const;
 
 /** What each role may do. */
 export const roleSummaries = {

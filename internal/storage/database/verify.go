@@ -16,7 +16,7 @@ func (database *Store) Verify() ([]string, error) {
 		return problems, err
 	}
 
-	counted, err := database.schema.Counted(database.db)
+	counted, groups, err := database.schema.Counted(database.db)
 
 	if err != nil {
 		return problems, err
@@ -24,6 +24,10 @@ func (database *Store) Verify() ([]string, error) {
 
 	if stored := database.db.Counters(); !maps.Equal(stored, counted) {
 		problems = append(problems, fmt.Sprintf("byte counters %v, records take %v", stored, counted))
+	}
+
+	if stored := database.db.Groups(); !maps.Equal(stored, groups) {
+		problems = append(problems, fmt.Sprintf("project byte counters %v, records take %v", stored, groups))
 	}
 
 	database.issuesMutex.RLock()

@@ -54,10 +54,6 @@ var templateFuncs = template.FuncMap{
 	"back":        link,
 	"editLink":    link,
 	"roleSummary": func(role string) string { return store.RoleSummaries[role] },
-	"deleteProject": func(id int, name, label string) deleteButton {
-		return deleteButton{URL: fmt.Sprintf("/projects/%d/delete", id), Name: name, Label: label,
-			Confirm: "Delete the project " + name + " with all its issues, events and logs? Its DSN stops working. This cannot be undone."}
-	},
 	"deleteConnection": func(id, name, label string) deleteButton {
 		return deleteButton{URL: "/notifications/" + id + "/delete", Name: name, Label: label,
 			Confirm: "Delete the connection " + name + "? Its queued messages are dropped; a confirmed address stays confirmed."}
@@ -89,9 +85,7 @@ const (
 )
 
 // parseTemplates parses every page with the layout, the partials, the
-// shared functions and those that depend on the settings: appName
-// (APP_NAME) and mcpReference (the MCP request of an issue, as
-// notifications carry it).
+// shared functions and appName (APP_NAME), which depends on the settings.
 func parseTemplates(appName string) (map[string]page, error) {
 	pages := map[string]page{}
 	funcs := maps.Clone(templateFuncs)

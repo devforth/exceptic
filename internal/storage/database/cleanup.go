@@ -75,6 +75,8 @@ func (database *Store) Lane(maxBytes int64, logger *slog.Logger) background.Lane
 			Run: func(ctx context.Context) error { return database.CheckSize(ctx, maxBytes, logger) }},
 		{Name: "project purge", AtStart: true, First: config.ProjectPurgeAt, Every: config.ProjectPurgeInterval, Timeout: config.ProjectPurgeTimeout,
 			Note: "the data of deleted projects", Run: database.PurgeProjects},
+		{Name: "project sizes", AtStart: true, First: config.BackfillAt, Every: config.CleanupInterval, Timeout: config.BackfillTimeout,
+			Note: "counts data stored before them, once", Run: database.Backfill},
 	}}
 }
 

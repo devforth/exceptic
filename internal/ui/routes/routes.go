@@ -28,8 +28,7 @@ func Register(router *http.ServeMux, protect func(http.Handler) http.Handler, co
 
 	// The dashboard: every route needs a login and the user's own password; any role.
 	dashboard := group{
-		"GET /{$}":               controller.Home, // to the web app's issue list
-		"GET /projects/cleanups": controller.CleanupsPage,
+		"GET /{$}": controller.Home, // to the web app's issue list
 
 		"GET /agents":                       controller.AgentsPage,
 		"POST /agents/token":                controller.NewAgentToken,
@@ -42,12 +41,6 @@ func Register(router *http.ServeMux, protect func(http.Handler) http.Handler, co
 
 	// Settings only admins (and the superadmin) may change.
 	admin := group{
-		"GET /projects/new":                 controller.NewProjectPage,
-		"POST /projects":                    controller.CreateProject,
-		"GET /projects/{projectID}":         controller.ProjectPage,
-		"POST /projects/{projectID}":        controller.UpdateProject,
-		"POST /projects/{projectID}/delete": controller.DeleteProject,
-
 		"GET /notifications":                           controller.ConnectionsPage,
 		"GET /notifications/log":                       controller.DeliveriesPage,
 		"GET /notifications/new":                       controller.NewConnectionPage,

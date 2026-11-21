@@ -113,6 +113,8 @@ func (decoder *Decoder) number(width int) uint64 {
 
 func (decoder *Decoder) U8() byte { return byte(decoder.number(1)) }
 
+func (decoder *Decoder) U32() uint32 { return uint32(decoder.number(4)) }
+
 func (decoder *Decoder) U64() uint64 { return decoder.number(8) }
 
 func (decoder *Decoder) Text() string {

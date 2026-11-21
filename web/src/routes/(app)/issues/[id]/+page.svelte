@@ -324,7 +324,9 @@
 					{/snippet}
 				</Table>
 				<div class="flex flex-wrap items-center gap-3 text-xs text-muted">
-					Showing the latest {events.length} of {issue.event_count} events.
+					{#if issue.event_count > events.length}
+						Showing the latest {events.length} of {issue.event_count} events.
+					{/if}
 					{#if eventsCursor}
 						<Button busy={loadingMore} onclick={loadMore}>Load more</Button>
 					{/if}

@@ -106,8 +106,6 @@ func TestBackLinks(t *testing.T) {
 	server.login()
 
 	for path, want := range map[string]string{
-		"/projects/1":        `<a href="/projects" data-back`,
-		"/projects/cleanups": `<a href="/projects" data-back`,
 		"/notifications/new": `<a href="/notifications" data-back`,
 		"/notifications/log": `<a href="/notifications" data-back`,
 	} {
@@ -165,7 +163,6 @@ func TestMenuMarksTheSection(t *testing.T) {
 	activeItem := regexp.MustCompile(`href="([^"]+)"[^>]*class="active" aria-current="page"`)
 
 	for path, item := range map[string]string{
-		"/projects/new": "/projects", "/projects/cleanups": "/projects",
 		"/notifications/new": "/notifications", "/notifications/log": "/notifications", "/users/new": "/users",
 		"/agents": "/agents", "/account": "/account",
 	} {
@@ -194,8 +191,8 @@ func TestNotFoundPage(t *testing.T) {
 	_, user := server.createUser("dev", "user")
 
 	for name, response := range map[string]*httptest.ResponseRecorder{
-		"missing project":   server.get("/projects/999"),
-		"not for this role": user.get("/notifications"),
+		"missing connection": server.get("/notifications/zzzzzzzz"),
+		"not for this role":  user.get("/notifications"),
 	} {
 		body := response.Body.String()
 

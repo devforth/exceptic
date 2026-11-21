@@ -4,21 +4,12 @@
 import type { IconName } from './icons.ts';
 
 export const oldUI = {
-	newProject: '/projects/new',
-	project: (id: number) => `/projects/${id}`,
-	cleanups: '/projects/cleanups',
 	notifications: '/notifications',
 	users: '/users',
 	mcp: '/agents',
 	account: '/account',
 	login: '/login',
 	logout: '/logout'
-} as const;
-
-/** Pages of the app that another step adds: plain paths until their routes exist, since
- * resolve() takes only routes that do. */
-export const comingPages = {
-	projectSetup: (id: number) => `/projects/${id}/setup`
 } as const;
 
 /** An address with its query, encoded. */
