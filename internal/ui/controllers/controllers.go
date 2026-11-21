@@ -24,16 +24,11 @@ type Controllers struct {
 	views        *views.Renderer
 	auth         *session.Auth
 	projects     *services.Projects
-	connections  *services.Connections
-	deliveries   *services.Deliveries
-	verification *services.Verification
 	logs         *services.Logs
 	agents       *services.Agents
 	// For the MCP page: whether ALLOWED_IPS limits access.
 	ipsRestricted bool
 	appName       string // APP_NAME
-
-	connectionViews presenters.Connections
 }
 
 // Dependencies are the parts Controllers is built from.
@@ -55,17 +50,10 @@ func New(dependencies Dependencies) *Controllers {
 		views:         dependencies.Views,
 		auth:          dependencies.Auth,
 		projects:      all.Projects,
-		connections:   all.Connections,
-		deliveries:    all.Deliveries,
-		verification:  all.Verification,
 		logs:          all.Logs,
 		agents:        all.Agents,
 		ipsRestricted: len(settings.AllowedIPs) > 0,
 		appName:       settings.AppName,
-		connectionViews: presenters.Connections{
-			Chat: all.Connections.Chat, Notifications: settings.Notifications, Recording: settings.Recording,
-			Projects: all.Projects, ProjectName: all.Projects.Name,
-		},
 	}
 }
 

@@ -23,14 +23,6 @@ type ListParams struct {
 	choices map[string][]string
 }
 
-// DeliveryStatuses are the statuses the delivery log filters by.
-var DeliveryStatuses = []string{store.OutboxPending, store.OutboxFailed, store.OutboxSent}
-
-// DeliveryListParams are those of the delivery log, which shows the connections of connectionIDs.
-func DeliveryListParams(connectionIDs []string) ListParams {
-	return ListParams{choices: map[string][]string{"connection": connectionIDs, "status": DeliveryStatuses}}
-}
-
 // CleanListQuery keeps the parameters of raw that params understands, with
 // valid values, and the paging.
 func CleanListQuery(raw url.Values, params ListParams) url.Values {

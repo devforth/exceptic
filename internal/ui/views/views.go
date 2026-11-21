@@ -48,17 +48,9 @@ var templateFuncs = template.FuncMap{
 	"fullTime": func(value time.Time) string { return value.UTC().Format("2006-01-02 15:04:05.000 UTC") },
 	"shorten":  textutil.Shorten,
 	"asset":    assetURL,
-	"retryNow": func(id any, count int, back string) map[string]any {
-		return map[string]any{"ID": id, "Count": count, "Return": back}
-	},
 	"back":     link,
 	"editLink": link,
-	"deleteConnection": func(id, name, label string) deleteButton {
-		return deleteButton{URL: "/notifications/" + id + "/delete", Name: name, Label: label,
-			Confirm: "Delete the connection " + name + "? Its queued messages are dropped; a confirmed address stays confirmed."}
-	},
 	"limits":   func() config.FieldLimits { return config.Limits },
-	"chatTest": func(url, needs string) map[string]string { return map[string]string{"URL": url, "Needs": needs} },
 	"copyButton": func(target, label, title, copied string) map[string]string {
 		return map[string]string{"Target": target, "Label": label, "Title": title, "Copied": copied}
 	},

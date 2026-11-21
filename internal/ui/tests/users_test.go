@@ -71,7 +71,7 @@ func TestRoles(t *testing.T) {
 		user.page(path)
 	}
 
-	for _, path := range []string{"/notifications", "/notifications/new", "/notifications/log", "/projects/new", "/projects/1"} {
+	for _, path := range []string{"/projects/new", "/projects/1"} {
 		if response := user.get(path); response.Code != http.StatusNotFound {
 			t.Errorf("user GET %s: %d", path, response.Code)
 		}

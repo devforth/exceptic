@@ -28,8 +28,11 @@ import PanelLeftClose from '@lucide/svelte/icons/panel-left-close';
 import PanelLeftOpen from '@lucide/svelte/icons/panel-left-open';
 import Pause from '@lucide/svelte/icons/pause';
 import PencilLine from '@lucide/svelte/icons/pencil-line';
+import Play from '@lucide/svelte/icons/play';
 import Plug from '@lucide/svelte/icons/plug';
 import Plus from '@lucide/svelte/icons/plus';
+import RotateCw from '@lucide/svelte/icons/rotate-cw';
+import Send from '@lucide/svelte/icons/send';
 import Settings from '@lucide/svelte/icons/settings';
 import Trash from '@lucide/svelte/icons/trash';
 import TriangleExclamationPoint from '@lucide/svelte/icons/triangle-exclamation-point';
@@ -68,6 +71,9 @@ export const icons = {
 	token: KeyRound,
 	code: CodeXml,
 	pause: Pause,
+	resume: Play,
+	retry: RotateCw,
+	send: Send,
 	info: Info,
 	success: CircleCheck,
 	warning: TriangleExclamationPoint,

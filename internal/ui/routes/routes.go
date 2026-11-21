@@ -44,22 +44,6 @@ func Register(router *http.ServeMux, protect func(http.Handler) http.Handler, co
 
 	// Settings only admins (and the superadmin) may change.
 	admin := group{
-		"GET /notifications":                           controller.ConnectionsPage,
-		"GET /notifications/log":                       controller.DeliveriesPage,
-		"GET /notifications/new":                       controller.NewConnectionPage,
-		"POST /notifications":                          controller.CreateConnection,
-		"GET /notifications/{connectionID}":            controller.ConnectionPage,
-		"POST /notifications/{connectionID}":           controller.UpdateConnection,
-		"POST /notifications/email/start":              controller.EmailStart,
-		"POST /notifications/email/resend":             controller.EmailResend,
-		"POST /notifications/email/confirm":            controller.EmailConfirm,
-		"POST /notifications/email/change":             controller.EmailChange,
-		"POST /notifications/{connectionID}/test":      controller.TestConnection,
-		"POST /notifications/test-chat":                controller.TestChat,
-		"POST /notifications/{connectionID}/test-chat": controller.TestChat,
-		"POST /notifications/{connectionID}/retry":     controller.RetryConnection,
-		"POST /notifications/{connectionID}/active":    controller.SetConnectionActive,
-		"POST /notifications/{connectionID}/delete":    controller.DeleteConnection,
 	}
 
 	login, passwordChanged := middleware.RequireLogin(auth), middleware.RequirePasswordChanged(AccountPath)

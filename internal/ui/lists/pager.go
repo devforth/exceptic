@@ -47,8 +47,6 @@ type ListFragment struct {
 	Target, Form string
 }
 
-var DeliveryList = ListFragment{Target: "delivery-list", Form: "delivery-filters"}
-
 type PageLink struct {
 	Number  int
 	URL     string

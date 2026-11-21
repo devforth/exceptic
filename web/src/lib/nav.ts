@@ -4,7 +4,6 @@
 import type { IconName } from './icons.ts';
 
 export const oldUI = {
-	notifications: '/notifications',
 	mcp: '/agents'
 } as const;
 
@@ -14,7 +13,12 @@ export function withQuery(path: string, params: Record<string, string>): string 
 }
 
 /** The routes of the app that are in the menu. */
-type AppRoute = '/(app)/issues' | '/(app)/projects' | '/(app)/logs' | '/(app)/users';
+type AppRoute =
+	| '/(app)/issues'
+	| '/(app)/projects'
+	| '/(app)/logs'
+	| '/(app)/users'
+	| '/(app)/notifications';
 
 export type NavEntry = {
 	id: string;
@@ -52,7 +56,7 @@ export const navGroups: NavGroup[] = [
 				id: 'notifications',
 				label: 'Notifications',
 				icon: 'notifications',
-				href: oldUI.notifications,
+				route: '/(app)/notifications',
 				adminOnly: true
 			},
 			{ id: 'users', label: 'Users', icon: 'users', route: '/(app)/users', adminOnly: true },

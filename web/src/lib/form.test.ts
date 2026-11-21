@@ -18,7 +18,16 @@ describe('FormState', () => {
 		expect(form.fields).toEqual({});
 		expect(form.error).toBe('not found');
 
+		await form.submit(() =>
+			Promise.reject(
+				new ApiError(400, 'already sends there', { duplicate: { id: 'abcd1234', name: 'Ops' } })
+			)
+		);
+		expect(form.duplicate).toEqual({ id: 'abcd1234', name: 'Ops' });
+		expect(form.error).toBe('');
+
 		expect(await form.submit(() => Promise.resolve())).toBe(true);
+		expect(form.duplicate).toBeUndefined();
 		expect(form.error).toBe('');
 		expect(form.busy).toBe(false);
 	});

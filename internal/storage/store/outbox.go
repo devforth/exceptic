@@ -35,6 +35,11 @@ type OutboxRecord struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
+// Retrying: waiting for another attempt after a failed one.
+func (record OutboxRecord) Retrying() bool {
+	return record.Status == OutboxPending && record.Attempts > 0
+}
+
 // OutboxFilter selects outbox messages, newest first. Zero values mean "any".
 type OutboxFilter struct {
 	Channel string

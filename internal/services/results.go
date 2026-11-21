@@ -33,30 +33,21 @@ type AgentsPage struct {
 
 // The states of EmailStep.
 const (
-	EmailInput       = "input"       // enter an address
-	EmailUnconfirmed = "unconfirmed" // a saved connection's address waits for a code
-	EmailCode        = "code"        // enter the mailed code
-	EmailVerified    = "verified"    // confirmed: the rest of the form opens
+	EmailInput    = "input"    // enter an address
+	EmailCode     = "code"     // enter the mailed code
+	EmailVerified = "verified" // confirmed: the rest of the form opens
 )
 
-// EmailStep is the address part of the form, swapped by htmx as it moves on
-// through its State. Fixed: a saved connection, whose address cannot change.
+// EmailStep is where confirming an address got to (its State).
 type EmailStep struct {
 	State         string
 	Address       string
 	DestinationID string
 	VerifiedAt    time.Time
-	Fixed         bool
 	Duplicate     *Duplicate // the connection that already uses the address
 	Error         string
 	Notice        string
 }
-
-func (step EmailStep) Input() bool { return step.State == EmailInput }
-
-func (step EmailStep) Unconfirmed() bool { return step.State == EmailUnconfirmed }
-
-func (step EmailStep) AwaitingCode() bool { return step.State == EmailCode }
 
 func (step EmailStep) Verified() bool { return step.State == EmailVerified }
 
@@ -65,6 +56,15 @@ func (step EmailStep) Verified() bool { return step.State == EmailVerified }
 type Duplicate struct {
 	ID   string
 	Name string
+}
+
+// ChannelType is a type a new connection may have (Connections.Types).
+type ChannelType struct {
+	Type             string
+	Available        bool
+	Reason           string // what is missing when not available
+	IncludeIssueLink bool   // the default of a new connection
+	NamePlaceholder  string
 }
 
 // ChatTest is the result of a test message sent from the form.

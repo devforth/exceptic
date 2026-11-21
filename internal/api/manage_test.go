@@ -137,7 +137,7 @@ func TestDestructiveToolsAskForConfirmation(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		sensitive := slices.Contains([]string{"create_user", "update_user", "create_connection", "update_connection", "update_project"}, tool.Name)
+		sensitive := slices.Contains([]string{"create_user", "update_user", "create_connection", "update_connection", "set_connection_active", "update_project"}, tool.Name)
 
 		if sensitive != strings.Contains(tool.Description, "Changes who can access") {
 			t.Errorf("%s: %s", tool.Name, tool.Description)
