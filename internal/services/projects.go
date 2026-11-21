@@ -2,14 +2,11 @@ package services
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/netip"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/devforth/exceptic/internal/platform/config"
@@ -46,30 +43,6 @@ func (service *Projects) RecordedLevels(project config.Project) (events, logs []
 	return service.recording.RecordedLevels(project.EventLevels, project.LogLevels)
 }
 
-// ProjectColorsPath serves the stylesheet of the project colors.
-const ProjectColorsPath = "/project-colors.css"
-
-// Stylesheet sets the color of every project, since the CSP forbids inline
-// styles; pages link it with its Version, so a changed color is fetched at once.
-type Stylesheet struct {
-	CSS     string
-	Version string
-}
-
-// Colors gives each project badge (data-project="<name>") its color. Names
-// and colors are validated, so they are safe in CSS.
-func (service *Projects) Colors() Stylesheet {
-	var css strings.Builder
-
-	for _, project := range service.List() {
-		fmt.Fprintf(&css, "[data-project=%q] { --project-color: %s; }\n", project.Name, project.Color)
-	}
-
-	sum := sha256.Sum256([]byte(css.String()))
-
-	return Stylesheet{CSS: css.String(), Version: hex.EncodeToString(sum[:])[:12]}
-}
-
 // ColorsByName is the shown color of every project, by name.
 func (service *Projects) ColorsByName() map[string]string {
 	colors := map[string]string{}
@@ -79,11 +52,6 @@ func (service *Projects) ColorsByName() map[string]string {
 	}
 
 	return colors
-}
-
-// ColorsURL is where pages link the stylesheet of the current colors.
-func (service *Projects) ColorsURL() string {
-	return ProjectColorsPath + "?v=" + service.Colors().Version
 }
 
 // FromEnv: the project comes from PROJECTS (its name and key are fixed).

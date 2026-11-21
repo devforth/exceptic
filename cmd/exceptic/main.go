@@ -140,7 +140,7 @@ func run() error {
 	spa, err := web.New()
 
 	if errors.Is(err, web.ErrNotBuilt) {
-		logger.Warn("web app not built: only the pages of the old UI are served", "build", "make web")
+		logger.Warn("web app not built: no web UI is served", "build", "make web")
 	} else if err != nil {
 		return err
 	}

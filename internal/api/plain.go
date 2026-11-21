@@ -45,8 +45,9 @@ type LoginStateInput struct {
 // LoginState is what the login page shows; Redirect (a local path) when the
 // browser is logged in already.
 type LoginState struct {
-	AppName  string `json:"app_name"`
-	Disabled bool   `json:"disabled"`
+	AppName string `json:"app_name"`
+	// Disabled says why nobody can log in (no ADMIN_PASSWORD); empty otherwise.
+	Disabled string `json:"disabled,omitempty"`
 	Redirect string `json:"redirect,omitempty"`
 }
 
@@ -77,6 +78,9 @@ type PersonalToken struct {
 // wrongLogin is the answer to a wrong password and to an unknown username alike.
 const wrongLogin = "Wrong username or password."
 
+// loginDisabled is why nobody can log in to a server without a superadmin.
+const loginDisabled = "The web UI is disabled: set ADMIN_PASSWORD to enable it."
+
 // LoginRequests are the handlers of the login's plain requests (login_state,
 // login, logout, change_password) for NewUI. Every password check goes
 // through auth, so the login's limits apply to each.
@@ -87,7 +91,11 @@ func LoginRequests(logger *slog.Logger, auth *session.Auth, appName string) map[
 
 	return map[string]http.Handler{
 		"login_state": http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			state := LoginState{AppName: appName, Disabled: auth.Disabled(r.Context())}
+			state := LoginState{AppName: appName}
+
+			if auth.Disabled(r.Context()) {
+				state.Disabled = loginDisabled
+			}
 
 			// Logged in already: straight on.
 			if _, ok := auth.SessionUser(r); ok {
@@ -105,7 +113,7 @@ func LoginRequests(logger *slog.Logger, auth *session.Auth, appName string) map[
 			}
 
 			if auth.Disabled(r.Context()) {
-				server.JSONError(w, http.StatusForbidden, "The web UI is disabled: set ADMIN_PASSWORD to enable it.")
+				server.JSONError(w, http.StatusForbidden, loginDisabled)
 
 				return
 			}

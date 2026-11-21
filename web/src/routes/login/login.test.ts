@@ -22,7 +22,7 @@ afterEach(() => {
 	mocks.assign.mockReset();
 });
 
-function renderLogin(disabled = false) {
+function renderLogin(disabled?: string) {
 	render(LoginPage, { data: { state: { app_name: 'Exceptic', disabled } } } as never);
 }
 
@@ -63,7 +63,7 @@ describe('the login page', () => {
 	});
 
 	it('says why nobody can log in without a superadmin', () => {
-		renderLogin(true);
+		renderLogin('The web UI is disabled: set ADMIN_PASSWORD to enable it.');
 
 		expect(screen.getByText(/The web UI is disabled/)).toBeTruthy();
 		expect(screen.queryByRole('button', { name: 'Log in' })).toBeNull();

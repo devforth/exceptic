@@ -18,21 +18,14 @@ of saving the connection; the rest of the connection form opens once it is verif
 	type Props = {
 		/** The address as typed (the name's placeholder follows it). */
 		typed: string;
-		/** The confirmed address, for the save. */
-		address: string;
-		verified: boolean;
+		/** Where the step is; kept by the form, so switching the type away and back keeps it. */
+		progress: EmailStepState;
 		/** The save's problem with the address. */
 		error?: string;
 	};
 
-	let {
-		typed = $bindable(),
-		address = $bindable(),
-		verified = $bindable(),
-		error
-	}: Props = $props();
+	let { typed = $bindable(), progress = $bindable(), error }: Props = $props();
 
-	let progress: EmailStepState = $state({ step: 'input', address: '', notice: '' });
 	let code = $state('');
 	const request = new FormState();
 
@@ -41,8 +34,6 @@ of saving the connection; the rest of the connection form opens once it is verif
 
 		if ((await request.submit(async () => (answer = await run()))) && answer) {
 			progress = emailStepAfter(answer);
-			address = progress.address;
-			verified = progress.step === 'verified';
 			code = '';
 		}
 	}
@@ -63,8 +54,6 @@ of saving the connection; the rest of the connection form opens once it is verif
 
 	function change() {
 		progress = { step: 'input', address: '', notice: '' };
-		address = '';
-		verified = false;
 	}
 </script>
 

@@ -112,7 +112,7 @@ func TestConsentPageIsTheWebApp(t *testing.T) {
 		t.Errorf("CSP %q", response.Header().Get("Content-Security-Policy"))
 	}
 
-	// A form posted to the page's address, as the server-rendered page took it, issues nothing.
+	// A form posted to the page's address, as the old consent page took it, issues nothing.
 	user := server.webUser(store.RoleAdmin, false)
 	form := copyParams(params)
 	form.Set("decision", "allow")

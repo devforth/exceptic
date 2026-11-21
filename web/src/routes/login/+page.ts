@@ -7,7 +7,7 @@ export const load: PageLoad = async ({ url }) => {
 		pageError
 	);
 
-	// Logged in already: on to the page asked for, which may be one of the old UI.
+	// Logged in already: on to the page asked for.
 	if (state.redirect) {
 		location.replace(state.redirect);
 

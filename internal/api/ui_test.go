@@ -382,7 +382,6 @@ type sessionAnswer struct {
 	CanAdminister    bool              `json:"can_administer"`
 	AppName          string            `json:"app_name"`
 	UnresolvedIssues int               `json:"unresolved_issues"`
-	ProjectColorsURL string            `json:"project_colors_url"`
 	ProjectColors    map[string]string `json:"project_colors"`
 }
 
@@ -408,8 +407,7 @@ func TestGetSession(t *testing.T) {
 		}
 
 		if session.User.ID != user.id || session.User.DisplayName != "Web "+role || session.CanAdminister != canAdminister ||
-			session.AppName != server.app.Services.AppName || session.UnresolvedIssues != unresolved ||
-			session.ProjectColorsURL != server.app.Services.Projects.ColorsURL() {
+			session.AppName != server.app.Services.AppName || session.UnresolvedIssues != unresolved {
 			t.Errorf("%s: %+v", role, session)
 		}
 
@@ -577,5 +575,47 @@ func TestUILogs(t *testing.T) {
 
 	if !slices.ContainsFunc(all.Items, func(item logRow) bool { return item.Issue != nil && item.Issue.ID != "" }) {
 		t.Error("no log names its issue")
+	}
+}
+
+// APP_NAME reaches the web app's menu, its login page, the issues' MCP
+// request and the name agents register the server under.
+func TestAppName(t *testing.T) {
+	const appName = "Acme Errors"
+
+	server := newRESTServerWith(t, func(settings *config.Config) { settings.AppName = appName })
+	server.ingestFixtures()
+
+	user := server.webUser(store.RoleSuperadmin, false)
+
+	var session sessionAnswer
+
+	user.read("get_session", &session)
+
+	var state api.LoginState
+
+	user.read("login_state", &state)
+
+	if session.AppName != appName || state.AppName != appName {
+		t.Errorf("get_session %q, login_state %q", session.AppName, state.AppName)
+	}
+
+	var issues struct {
+		Items []struct {
+			ID           string `json:"id"`
+			MCPReference string `json:"mcp_reference"`
+		} `json:"items"`
+	}
+
+	user.read("list_issues?status=all", &issues)
+
+	if len(issues.Items) == 0 || !strings.HasPrefix(issues.Items[0].MCPReference, appName+" MCP: get_issue") {
+		t.Errorf("issues: %+v", issues.Items)
+	}
+
+	token := decoded[personalToken](t, user.call(http.MethodPost, "personal_token", "{}"), http.StatusOK)
+
+	if prompt := token.SetupPrompt; !strings.Contains(prompt, "acme-errors") {
+		t.Errorf("setup prompt without the server's name:\n%s", prompt)
 	}
 }

@@ -101,7 +101,9 @@
 	<span class="text-xs text-muted">{item.message}</span>
 	{#if item.project}<Badge tone="project" label={item.project} />{/if}
 	{#if item.issue_id}
-		<Button variant="link" href={resolve('/(app)/issues/[id]', { id: item.issue_id })}>{item.title}</Button>
+		<Button variant="link" href={resolve('/(app)/issues/[id]', { id: item.issue_id })}>
+			{item.title}
+		</Button>
 	{:else}
 		{item.title}
 	{/if}

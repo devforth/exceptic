@@ -2,9 +2,9 @@
 package app
 
 import (
-	"maps"
 	"context"
 	"log/slog"
+	"maps"
 	"net/http"
 
 	"github.com/devforth/exceptic/internal/api"
@@ -17,7 +17,6 @@ import (
 	"github.com/devforth/exceptic/internal/session"
 	"github.com/devforth/exceptic/internal/storage/database"
 	"github.com/devforth/exceptic/internal/storage/projects"
-	"github.com/devforth/exceptic/internal/ui"
 	"github.com/devforth/exceptic/web"
 )
 
@@ -69,13 +68,8 @@ func New(ctx context.Context, options Options) (*App, error) {
 		return nil, err
 	}
 
-	// One login for the UI and the web app: its attempt limits live in memory.
+	// One login for the web app: its attempt limits live in memory.
 	auth := session.NewAuth(logger, settings, all.Users, all.Sessions)
-	webUI, err := ui.New(logger, settings, all, auth)
-
-	if err != nil {
-		return nil, err
-	}
 
 	// A nil *web.App must not become a non-nil server.Routes.
 	var spa server.Routes
@@ -104,7 +98,6 @@ func New(ctx context.Context, options Options) (*App, error) {
 		API:            api.NewREST(logger, endpoints, settings.Notifications.PublicURL, settings.TrustedProxies),
 		MCP:            api.NewMCP(logger, db, endpoints, authorization, settings.AppName, options.Version),
 		OAuth:          authorization,
-		UI:             webUI,
 		Web:            spa,
 		UIAPI:          api.NewUI(logger, endpoints, plainRequests, auth, settings.Notifications.PublicURL, settings.TrustedProxies),
 		APIToken:       settings.APIToken,

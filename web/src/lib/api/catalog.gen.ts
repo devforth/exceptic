@@ -33,7 +33,22 @@ export interface Endpoints {
 		out: {
 			email: string;
 			confirmed: boolean;
+			state: string;
+			verified_at?: IsoTime | null;
+			notice?: string;
 			message: string;
+		};
+	};
+	count_deliveries: {
+		in: {
+			/** Only this connection. */
+			connection_id?: string;
+			/** Delivery status; every status when empty. */
+			status?: '' | 'pending' | 'sent' | 'failed';
+		};
+		out: {
+			count: number;
+			more?: boolean;
 		};
 	};
 	count_issues: {
@@ -86,7 +101,9 @@ export interface Endpoints {
 			email?: string;
 			/** A name; empty names it after the address or chat. */
 			name?: string | null;
-			/** Project names or IDs; an empty list means every project, including future ones. */
+			/** Every project, including future ones; false sends only for projects. */
+			all_projects?: boolean | null;
+			/** Project names or IDs; an empty list means every project, unless all_projects is false. */
 			projects?: string[] | null;
 			/** Issue levels to notify about (default: the levels recorded by default). */
 			levels?: ('debug' | 'info' | 'warning' | 'error' | 'fatal')[] | null;
@@ -110,6 +127,7 @@ export interface Endpoints {
 			name: string;
 			type: string;
 			email?: string;
+			destination: string;
 			all_projects: boolean;
 			projects?: string[] | null;
 			levels: string[] | null;
@@ -122,6 +140,7 @@ export interface Endpoints {
 				failed?: number;
 				last_sent_at?: IsoTime | null;
 				last_error?: string;
+				failing?: boolean;
 			} | null;
 		};
 	};
@@ -227,6 +246,47 @@ export interface Endpoints {
 			must_change_password?: boolean;
 			created_at: IsoTime;
 			last_login_at?: IsoTime | null;
+		};
+	};
+	get_connection: {
+		in: {
+			/** id from list_connections. */
+			connection_id: string;
+		};
+		out: {
+			id: string;
+			name: string;
+			type: string;
+			email?: string;
+			confirmed: boolean;
+			verified_at?: IsoTime | null;
+			all_projects: boolean;
+			project_ids: number[] | null;
+			levels: string[] | null;
+			active: boolean;
+			include_issue_link: boolean;
+			chat_id?: string;
+			slack_channel?: string;
+			saved_telegram_token?: string;
+			saved_webhook_url?: string;
+			saved_slack_bot_token?: string;
+			secret_readable: boolean;
+			retrying: number;
+		};
+	};
+	get_connection_defaults: {
+		in: Record<string, never>;
+		out: {
+			types: {
+				type: string;
+				available: boolean;
+				reason?: string;
+				include_issue_link: boolean;
+				name_placeholder: string;
+			}[] | null;
+			default_type: string;
+			levels: string[] | null;
+			issue_links_available: boolean;
 		};
 	};
 	get_event: {
@@ -457,7 +517,6 @@ export interface Endpoints {
 			can_administer: boolean;
 			app_name: string;
 			unresolved_issues: number;
-			project_colors_url: string;
 			project_colors: Record<string, string>;
 		};
 	};
@@ -563,6 +622,7 @@ export interface Endpoints {
 				name: string;
 				type: string;
 				email?: string;
+				destination: string;
 				all_projects: boolean;
 				projects?: string[] | null;
 				levels: string[] | null;
@@ -575,6 +635,7 @@ export interface Endpoints {
 					failed?: number;
 					last_sent_at?: IsoTime | null;
 					last_error?: string;
+					failing?: boolean;
 				} | null;
 			})[] | null;
 			next_cursor?: string;
@@ -592,19 +653,28 @@ export interface Endpoints {
 			cursor?: string;
 		};
 		out: {
-			items: {
+			items: ({
 				id: number;
 				connection_id: string;
 				message: string;
 				project?: string;
 				title?: string;
 				issue_id?: string;
+				items?: {
+					message: string;
+					project?: string;
+					title?: string;
+					issue_id?: string;
+				}[] | null;
+				more?: number;
 				status: string;
+				retrying: boolean;
 				attempts: number;
 				last_error?: string;
 				created_at: IsoTime;
+				updated_at: IsoTime;
 				next_attempt_at: IsoTime;
-			}[] | null;
+			})[] | null;
 			next_cursor?: string;
 		};
 	};
@@ -795,6 +865,35 @@ export interface Endpoints {
 			done: string;
 		};
 	};
+	set_connection_active: {
+		in: {
+			/** id from list_connections. */
+			connection_id: string;
+			/** true sends notifications, false stops them. */
+			active: boolean;
+		};
+		out: {
+			id: string;
+			name: string;
+			type: string;
+			email?: string;
+			destination: string;
+			all_projects: boolean;
+			projects?: string[] | null;
+			levels: string[] | null;
+			active: boolean;
+			confirmed: boolean;
+			include_issue_link: boolean;
+			delivery?: {
+				pending?: number;
+				retrying?: number;
+				failed?: number;
+				last_sent_at?: IsoTime | null;
+				last_error?: string;
+				failing?: boolean;
+			} | null;
+		};
+	};
 	start_email_verification: {
 		in: {
 			/** The email address. */
@@ -803,6 +902,35 @@ export interface Endpoints {
 		out: {
 			email: string;
 			confirmed: boolean;
+			state: string;
+			verified_at?: IsoTime | null;
+			notice?: string;
+			message: string;
+		};
+	};
+	test_chat: {
+		in: {
+			/** telegram or slack; with connection_id, its own type. */
+			type?: string;
+			/** A saved connection: its tokens fill the empty fields. */
+			connection_id?: string;
+			/** The name the test message shows. */
+			name?: string;
+			/** As the form has it. */
+			include_issue_link?: boolean;
+			/** telegram: the bot token from @BotFather. */
+			bot_token?: string;
+			/** telegram: the chat ID (negative for groups) or @channel. */
+			chat_id?: string;
+			/** slack: an incoming webhook URL. */
+			webhook_url?: string;
+			/** slack: a bot token (xoxb-...) instead of a webhook; the bot also posts the agent prompt in a thread. */
+			slack_bot_token?: string;
+			/** slack: the channel ID the bot is invited to. */
+			slack_channel?: string;
+		};
+		out: {
+			sent: boolean;
 			message: string;
 		};
 	};
@@ -828,7 +956,9 @@ export interface Endpoints {
 			connection_id: string;
 			/** A name; empty names it after the address or chat. */
 			name?: string | null;
-			/** Project names or IDs; an empty list means every project, including future ones. */
+			/** Every project, including future ones; false sends only for projects. */
+			all_projects?: boolean | null;
+			/** Project names or IDs; an empty list means every project, unless all_projects is false. */
 			projects?: string[] | null;
 			/** Issue levels to notify about (default: the levels recorded by default). */
 			levels?: ('debug' | 'info' | 'warning' | 'error' | 'fatal')[] | null;
@@ -852,6 +982,7 @@ export interface Endpoints {
 			name: string;
 			type: string;
 			email?: string;
+			destination: string;
 			all_projects: boolean;
 			projects?: string[] | null;
 			levels: string[] | null;
@@ -864,6 +995,7 @@ export interface Endpoints {
 				failed?: number;
 				last_sent_at?: IsoTime | null;
 				last_error?: string;
+				failing?: boolean;
 			} | null;
 		};
 	};
@@ -941,6 +1073,7 @@ export interface Endpoints {
 export const endpoints = {
 	apply_issue_action: { method: 'POST', text: false, admin: false, destructive: false, confirm: false },
 	confirm_email: { method: 'POST', text: false, admin: true, destructive: false, confirm: false },
+	count_deliveries: { method: 'GET', text: false, admin: true, destructive: false, confirm: false },
 	count_issues: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	count_logs: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
 	create_connection: { method: 'POST', text: false, admin: true, destructive: false, confirm: true },
@@ -952,6 +1085,8 @@ export const endpoints = {
 	delete_user: { method: 'POST', text: false, admin: true, destructive: true, confirm: false },
 	disconnect_agent: { method: 'POST', text: false, admin: false, destructive: true, confirm: false },
 	get_account: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
+	get_connection: { method: 'GET', text: false, admin: true, destructive: false, confirm: false },
+	get_connection_defaults: { method: 'GET', text: false, admin: true, destructive: false, confirm: false },
 	get_event: { method: 'GET', text: true, admin: false, destructive: false, confirm: false },
 	get_issue: { method: 'GET', text: true, admin: false, destructive: false, confirm: false },
 	get_issue_details: { method: 'GET', text: false, admin: false, destructive: false, confirm: false },
@@ -977,7 +1112,9 @@ export const endpoints = {
 	reset_user_password: { method: 'POST', text: false, admin: true, destructive: true, confirm: false },
 	retry_connection: { method: 'POST', text: false, admin: true, destructive: false, confirm: false },
 	send_test_message: { method: 'POST', text: false, admin: true, destructive: false, confirm: false },
+	set_connection_active: { method: 'POST', text: false, admin: true, destructive: false, confirm: true },
 	start_email_verification: { method: 'POST', text: false, admin: true, destructive: false, confirm: false },
+	test_chat: { method: 'POST', text: false, admin: true, destructive: false, confirm: false },
 	update_account_name: { method: 'POST', text: false, admin: false, destructive: false, confirm: false },
 	update_connection: { method: 'POST', text: false, admin: true, destructive: false, confirm: true },
 	update_issue_status: { method: 'POST', text: false, admin: false, destructive: false, confirm: false },
@@ -993,7 +1130,7 @@ export interface PlainRequests {
 		};
 		out: {
 			app_name: string;
-			disabled: boolean;
+			disabled?: string;
 			redirect?: string;
 		};
 	};
@@ -1074,6 +1211,9 @@ export type ErrorBody = {
 export const choices = {
 	apply_issue_action: {
 		action: ['resolve', 'ignore', 'reopen', 'delete'],
+	},
+	count_deliveries: {
+		status: ['pending', 'sent', 'failed'],
 	},
 	count_issues: {
 		date_by: ['event', 'first_seen', 'last_seen'],
@@ -1165,6 +1305,9 @@ export const issueStatuses = [
 
 /** The most issues one action takes. */
 export const maxActionIssues = 1000;
+
+/** The kind of a connected agent that is a personal token (list_agents). */
+export const personalTokenKind = 'token';
 
 /** The palette of project colors: a project follows it by its ID until it has its own color. */
 export const projectPalette = [

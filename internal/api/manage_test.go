@@ -78,7 +78,7 @@ func TestToolsFollowTheRole(t *testing.T) {
 	user, userID := server.as(store.RoleUser)
 	names := toolNames(t, user.connect())
 
-	for _, name := range []string{"create_user", "list_users", "delete_issue", "create_connection", "update_project", "get_project"} {
+	for _, name := range []string{"create_user", "list_users", "delete_issue", "create_connection", "set_connection_active", "update_project", "get_project"} {
 		if slices.Contains(names, name) {
 			t.Errorf("user is offered %s", name)
 		}

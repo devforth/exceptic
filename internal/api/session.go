@@ -11,8 +11,6 @@ type sessionOutput struct {
 	CanAdminister    bool   `json:"can_administer"`
 	AppName          string `json:"app_name"`
 	UnresolvedIssues int    `json:"unresolved_issues"`
-	// ProjectColorsURL is the stylesheet of the project colors (inline styles are blocked).
-	ProjectColorsURL string `json:"project_colors_url"`
 	// ProjectColors: the shown color of every project by name, #rrggbb.
 	ProjectColors map[string]string `json:"project_colors"`
 }
@@ -66,7 +64,7 @@ func (handler *handlers) getSession(ctx context.Context, call Call, _ noInput) (
 
 	return sessionOutput{
 		User: userView(call.Viewer), CanAdminister: call.Viewer.CanAdminister(),
-		AppName: handler.services.AppName, UnresolvedIssues: unresolved, ProjectColorsURL: handler.services.Projects.ColorsURL(),
+		AppName: handler.services.AppName, UnresolvedIssues: unresolved,
 		ProjectColors: handler.services.Projects.ColorsByName(),
 	}, nil
 }

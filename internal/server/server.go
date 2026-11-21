@@ -15,7 +15,7 @@ type Pinger interface {
 	Ping(ctx context.Context) error
 }
 
-// Routes is a group of routes (API, UI) registered with a protection wrapper.
+// Routes is a group of routes (API, web app) registered with a protection wrapper.
 type Routes interface {
 	Register(router *http.ServeMux, protect func(http.Handler) http.Handler)
 }
@@ -46,10 +46,8 @@ type Options struct {
 	// sign in with; both check their own tokens, the server adds the IP allowlist.
 	MCP   Routes
 	OAuth Routes
-	// UI adds the web interface; it handles its own login, the server adds the IP allowlist.
-	UI Routes
-	// Web adds the single-page app (package web) that replaces the UI, and
-	// UIAPI the requests it makes; the server adds the IP allowlist.
+	// Web adds the web app (package web) at every other address, and UIAPI
+	// the requests it makes with its login; the server adds the IP allowlist.
 	Web            Routes
 	UIAPI          UIRoutes
 	APIToken       string
@@ -85,10 +83,6 @@ func (server *Server) Handler() http.Handler {
 		server.OAuth.Register(router, server.protectUI)
 	}
 
-	if server.UI != nil {
-		server.UI.Register(router, server.protectUI)
-	}
-
 	if server.Web != nil {
 		server.Web.Register(router, server.protectUI)
 	}
@@ -102,7 +96,7 @@ func (server *Server) Handler() http.Handler {
 	return server.logRequests(router)
 }
 
-// unknownAPI answers any other /api/ address with JSON, not the UI's page:
+// unknownAPI answers any other /api/ address with JSON, not the web app:
 // under UIAPIPrefix the web app's API itself (a login, then 404), elsewhere
 // a 404, behind the token when the REST API is served. Less specific than
 // the ingest route /api/{projectID}/envelope/, so it does not overlap it.

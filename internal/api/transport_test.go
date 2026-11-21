@@ -106,8 +106,8 @@ func TestForAgentFailsClosed(t *testing.T) {
 }
 
 // Logins, the own password and personal tokens are never requests of the
-// catalog: they go through the login's limits (session.Auth), as plain
-// requests of the web app (PlainRequests).
+// catalog: they are plain requests of the web app (PlainRequests, plain*.go),
+// and logins and passwords go through the login's limits (session.Auth).
 func TestCatalogNeverChangesCredentials(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 
@@ -116,7 +116,7 @@ func TestCatalogNeverChangesCredentials(t *testing.T) {
 	}
 
 	for _, file := range files {
-		if strings.HasSuffix(file, "_test.go") {
+		if strings.HasSuffix(file, "_test.go") || strings.HasPrefix(file, "plain") {
 			continue
 		}
 

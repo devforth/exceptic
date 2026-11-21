@@ -34,21 +34,6 @@ func (request Request) ClientSite() string {
 	return parsed.Hostname()
 }
 
-// RedirectOrigin is where the browser is sent back to, for the page's CSP.
-func (request Request) RedirectOrigin() string {
-	redirect, err := url.Parse(request.RedirectURI)
-
-	if err != nil {
-		return ""
-	}
-
-	if redirect.Host == "" {
-		return redirect.Scheme + ":"
-	}
-
-	return redirect.Scheme + "://" + redirect.Host
-}
-
 // CheckRequest validates an authorization request. Its errors are shown on
 // the page, not sent to the redirect_uri: until the client and its
 // redirect_uri are known to match, the browser must not be sent there.

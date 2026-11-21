@@ -5,42 +5,30 @@ import (
 	"testing"
 )
 
-func TestSetting(t *testing.T) {
-	if text, err := Setting("NOTIFY_KEEP_SENT"); err != nil || text != "Delivered messages are deleted from the delivery log after this." {
-		t.Errorf("NOTIFY_KEEP_SENT: %q %v", text, err)
-	}
-
-	// Markdown is dropped: the text goes into a tooltip.
-	if text, err := Setting("ADMIN_PASSWORD"); err != nil || strings.ContainsAny(text, "`[]") {
-		t.Errorf("ADMIN_PASSWORD: %q %v", text, err)
-	}
-
-	if _, err := Setting("NOT_A_SETTING"); err == nil {
-		t.Error("an unknown name has a description")
-	}
-}
-
-func TestField(t *testing.T) {
-	if text, err := Field("Notifications", "Chat ID"); err != nil || !strings.HasPrefix(text, "The chat the bot writes to") {
-		t.Errorf("Chat ID: %q %v", text, err)
-	}
-
-	// Fields are looked up in their own section; headers are not fields.
-	for _, missing := range [][2]string{{"Projects", "Chat ID"}, {"Notifications", "Field"}, {"Notifications", ""}} {
-		if _, err := Field(missing[0], missing[1]); err == nil {
-			t.Errorf("%v has a description", missing)
-		}
-	}
-}
-
 func TestFieldsAndSettings(t *testing.T) {
-	if text := Fields()["Notifications"]["Chat ID"]; !strings.HasPrefix(text, "The chat the bot writes to") {
+	fields := Fields()
+
+	if text := fields["Notifications"]["Chat ID"]; !strings.HasPrefix(text, "The chat the bot writes to") {
 		t.Errorf("Chat ID: %q", text)
+	}
+
+	// Fields are in their own section; headers are not fields.
+	if _, ok := fields["Projects"]["Chat ID"]; ok {
+		t.Error("Chat ID is a field of Projects")
+	}
+
+	if _, ok := fields["Notifications"]["Field"]; ok {
+		t.Error("a header row is a field")
 	}
 
 	settings, err := Settings()
 
 	if err != nil || settings["NOTIFY_KEEP_SENT"] != "Delivered messages are deleted from the delivery log after this." {
 		t.Errorf("NOTIFY_KEEP_SENT: %q %v", settings["NOTIFY_KEEP_SENT"], err)
+	}
+
+	// Markdown is dropped: the text goes into a tooltip.
+	if text := settings["ADMIN_PASSWORD"]; text == "" || strings.ContainsAny(text, "`[]") {
+		t.Errorf("ADMIN_PASSWORD: %q", text)
 	}
 }

@@ -10,9 +10,5 @@ web/.svelte-kit
 web/dist/spa
 .env
 .env.*
-# the UI quotes these docs as field hints (package docs embeds them)
-docs/*
-!docs/configuration.md
-!docs/ui.md
-!docs/docs.go
+docs
 *.md

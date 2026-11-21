@@ -1,6 +1,6 @@
 <!--
 The login, outside the app's shell: no menu and no session request. The server decides where
-to go after it (a local path only); a full load opens that page, old UI or app.
+to go after it (a local path only); a full load opens that page with a fresh session.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -56,9 +56,7 @@ to go after it (a local path only); a full load opens that page, old UI or app.
 	<Card>
 		<h1 class="text-h1 font-bold wrap-break-word">{data.state.app_name}</h1>
 		{#if data.state.disabled}
-			<Notice tone="info">
-				The web UI is disabled. Set <code>ADMIN_PASSWORD</code> to enable it.
-			</Notice>
+			<Notice tone="info">{data.state.disabled}</Notice>
 		{:else}
 			<form bind:this={element} onsubmit={submit} class="flex flex-col gap-3.5">
 				{#if form.error}

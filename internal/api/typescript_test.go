@@ -260,6 +260,7 @@ func writeRules(file *strings.Builder) error {
 	}
 
 	fmt.Fprintf(file, "] as const;\n\n/** The most issues one action takes. */\nexport const maxActionIssues = %d;\n\n", services.MaxActionIssues)
+	fmt.Fprintf(file, "/** The kind of a connected agent that is a personal token (list_agents). */\nexport const personalTokenKind = '%s';\n\n", store.GrantToken)
 	file.WriteString("/** The palette of project colors: a project follows it by its ID until it has its own color. */\nexport const projectPalette = [\n")
 
 	for _, color := range config.ProjectPalette {

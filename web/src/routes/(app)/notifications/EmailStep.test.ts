@@ -28,7 +28,7 @@ describe('EmailStep', () => {
 				notice: 'Address confirmed.',
 				verified_at: '2026-11-20T10:00:00Z'
 			});
-		render(EmailStep, { typed: '', address: '', verified: false });
+		render(EmailStep, { typed: '', progress: { step: 'input', address: '', notice: '' } });
 
 		await user.type(screen.getByLabelText(/^Email address/), 'Ops@Example.com{Enter}');
 		await waitFor(() => expect(screen.getByText('We sent a code.')).toBeTruthy());
@@ -57,7 +57,7 @@ describe('EmailStep', () => {
 		api.post.mockRejectedValueOnce(
 			new ApiError(400, 'already sends', { duplicate: { id: 'abcd1234', name: 'Ops' } })
 		);
-		render(EmailStep, { typed: '', address: '', verified: false });
+		render(EmailStep, { typed: '', progress: { step: 'input', address: '', notice: '' } });
 		await user.type(screen.getByLabelText(/^Email address/), 'ops@example.com{Enter}');
 
 		await waitFor(() =>

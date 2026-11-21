@@ -61,9 +61,8 @@ func Load(files fs.FS) (*App, error) {
 	return &App{files: files, page: page, policy: contentSecurityPolicy(page)}, nil
 }
 
-// Register serves the app at every address no other route takes: the pages
-// of the server-rendered UI that it has not replaced yet keep theirs. protect
-// is the IP allowlist; the page holds no data, the requests it makes check the login.
+// Register serves the app at every address no other route takes. protect is
+// the IP allowlist; the page holds no data, the requests it makes check the login.
 func (app *App) Register(router *http.ServeMux, protect func(http.Handler) http.Handler) {
 	router.Handle("/", protect(http.HandlerFunc(app.serve)))
 }

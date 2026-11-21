@@ -8,15 +8,11 @@ import (
 )
 
 // ContentSecurityPolicy is the policy of a page: scripts and styles only from
-// this server, plus scriptSources (hashes of the page's inline scripts);
-// formTargets are other origins a form may send the browser to (the OAuth
-// consent page returns to the agent; browsers apply form-action to redirects too).
-func ContentSecurityPolicy(scriptSources []string, formTargets ...string) string {
+// this server, plus scriptSources (hashes of the page's inline scripts).
+func ContentSecurityPolicy(scriptSources []string) string {
 	scripts := strings.Join(append([]string{"'self'"}, scriptSources...), " ")
-	forms := strings.Join(append([]string{"'self'"}, formTargets...), " ")
 
-	return "default-src 'self'; script-src " + scripts + "; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; form-action " +
-		forms + "; base-uri 'none'"
+	return "default-src 'self'; script-src " + scripts + "; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; form-action 'self'; base-uri 'none'"
 }
 
 // SecurityHeaders: the policy, no MIME sniffing, no framing by other sites

@@ -246,7 +246,7 @@ func TestUILoginRedirectStaysOnSite(t *testing.T) {
 	var state api.LoginState
 
 	if err := json.Unmarshal(server.browser().call(http.MethodGet, "login_state?next=/logs", nil).Body.Bytes(), &state); err != nil ||
-		state.Redirect != "" || state.Disabled || state.AppName != server.app.Services.AppName {
+		state.Redirect != "" || state.Disabled != "" || state.AppName != server.app.Services.AppName {
 		t.Errorf("login_state without a session: %+v", state)
 	}
 }
@@ -391,7 +391,7 @@ func TestUIDisabledWithoutPassword(t *testing.T) {
 
 	var state api.LoginState
 
-	if err := json.Unmarshal(client.call(http.MethodGet, "login_state", nil).Body.Bytes(), &state); err != nil || !state.Disabled {
+	if err := json.Unmarshal(client.call(http.MethodGet, "login_state", nil).Body.Bytes(), &state); err != nil || !strings.Contains(state.Disabled, "ADMIN_PASSWORD") {
 		t.Fatalf("login_state: %+v %v", state, err)
 	}
 

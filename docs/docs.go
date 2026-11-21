@@ -1,6 +1,6 @@
-// Package docs embeds the user documentation the UI quotes, so a field is
-// explained in one place: the tables of configuration.md (environment
-// variables) and ui.md (fields of the settings pages).
+// Package docs reads the user documentation the web app quotes as field hints
+// (its generated help), so a field is explained in one place: the tables of
+// configuration.md (environment variables) and ui.md (fields of the settings pages).
 package docs
 
 import (
@@ -27,18 +27,6 @@ var (
 	settings = parseTables(configuration)
 	fields   = parseTables(ui)
 )
-
-// Setting is what configuration.md says of an environment variable, as plain
-// text; an error when it is not there.
-func Setting(name string) (string, error) {
-	return lookup(settings, "", name, "configuration.md")
-}
-
-// Field is what ui.md says of a field of a settings page (its section, e.g.
-// "Notifications"), as plain text; an error when it is not there.
-func Field(section, label string) (string, error) {
-	return lookup(fields, section, label, "ui.md")
-}
 
 // Fields are what ui.md says of every field, by section and label, for the
 // web app's generated help.
@@ -74,23 +62,6 @@ func Settings() (map[string]string, error) {
 	}
 
 	return result, nil
-}
-
-func lookup(texts map[string]string, section, key, file string) (string, error) {
-	if text, ok := texts[section+"/"+key]; ok {
-		return text, nil
-	}
-
-	// Variables are unique across sections.
-	if section == "" {
-		for name, text := range texts {
-			if strings.HasSuffix(name, "/"+key) {
-				return text, nil
-			}
-		}
-	}
-
-	return "", fmt.Errorf("docs/%s does not describe %q", file, strings.TrimPrefix(section+" "+key, " "))
 }
 
 // parseTables reads the description of every table row, keyed by

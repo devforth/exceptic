@@ -25,7 +25,8 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 		issueLinkFor,
 		namePlaceholder,
 		telegramUpdatesURL,
-		typeLabel
+		typeLabel,
+		type EmailStepState
 	} from '#lib/notifications.ts';
 	import { toggled } from '#lib/selection.ts';
 	import { toast } from '#lib/toast.svelte.ts';
@@ -81,8 +82,17 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 	let issueLinkTouched = $state(false);
 	// The email step of a new connection.
 	let typedAddress = $state('');
-	let confirmedAddress = $state('');
-	let emailVerified = $state(false);
+	let emailProgress: EmailStepState = $state({ step: 'input', address: '', notice: '' });
+	const emailVerified = $derived(emailProgress.step === 'verified');
+
+	// After a save: the connection as stored (a save may clear fields), the typed tokens gone.
+	function reload() {
+		const stored = initial();
+
+		({ name, chatId, slackChannel, allProjects, projectIds, active, includeIssueLink } = stored);
+		chosenLevels = stored.levels;
+		botToken = webhookURL = slackBotToken = '';
+	}
 
 	const form = new FormState();
 
@@ -170,15 +180,15 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 					post('update_connection', { connection_id: connection.id, ...fields })
 				)
 			) {
-				botToken = webhookURL = slackBotToken = '';
 				toast.show('Saved.');
 				await invalidateAll();
+				reload();
 			}
 
 			return;
 		}
 
-		const email = type === 'email' ? { email: confirmedAddress } : {};
+		const email = type === 'email' ? { email: emailProgress.address } : {};
 
 		if (await form.submit(() => post('create_connection', { type, ...email, ...fields }))) {
 			toast.show('Connection added.');
@@ -210,6 +220,7 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 		</ChoiceGroup>
 	{:else}
 		<p class="text-muted">Type: <b class="text-text">{typeLabel(type)}</b></p>
+		{#if form.fields.type}<Notice tone="error">{form.fields.type}</Notice>{/if}
 	{/if}
 
 	{#if type === 'email'}
@@ -225,8 +236,7 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 		{:else}
 			<EmailStep
 				bind:typed={typedAddress}
-				bind:address={confirmedAddress}
-				bind:verified={emailVerified}
+				bind:progress={emailProgress}
 				error={form.fields.email}
 			/>
 		{/if}

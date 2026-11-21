@@ -8,7 +8,7 @@ account and Log out. It collapses to icons (the choice is kept in this browser);
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { send, type Out } from '#lib/api/client.ts';
-	import { navGroups, oldUI, type NavEntry } from '#lib/nav.ts';
+	import { navGroups, type NavEntry } from '#lib/nav.ts';
 	import { toast } from '#lib/toast.svelte.ts';
 	import Button from './Button.svelte';
 	import NavLink from './NavLink.svelte';

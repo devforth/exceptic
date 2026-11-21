@@ -1,8 +1,7 @@
 @import 'tailwindcss';
 
 /* The design tokens: only these exist, Tailwind's defaults are reset. Dark values are
-   below; components use the tokens and never need dark: variants. Until the old UI goes
-   (step 9), the colors repeat internal/ui/views/static/app.css. */
+   below; components use the tokens and never need dark: variants. */
 @theme static {
 	--color-*: initial;
 	--color-bg: #f7f7f8;

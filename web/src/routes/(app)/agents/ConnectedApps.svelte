@@ -6,6 +6,7 @@ own); the server lists only the users they may manage.
 <script lang="ts">
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
+	import { personalTokenKind } from '#lib/api/catalog.gen.ts';
 	import { post, type Out } from '#lib/api/client.ts';
 	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
 	import Select from '#lib/components/Select.svelte';
@@ -66,7 +67,9 @@ own); the server lists only the users they may manage.
 		{#snippet cell(agent: Agent, column: AgentColumn)}
 			{#if column.key === 'app'}
 				<b>{agent.name}</b>
-				<div class="text-xs text-muted">{agent.kind === 'token' ? 'Personal token' : 'OAuth'}</div>
+				<div class="text-xs text-muted">
+					{agent.kind === personalTokenKind ? 'Personal token' : 'OAuth'}
+				</div>
 			{:else if column.key === 'connected'}
 				<Time at={agent.created_at} />
 			{:else if column.key === 'active'}

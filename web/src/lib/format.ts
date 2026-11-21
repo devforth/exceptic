@@ -1,4 +1,4 @@
-// How the app writes times and log lines; until the old UI goes it repeats internal/ui/helpers.
+// How the app writes times and log lines.
 
 const minute = 60_000;
 const hour = 60 * minute;
