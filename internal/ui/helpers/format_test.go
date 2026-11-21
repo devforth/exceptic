@@ -38,16 +38,6 @@ func TestTimeAgo(t *testing.T) {
 	}
 }
 
-func TestShort(t *testing.T) {
-	if got := Short("0123456789abcdef", 8); got != "01234567" {
-		t.Errorf("Short = %q", got)
-	}
-
-	if got := Short("abc", 8); got != "abc" {
-		t.Errorf("Short of a short text = %q", got)
-	}
-}
-
 func TestLevelClass(t *testing.T) {
 	for level, want := range map[string]string{
 		"fatal": "level-error", "critical": "level-error", "warn": "level-warning", "log": "level-info", "trace": "level-debug", "debug": "level-debug",

@@ -259,9 +259,9 @@ func TestAppName(t *testing.T) {
 		}
 	}
 
-	issue := "/issues/" + server.unresolvedIDs()[0]
+	issue := "/api/ui/get_issue_details?issue_id=" + server.unresolvedIDs()[0]
 
-	if page := html.UnescapeString(server.page(issue)); !strings.Contains(page, `data-copy-text="Acme Errors MCP: get_issue {"issue_id":`) {
-		t.Error("the MCP request does not carry the app name")
+	if details := server.page(issue); !strings.Contains(details, `"mcp_reference":"Acme Errors MCP: get_issue {\"issue_id\":`) {
+		t.Errorf("the MCP request does not carry the app name:\n%.300s", details)
 	}
 }

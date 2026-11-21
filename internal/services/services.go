@@ -44,7 +44,7 @@ func New(dependencies Dependencies) *All {
 
 	return &All{
 		AppName:      settings.AppName,
-		Issues:       newIssues(database),
+		Issues:       newIssues(dependencies.Logger, database),
 		Projects:     newProjects(database, dependencies.Registry, settings),
 		Connections:  connections,
 		Deliveries:   newDeliveries(database),

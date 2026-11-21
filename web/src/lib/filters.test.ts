@@ -3,9 +3,11 @@ import {
 	changed,
 	cleared,
 	dayRange,
+	readChoice,
 	readChoices,
 	readDays,
 	readPaging,
+	readProjects,
 	readText
 } from './filters.ts';
 
@@ -20,6 +22,27 @@ describe('reading a list address', () => {
 				'warn'
 			])
 		).toEqual(['fatal', 'error', 'warn']);
+	});
+
+	it('reads projects by name or id, as names', () => {
+		const projects = [
+			{ id: 1, name: 'backend' },
+			{ id: 2, name: 'frontend' },
+			{ id: 3, name: 'worker' }
+		];
+
+		expect(readProjects(params('project=frontend&project=1&project=ghost'), projects)).toEqual([
+			'backend',
+			'frontend'
+		]);
+	});
+
+	it('reads one known value or none', () => {
+		expect(readChoice(params('sort=event_count'), 'sort', ['event_count', 'project'])).toBe(
+			'event_count'
+		);
+		expect(readChoice(params('sort=drop'), 'sort', ['event_count'])).toBe('');
+		expect(readChoice(params(''), 'sort', ['event_count'])).toBe('');
 	});
 
 	it('reads paging with its defaults', () => {

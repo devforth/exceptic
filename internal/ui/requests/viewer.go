@@ -1,3 +1,5 @@
+// Package requests reads what the UI's requests carry about HTTP itself:
+// redirect targets, htmx headers and the viewer.
 package requests
 
 import (

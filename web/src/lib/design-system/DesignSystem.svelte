@@ -10,6 +10,7 @@ Every component with its variants, on sample data. Served only by the dev server
 	import Button from '#lib/components/Button.svelte';
 	import type { ButtonVariant } from '#lib/components/button.ts';
 	import ActiveFilters from '#lib/components/ActiveFilters.svelte';
+	import AgentCopyButton from '#lib/components/AgentCopyButton.svelte';
 	import Breadcrumbs from '#lib/components/Breadcrumbs.svelte';
 	import Card from '#lib/components/Card.svelte';
 	import Choice from '#lib/components/Choice.svelte';
@@ -27,6 +28,7 @@ Every component with its variants, on sample data. Served only by the dev server
 	import EmptyState from '#lib/components/EmptyState.svelte';
 	import Hint from '#lib/components/Hint.svelte';
 	import Icon from '#lib/components/Icon.svelte';
+	import IssueActions from '#lib/components/IssueActions.svelte';
 	import LevelBadge from '#lib/components/LevelBadge.svelte';
 	import LevelChoices from '#lib/components/LevelChoices.svelte';
 	import LevelSummary from '#lib/components/LevelSummary.svelte';
@@ -43,6 +45,7 @@ Every component with its variants, on sample data. Served only by the dev server
 	import SearchField from '#lib/components/SearchField.svelte';
 	import SecretReveal from '#lib/components/SecretReveal.svelte';
 	import Select from '#lib/components/Select.svelte';
+	import StatusBadge from '#lib/components/StatusBadge.svelte';
 	import type { StatusTone } from '#lib/components/status.ts';
 	import StatusText from '#lib/components/StatusText.svelte';
 	import Table from '#lib/components/Table.svelte';
@@ -344,6 +347,9 @@ Every component with its variants, on sample data. Served only by the dev server
 			<CopyButton text="http://key@localhost:8000/1" title="Copy DSN" copied="DSN copied." />
 			<Button onclick={() => toast.show('A message in the toast.')}>Show a toast</Button>
 		</Row>
+		<Row caption="AgentCopyButton: the MCP request of an issue (Copy for agent)">
+			<AgentCopyButton request={'Exceptic MCP: get_issue {"issue_id":"k3x9q2mf"}'} />
+		</Row>
 		<Row caption="CopyField: a read-only value with its copy button" wide>
 			<CopyField
 				value="http://0123456789abcdef@localhost:8000/1"
@@ -408,6 +414,15 @@ Every component with its variants, on sample data. Served only by the dev server
 			<Badge tone="project" label="worker" href="#badges" title="Issues of worker" />
 			<Badge tone="error" label="error" href="#badges" />
 		</Row>
+		<Row
+			caption="mark: a sign before the label; StatusBadge: an issue status (its meaning in the tooltip)"
+		>
+			<Badge tone="success" mark="✓" label="done" />
+			{#each ['unresolved', 'resolved', 'ignored', 'all'] as status (status)}
+				<StatusBadge {status} />
+			{/each}
+			<StatusBadge status="resolved" href="#badges" />
+		</Row>
 		<Row caption="StatusText: a state as a colored word">
 			{#each statusTones as tone (tone)}
 				<StatusText {tone} title="A {tone} state">{tone}</StatusText>
@@ -444,6 +459,16 @@ Every component with its variants, on sample data. Served only by the dev server
 			<ConfirmButton variant="default" confirm={sampleReset} action={pause}>
 				Reset password
 			</ConfirmButton>
+			<ConfirmButton confirm={sampleConfirm} action={pause} disabled title="Nothing to delete">
+				Delete (disabled)
+			</ConfirmButton>
+		</Row>
+		<Row
+			caption="IssueActions: an issue's page (by its status), and the checked issues of a list (off with none checked)"
+		>
+			<IssueActions issueIds={['sample00']} status="unresolved" canDelete ondone={pause} />
+			<IssueActions issueIds={['sample00']} status="resolved" canDelete={false} ondone={pause} />
+			<IssueActions issueIds={[]} canDelete ondone={pause} />
 		</Row>
 		<Row caption="RowMenu: the ⋯ of a table row, items as data; Delete asks first">
 			<span>worker</span>

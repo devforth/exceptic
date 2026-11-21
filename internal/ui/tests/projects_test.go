@@ -64,14 +64,14 @@ func TestProjectLifecycle(t *testing.T) {
 	envelope := []byte(`{}` + "\n" + `{"type":"event"}` + "\n" + `{"message":"from mobile"}`)
 	server.sendEnvelope("/api/"+id+"/envelope/?sentry_key="+key, envelope)
 
-	if !strings.Contains(server.page("/issues?project=mobile"), "from mobile") {
+	if !strings.Contains(server.page("/api/ui/list_issues?project=mobile"), "from mobile") {
 		t.Fatal("the event of the new project is not listed")
 	}
 
 	// Levels the project does not record are dropped at ingest.
 	server.sendEnvelope("/api/"+id+"/envelope/?sentry_key="+key, []byte(`{}`+"\n"+`{"type":"event"}`+"\n"+`{"message":"mobile info","level":"info"}`))
 
-	if strings.Contains(server.page("/issues?project=mobile&status=all"), "mobile info") {
+	if strings.Contains(server.page("/api/ui/list_issues?project=mobile&status=all"), "mobile info") {
 		t.Fatal("an info event must be dropped when only error and fatal are recorded")
 	}
 
@@ -182,7 +182,7 @@ func TestProjectColor(t *testing.T) {
 	server.login()
 
 	stylesheet := regexp.MustCompile(`href="(/project-colors\.css\?v=[0-9a-f]+)"`)
-	page := server.page("/issues")
+	page := server.page("/agents")
 	before := stylesheet.FindStringSubmatch(page)
 
 	if before == nil {
@@ -203,7 +203,7 @@ func TestProjectColor(t *testing.T) {
 		t.Fatalf("set color: %d %s", response.Code, response.Body)
 	}
 
-	after := stylesheet.FindStringSubmatch(server.page("/issues"))
+	after := stylesheet.FindStringSubmatch(server.page("/agents"))
 
 	if after[1] == before[1] {
 		t.Fatal("the stylesheet URL must change with the colors, or browsers keep the old one")

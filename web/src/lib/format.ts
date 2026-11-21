@@ -29,6 +29,11 @@ export function exactTime(iso: string): string {
 		.replace(/\.\d+Z$/, ' UTC');
 }
 
+/** The time of day in UTC to the millisecond, for steps close together: "16:26:59.148". */
+export function clockTime(iso: string): string {
+	return new Date(iso).toISOString().slice(11, 23);
+}
+
 // eslint-disable-next-line no-control-regex -- the escape character is what it removes
 const ansiEscape = /\x1b\[[0-9;]*[A-Za-z]/g;
 

@@ -3,22 +3,11 @@ package helpers
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/devforth/exceptic/internal/platform/config"
-	"github.com/devforth/exceptic/internal/sentry"
 )
-
-// Short returns the first n bytes, for IDs shown in tables (free text: textutil.Shorten).
-func Short(text string, n int) string {
-	if len(text) <= n {
-		return text
-	}
-
-	return text[:n]
-}
 
 // TimeAgo is a short relative time ("5m ago"). The exact time goes in a title attribute.
 func TimeAgo(value time.Time) string {
@@ -46,29 +35,4 @@ func TimeAgo(value time.Time) string {
 // LevelClass maps Sentry and log levels to one of the CSS badge colors.
 func LevelClass(level string) string {
 	return "level-" + config.ShownLevel(level)
-}
-
-var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
-
-// CleanLog removes terminal color codes that loggers like pino add.
-func CleanLog(text string) string {
-	return ansiEscape.ReplaceAllString(text, "")
-}
-
-// HandledBadge says whether the SDK caught an exception, with the badge class.
-type HandledBadge struct {
-	Label, Class string
-}
-
-// Handled is the handled or unhandled badge of an exception; nil when the SDK does not say.
-func Handled(mechanism *sentry.Mechanism) *HandledBadge {
-	if mechanism == nil || mechanism.Handled == nil {
-		return nil
-	}
-
-	if *mechanism.Handled {
-		return &HandledBadge{Label: "handled", Class: LevelClass("debug")}
-	}
-
-	return &HandledBadge{Label: "unhandled", Class: LevelClass("error")}
 }

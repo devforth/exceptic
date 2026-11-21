@@ -1,0 +1,183 @@
+<script lang="ts">
+	import { goto, invalidateAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
+	import { choices } from '#lib/api/catalog.gen.ts';
+	import type { Item } from '#lib/api/client.ts';
+	import ActiveFilters from '#lib/components/ActiveFilters.svelte';
+	import AgentCopyButton from '#lib/components/AgentCopyButton.svelte';
+	import Badge from '#lib/components/Badge.svelte';
+	import Button from '#lib/components/Button.svelte';
+	import DateRange from '#lib/components/DateRange.svelte';
+	import FilterBar from '#lib/components/FilterBar.svelte';
+	import IssueActions from '#lib/components/IssueActions.svelte';
+	import { doneMessage, type IssueAction } from '#lib/components/issueActions.ts';
+	import { statusLabel, statusRowTone, statusTitle } from '#lib/components/issueStatus.ts';
+	import LevelBadge from '#lib/components/LevelBadge.svelte';
+	import PageHeading from '#lib/components/PageHeading.svelte';
+	import Pager from '#lib/components/Pager.svelte';
+	import Picker from '#lib/components/Picker.svelte';
+	import SearchField from '#lib/components/SearchField.svelte';
+	import Select from '#lib/components/Select.svelte';
+	import Table from '#lib/components/Table.svelte';
+	import type { TableColumn } from '#lib/components/table.ts';
+	import Time from '#lib/components/Time.svelte';
+	import { changed, cleared, type Change } from '#lib/filters.ts';
+	import { toast } from '#lib/toast.svelte.ts';
+	import type { PageProps } from './$types';
+	import BulkBar from './BulkBar.svelte';
+	import { columnSorts, issueChips, showsResolved, sortedBy, withStatus } from './issues.ts';
+
+	let { data }: PageProps = $props();
+
+	type Issue = Item<'list_issues'>;
+	type IssueColumn = TableColumn<
+		'issue' | 'project' | 'events' | 'firstSeen' | 'lastSeen' | 'resolved' | 'actions'
+	>;
+
+	const url = $derived(page.url);
+	const canAdminister = $derived(page.data.session?.can_administer ?? false);
+
+	const columns: IssueColumn[] = $derived([
+		{ key: 'issue', label: 'Issue' },
+		{ key: 'project', label: 'Project', sort: columnSorts.project },
+		{ key: 'events', label: 'Events', number: true, wideOnly: true, sort: columnSorts.events },
+		{ key: 'firstSeen', label: 'First seen', wideOnly: true, sort: columnSorts.firstSeen },
+		{ key: 'lastSeen', label: 'Last seen', wideOnly: true, sort: columnSorts.lastSeen },
+		...(showsResolved(data.filters.status)
+			? [{ key: 'resolved' as const, label: 'Resolved', wideOnly: true }]
+			: []),
+		{ key: 'actions', label: 'Actions', actions: true }
+	]);
+
+	const statusOptions = choices.list_issues.status.map((status) => ({
+		value: status,
+		label: statusLabel(status)
+	}));
+
+	let selected: ReadonlySet<string | number> = $state(new Set());
+	const selectedIds = $derived([...selected].map(String));
+
+	/** Shows the list with the change; typing replaces the entry instead of adding one. */
+	function show(change: Change, replace = false) {
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- this page with another query
+		void goto(changed(url, change), { reset: false, replace });
+	}
+
+	async function acted(action: IssueAction) {
+		toast.show(doneMessage(action, selectedIds.length));
+		// The same list again (and the menu's count); the selection empties with the new rows.
+		await invalidateAll();
+	}
+
+	const issueHref = (issue: Issue) => resolve('/(app)/issues/[id]', { id: issue.id });
+</script>
+
+<PageHeading title="Issues" />
+
+<FilterBar label="Issue filters">
+	<Picker
+		label="Projects"
+		all="All projects"
+		options={data.projectNames}
+		selected={data.filters.project}
+		onchange={(project: string[]) => show({ project })}
+	>
+		{#snippet option(name)}<Badge tone="project" label={name} />{/snippet}
+	</Picker>
+	<Select
+		label="Status"
+		value={data.filters.status}
+		options={statusOptions}
+		onchange={(status: string) => {
+			// eslint-disable-next-line svelte/no-navigation-without-resolve -- this page with another query
+			void goto(withStatus(url, status), { reset: false });
+		}}
+	/>
+	<Picker
+		label="Levels"
+		all="All levels"
+		options={data.levelChoices}
+		selected={data.filters.level}
+		onchange={(level: string[]) => show({ level })}
+	>
+		{#snippet option(level)}<LevelBadge {level} />{/snippet}
+	</Picker>
+	<SearchField
+		value={data.filters.query}
+		label="Search title or location"
+		onchange={(query: string) => show({ query }, true)}
+	/>
+	<DateRange
+		from={data.filters.from}
+		to={data.filters.to}
+		onchange={(from: string, to: string) => show({ from, to })}
+	/>
+</FilterBar>
+
+<ActiveFilters chips={issueChips(url, data.filters)} clear={cleared(url)} />
+
+{#if data.issues.length > 0}
+	<BulkBar count={selectedIds.length}>
+		<IssueActions issueIds={selectedIds} canDelete={canAdminister} ondone={acted} />
+	</BulkBar>
+{/if}
+
+<Table
+	{columns}
+	rows={data.issues}
+	label="Issues"
+	rowKey={(issue: Issue) => issue.id}
+	bind:selected
+	selectLabel={(issue: Issue) => `Select ${issue.title}`}
+	sort={{ current: data.filters.sort, href: (sort: string) => sortedBy(url, sort) }}
+	rowTone={(issue: Issue) => statusRowTone(issue.status)}
+	rowTitle={(issue: Issue) => statusTitle(issue.status)}
+>
+	{#snippet cell(issue: Issue, column: IssueColumn)}
+		{#if column.key === 'issue'}
+			<LevelBadge level={issue.level} href={changed(url, { level: [issue.level] })} />
+			<a href={issueHref(issue)} class="font-semibold text-text">{issue.title}</a>
+			<span class="sr-only">({issue.status})</span>
+			{#if issue.location}
+				<div class="text-xs text-muted">{issue.location}</div>
+			{/if}
+		{:else if column.key === 'project'}
+			<Badge
+				tone="project"
+				label={issue.project}
+				href={changed(url, { project: [issue.project] })}
+				title="Show only {issue.project}"
+			/>
+		{:else if column.key === 'events'}
+			{issue.event_count}
+		{:else if column.key === 'firstSeen'}
+			<Time at={issue.first_seen} />
+		{:else if column.key === 'lastSeen'}
+			<Time at={issue.last_seen} />
+		{:else if column.key === 'resolved'}
+			{#if issue.resolved_at}<Time at={issue.resolved_at} />{:else}<span class="text-muted">
+					—
+				</span>{/if}
+		{:else}
+			<span class="flex items-center gap-2">
+				<AgentCopyButton request={issue.mcp_reference ?? ''} />
+				<Button
+					variant="info"
+					icon="view"
+					href={issueHref(issue)}
+					title="Open the issue {issue.title}"
+				/>
+			</span>
+		{/if}
+	{/snippet}
+	{#snippet empty()}No issues match these filters.{/snippet}
+</Table>
+
+<Pager
+	page={data.page}
+	perPage={data.perPage}
+	total={data.count}
+	href={(number: number) => changed(url, { page: number > 1 ? String(number) : null })}
+	onperpage={(perPage: number) => show({ per_page: String(perPage) })}
+/>

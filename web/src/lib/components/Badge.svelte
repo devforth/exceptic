@@ -1,7 +1,8 @@
 <!--
 @component
 A short label: a level or state filled in its tone, or a project outlined in its color (from
-the session, set through the style: directive, which the CSP allows). With an href it is a link.
+the session, set through the style: directive, which the CSP allows). With an href it is a link;
+a mark is a sign before the label (an issue status), hidden from screen readers.
 -->
 <script lang="ts">
 	import { page } from '$app/state';
@@ -13,9 +14,10 @@ the session, set through the style: directive, which the CSP allows). With an hr
 		label: string;
 		href?: string;
 		title?: string;
+		mark?: string;
 	};
 
-	let { tone, label, href, title }: Props = $props();
+	let { tone, label, href, title, mark }: Props = $props();
 
 	const filled = 'px-[7px] py-px align-[2px] lowercase';
 
@@ -41,9 +43,15 @@ the session, set through the style: directive, which the CSP allows). With an hr
 	const color = $derived(project ? page.data.session?.project_colors?.[project] : undefined);
 </script>
 
+{#snippet text()}{#if mark}<span class="mr-1" aria-hidden="true">{mark}</span>{/if}{label}{/snippet}
+
 {#if href}
 	<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- callers pass resolved paths -->
-	<a {href} class={classes} {title} data-project={project} style:--project-color={color}>{label}</a>
+	<a {href} class={classes} {title} data-project={project} style:--project-color={color}>
+		{@render text()}
+	</a>
 {:else}
-	<span class={classes} {title} data-project={project} style:--project-color={color}>{label}</span>
+	<span class={classes} {title} data-project={project} style:--project-color={color}>
+		{@render text()}
+	</span>
 {/if}

@@ -7,11 +7,9 @@
   <meta name="htmx-config" content='{"includeIndicatorStyles": false}'>
   <title>{{template "title" .}} · {{appName}}</title>
   <link rel="icon" href="data:,"><!-- no favicon request (it would hit the 404 page) -->
-  <link rel="stylesheet" href="{{asset "flatpickr.min.css"}}">
   <link rel="stylesheet" href="{{asset "app.css"}}">
   {{with .ProjectColors}}<link rel="stylesheet" href="{{.}}">{{end}}
   <script src="{{asset "htmx.min.js"}}" defer></script>
-  <script src="{{asset "flatpickr.min.js"}}" defer></script>
   <script src="{{asset "app.js"}}" defer></script>
 </head>
 <body>

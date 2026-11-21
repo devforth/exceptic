@@ -54,11 +54,23 @@ func TestTypeScriptCatalog(t *testing.T) {
 	}
 }
 
-// outputSchemas: the times as RFC 3339 strings, raw JSON as any value.
+// outputSchemas: the times as RFC 3339 strings, raw JSON as any value, the
+// states of a value as their union.
 var outputSchemas = &jsonschema.ForOptions{TypeSchemas: map[reflect.Type]*jsonschema.Schema{
-	reflect.TypeFor[time.Time]():       {Type: "string", Format: "date-time"},
-	reflect.TypeFor[json.RawMessage](): {},
+	reflect.TypeFor[time.Time]():           {Type: "string", Format: "date-time"},
+	reflect.TypeFor[json.RawMessage]():     {},
+	reflect.TypeFor[services.EventState](): {Type: "string", Enum: enum(services.EventStates)},
 }}
+
+func enum[Value ~string](values []Value) []any {
+	result := make([]any, len(values))
+
+	for index, value := range values {
+		result[index] = string(value)
+	}
+
+	return result
+}
 
 func typescriptCatalog(endpoints []Endpoint) (string, error) {
 	endpoints = slices.DeleteFunc(slices.Clone(endpoints), func(endpoint Endpoint) bool { return !endpoint.Serves(TransportUI) })

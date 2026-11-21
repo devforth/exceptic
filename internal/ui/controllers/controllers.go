@@ -24,7 +24,6 @@ type Controllers struct {
 	retention    config.Retention
 	views        *views.Renderer
 	auth         *session.Auth
-	issues       *services.Issues
 	projects     *services.Projects
 	connections  *services.Connections
 	deliveries   *services.Deliveries
@@ -58,7 +57,6 @@ func New(dependencies Dependencies) *Controllers {
 		retention:     settings.Retention,
 		views:         dependencies.Views,
 		auth:          dependencies.Auth,
-		issues:        all.Issues,
 		projects:      all.Projects,
 		connections:   all.Connections,
 		deliveries:    all.Deliveries,
@@ -79,7 +77,7 @@ func New(dependencies Dependencies) *Controllers {
 	}
 }
 
-// Home sends the site root to the issues.
+// Home sends the site root to the issues (the web app's).
 func (controller *Controllers) Home(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/issues", http.StatusSeeOther)
 }

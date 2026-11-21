@@ -91,8 +91,37 @@ func Endpoints(projects config.ProjectList, all *services.All) []Endpoint {
 		}, handler.deleteIssue),
 
 		// The web app only: its menu (open with a temporary password, so the app
-		// can send the user to choose one), the storage of the Projects page and
-		// the counts and choices of the Logs page.
+		// can send the user to choose one), the storage of the Projects page,
+		// the counts and choices of the lists and the issue page with its actions.
+		Define(Endpoint{
+			Name:        "count_issues",
+			Description: "How many issues match the filters of list_issues.",
+			ReadOnly:    true,
+			Transports:  TransportUI,
+			Choices:     map[string][]string{"status": statusFilters, "level": config.Levels, "date_by": store.DateFields},
+		}, handler.countIssues),
+		Define(Endpoint{
+			Name:        "list_issue_levels",
+			Description: "The levels some issue has, highest first: the choices of the level filter.",
+			ReadOnly:    true,
+			Transports:  TransportUI,
+		}, handler.listIssueLevels),
+		// Unredacted event data: never for an agent's model provider.
+		Define(Endpoint{
+			Name: "get_issue_details",
+			Description: "An issue with its status history, newest events and one event (event_id, the latest by default) read for its page: " +
+				"exceptions, frames, breadcrumbs, request, tags, user, contexts, related logs and the stored payload.",
+			ReadOnly:   true,
+			Transports: TransportUI,
+		}, handler.getIssueDetails),
+		// The issue list and page: up to services.MaxActionIssues issues, the
+		// ones deleted meanwhile skipped; deleting needs an admin (services.Issues).
+		Define(Endpoint{
+			Name:        "apply_issue_action",
+			Description: "Resolve, ignore, reopen or delete issues, recorded in their history as the user.",
+			Transports:  TransportUI,
+			Choices:     map[string][]string{"action": services.IssueActions},
+		}, handler.applyIssueAction),
 		Define(Endpoint{
 			Name:                      "get_session",
 			Description:               "The logged-in user, the app name, the unresolved issue count and the project colors stylesheet.",

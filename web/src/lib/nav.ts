@@ -4,8 +4,6 @@
 import type { IconName } from './icons.ts';
 
 export const oldUI = {
-	issues: '/issues',
-	issue: (id: string) => `/issues/${id}`,
 	newProject: '/projects/new',
 	project: (id: number) => `/projects/${id}`,
 	cleanups: '/projects/cleanups',
@@ -29,7 +27,7 @@ export function withQuery(path: string, params: Record<string, string>): string 
 }
 
 /** The routes of the app that are in the menu. */
-type AppRoute = '/(app)/projects' | '/(app)/logs';
+type AppRoute = '/(app)/issues' | '/(app)/projects' | '/(app)/logs';
 
 export type NavEntry = {
 	id: string;
@@ -48,7 +46,13 @@ export const navGroups: NavGroup[] = [
 		id: 'monitoring',
 		label: 'Monitoring',
 		entries: [
-			{ id: 'issues', label: 'Issues', icon: 'issues', href: oldUI.issues, countsUnresolved: true },
+			{
+				id: 'issues',
+				label: 'Issues',
+				icon: 'issues',
+				route: '/(app)/issues',
+				countsUnresolved: true
+			},
 			{ id: 'logs', label: 'Logs', icon: 'logs', route: '/(app)/logs' }
 		]
 	},

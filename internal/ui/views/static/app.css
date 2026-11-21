@@ -155,19 +155,16 @@ table.list tr:last-child td { border-bottom: none; }
    works over the row's own color (status, selection). */
 table.list tbody tr:nth-child(even) > td { background-image: linear-gradient(var(--stripe), var(--stripe)); }
 table.list.compact th, table.list.compact td { padding: 6px 10px; }
-table.list.kv th { width: 30%; text-transform: none; font-size: 13px; letter-spacing: 0; word-break: break-all; }
 table.list td { word-break: break-word; }
-/* Tables of the issue page scroll inside their box, so a long list (events,
-   logs, breadcrumbs) does not push the rest of the page down; the header row
-   stays in view. */
+/* Long tables scroll inside their box, so they do not push the rest of the
+   page down; the header row stays in view. */
 .table-scroll { max-height: 420px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 .table-scroll > table.list { border: none; border-radius: 0; }
 .table-scroll thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); box-shadow: inset 0 -1px 0 var(--border); }
-tr.selected td { background: var(--selected); }
 .number { text-align: right !important; white-space: nowrap; }
 .nowrap { white-space: nowrap; }
 /* Short labels never break inside: "backend" must not become "backe/nd". */
-.badge, .project, .status, time, .log-meta a { white-space: nowrap; }
+.badge, .project, time { white-space: nowrap; }
 a.badge, a.project { text-decoration: none; }
 a.badge:hover, a.project:hover { filter: brightness(.92); }
 
@@ -177,27 +174,10 @@ a.badge:hover, a.project:hover { filter: brightness(.92); }
 .empty { color: var(--muted); padding: 32px; text-align: center; background: var(--surface); border: 1px dashed var(--border); border-radius: 8px; }
 
 .badge { display: inline-block; white-space: nowrap; padding: 1px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; vertical-align: 2px; text-transform: lowercase; }
-/* A shade deeper than --error-bg, so it stands out on the red rows of unresolved issues. */
 .level-error { color: var(--error); background: color-mix(in srgb, var(--error-bg) 90%, var(--error)); }
 .level-warning { color: var(--warning); background: var(--warning-bg); }
 .level-info { color: var(--info); background: var(--info-bg); }
 .level-debug { color: var(--debug); background: var(--debug-bg); }
-
-.status { font-size: 12px; font-weight: 600; }
-.status-resolved { color: var(--success); }
-.status-ignored { color: var(--muted); }
-.status-unresolved { color: var(--error); }
-.status-icon { display: inline-block; width: 1.1em; text-align: center; font-weight: 700; line-height: 1; }
-.status-icon.status-unresolved { font-size: .8em; }
-/* Issue rows by status: unresolved on a red tint, resolved on a green one,
-   ignored faded. The tints alternate (a bit lighter than the badge color,
-   then lighter still) instead of the grey stripe of other tables. */
-tr.issue-unresolved { --row-tint: var(--error-bg); --row-light: 60%; --row-dark: 75%; }
-tr.issue-resolved { --row-tint: var(--success-bg); --row-light: 55%; --row-dark: 85%; }
-tr.issue-unresolved, tr.issue-resolved { background: color-mix(in srgb, var(--row-tint) var(--row-light), var(--surface)); }
-tr.issue-unresolved:nth-child(even), tr.issue-resolved:nth-child(even) { background: color-mix(in srgb, var(--row-tint) var(--row-dark), var(--surface)); }
-table.list tbody tr.issue-unresolved > td, table.list tbody tr.issue-resolved > td { background-image: none; }
-tr.issue-ignored { opacity: .5; }
 
 /* A project badge: text and outline in the project color, no fill, so it is
    told apart from the filled level badges at a glance. The color comes from
@@ -208,75 +188,25 @@ tr.issue-ignored { opacity: .5; }
   /* Dark colors are hard to read on a dark background: lighten them. */
   .project { --project-text: color-mix(in srgb, var(--project-color, var(--debug)) 60%, white); }
 }
-.badge-remove { margin-left: 4px; color: inherit; opacity: .7; text-decoration: none; }
-.badge-remove:hover { opacity: 1; }
-
-/* Multi-select filters (projects, levels): a dropdown of checkboxes. */
-.picker { position: relative; margin: 0; } /* not the margin of other <details> */
-.picker > summary { list-style: none; display: flex; align-items: center; gap: 4px; padding: 6px 30px 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); cursor: pointer; white-space: nowrap; }
-.picker > summary::-webkit-details-marker { display: none; }
-.picker > summary::after { content: ""; position: absolute; right: 11px; top: 50%; margin-top: -3px; border: 5px solid transparent; border-top: 6px solid var(--muted); border-bottom: 0; }
-.picker-menu { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 100%; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); box-shadow: 0 6px 20px rgb(0 0 0 / .12); }
-.picker-menu label.option { white-space: nowrap; }
-.picker-menu .picker-all-option { margin-bottom: 2px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
 
 .back { margin: 0 0 8px; }
-.issue-header { margin-top: 0; }
 .facts { display: flex; flex-wrap: wrap; gap: 24px; margin: 12px 0; }
 .facts dt { color: var(--muted); font-size: 12px; }
 .facts dd { margin: 0; }
 .actions { display: flex; gap: 8px; }
-.issue-header .actions { flex-wrap: wrap; }
-.actions .copy-button { margin-left: auto; }
-.actions .copy-button + .copy-button { margin-left: 0; }
-/* In list rows the labelled copy button (MCP) looks as on the issue page, sized to its label. */
+/* In list rows a labelled copy button is sized to its label. */
 .row-actions .copy-button { margin-left: 0; width: auto; height: 34px; padding: 7px 10px; }
 /* The look of helper buttons next to fields: copy buttons, Find chat ID. */
 .info-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; box-sizing: border-box; height: 36px; padding: 8px 12px; border: 1px solid var(--info); border-radius: 6px; background: var(--info-bg); color: var(--info); font: inherit; white-space: nowrap; }
 .info-button:hover { background: var(--info); color: var(--surface); border-color: var(--info); text-decoration: none; }
 .info-button.disabled { opacity: .45; pointer-events: none; }
-/* An accent link button: opening the issue, next to the blue copy button in the list. */
-a.button.accent { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--accent); border-color: var(--accent); }
-a.button.accent:hover { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .info-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .copy-toast { position: fixed; right: 20px; bottom: 20px; z-index: 1000; max-width: min(360px, calc(100vw - 40px)); padding: 12px 16px; border: 1px solid var(--info); border-radius: 8px; background: var(--info-bg); color: var(--info); box-shadow: 0 4px 20px rgb(0 0 0 / .15); }
 .copy-toast:empty { display: none; }
 .copy-fallback { width: 100%; min-height: 240px; margin-top: 12px; font-family: ui-monospace, monospace; }
 
-.exception { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
-.exception-type { color: var(--error); }
-.exception-value { margin: 0 0 10px; font-family: ui-monospace, monospace; white-space: pre-wrap; word-break: break-word; }
-
 details { margin: 4px 0; }
 details > summary { cursor: pointer; }
-details > pre { margin-top: 6px; background: var(--code-bg); padding: 10px; border-radius: 6px; max-height: 480px; overflow: auto; }
-
-.frame { border-top: 1px solid var(--border); padding: 6px 0; margin: 0; }
-.frame > summary { list-style-position: inside; }
-.frame:not(.in-app) > summary { color: var(--muted); }
-.frame-bare { padding-left: 1.1em; }
-.frame-bare:not(.in-app) { color: var(--muted); }
-.frame .function { font-family: ui-monospace, monospace; font-weight: 600; }
-.frame.in-app .function { color: var(--text); }
-
-pre.code { background: var(--code-bg); padding: 8px 0; border-radius: 6px; margin-top: 6px; overflow-x: auto; white-space: pre; }
-pre.code .line { display: block; padding: 0 10px; }
-pre.code .line.current { background: var(--current-line); }
-pre.code .number { display: inline-block; width: 44px; color: var(--muted); user-select: none; }
-.vars { margin-left: 10px; }
-
-pre.log-body { max-height: 160px; overflow: auto; }
-pre.log-body.expanded { max-height: none; }
-.log-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 4px; }
-pre.message { background: var(--surface); border: 1px solid var(--border); padding: 12px; border-radius: 8px; }
-
-/* A section of the event's details, closed until clicked: the heading is the toggle. */
-details.section > summary h2 { display: inline; margin: 0; }
-details.section > summary code { word-break: break-all; }
-details.section[open] > summary { margin-bottom: 10px; }
-/* The frames sit one level under "Stack trace", on a line that shows it. */
-details.stacktrace > :not(summary) { margin-left: 6px; padding-left: 14px; border-left: 2px solid var(--border); }
-.columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; }
 
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-top: 12px; }
 .storage p { margin: 4px 0; }
@@ -328,11 +258,8 @@ input.mono-field { width: 100%; margin-top: 4px; font-family: ui-monospace, mono
   table.list .wide-only { display: none; }
 }
 
-/* Full-screen log viewer (app.js). */
-dialog.log-viewer { width: min(1200px, 96vw); height: 92vh; max-width: none; max-height: none; padding: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); }
-dialog.log-viewer::backdrop { background: rgb(0 0 0 / .45); }
+/* The title bar of a popup. */
 .viewer-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
-dialog.log-viewer pre { height: calc(100% - 52px); margin: 0; padding: 14px; overflow: auto; background: var(--code-bg); }
 /* A popup with a table ([popover]: no script, Esc and a click outside close it). */
 .popup { width: min(820px, 94vw); padding: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); box-shadow: 0 10px 30px rgb(0 0 0 / .2); }
 .popup::backdrop { background: rgb(0 0 0 / .3); }
@@ -341,54 +268,6 @@ dialog.log-viewer pre { height: calc(100% - 52px); margin: 0; padding: 14px; ove
 .cleanup-done { color: var(--success); }
 .cleanup-running { color: var(--warning); }
 .cleanup-failed { color: var(--error); }
-.log-actions { display: flex; gap: 12px; margin-top: 4px; }
-
-/* Issues list: checkboxes and the bulk action bar. */
-th.check, td.check { width: 52px; padding-right: 0 !important; }
-.bulk-bar { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; background: var(--bg); }
-.bulk-count { margin-right: auto; }
-.bulk-bar button:disabled { opacity: .45; cursor: default; }
-
-/* Applied filters above a list. */
-.active-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -6px 0 12px; }
-.chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 10px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); font-size: 12px; white-space: nowrap; }
-.chip strong { font-weight: 600; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
-.chip-remove { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; color: var(--muted); font-size: 14px; line-height: 1; }
-.chip-remove:hover { background: var(--bg); color: var(--text); text-decoration: none; }
-.clear-filters { font-size: 12px; margin-left: 4px; }
-
-/* Date range field (flatpickr, see app.js). */
-.date-range { position: relative; display: inline-flex; }
-.date-range-input { width: 220px; padding-right: 26px; cursor: pointer; }
-.date-range-clear { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); border: none; background: none; padding: 0 4px; color: var(--muted); font-size: 16px; line-height: 1; }
-.date-range-clear:hover { color: var(--text); }
-
-/* flatpickr in the colors of this UI, light and dark. Today is outlined, the
-   picked range is filled, days that cannot be picked fade out. */
-.flatpickr-calendar { background: var(--surface); border: 1px solid var(--border); box-shadow: 0 6px 24px rgb(0 0 0 / .18); color: var(--text); }
-.flatpickr-calendar.arrowTop::before { border-bottom-color: var(--border); }
-.flatpickr-calendar.arrowTop::after { border-bottom-color: var(--surface); }
-.flatpickr-calendar.arrowBottom::before { border-top-color: var(--border); }
-.flatpickr-calendar.arrowBottom::after { border-top-color: var(--surface); }
-.flatpickr-months .flatpickr-month,
-.flatpickr-current-month .flatpickr-monthDropdown-months,
-.flatpickr-current-month input.cur-year { color: var(--text); fill: var(--text); background: var(--surface); }
-.flatpickr-months .flatpickr-prev-month, .flatpickr-months .flatpickr-next-month { color: var(--muted); fill: var(--muted); }
-.flatpickr-months .flatpickr-prev-month:hover svg, .flatpickr-months .flatpickr-next-month:hover svg { fill: var(--accent); }
-span.flatpickr-weekday { color: var(--muted); background: transparent; }
-.flatpickr-day { color: var(--text); }
-.flatpickr-day:hover, .flatpickr-day:focus { background: var(--bg); border-color: var(--bg); }
-.flatpickr-day.today { border: 2px solid var(--accent); color: var(--accent); font-weight: 700; }
-.flatpickr-day.today:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
-.flatpickr-day.prevMonthDay, .flatpickr-day.nextMonthDay { color: var(--muted); opacity: .6; }
-.flatpickr-day.flatpickr-disabled, .flatpickr-day.flatpickr-disabled:hover { color: var(--muted); opacity: .3; background: transparent; }
-.flatpickr-day.inRange,
-.flatpickr-day.inRange:hover { background: var(--selected); border-color: var(--selected); box-shadow: -5px 0 0 var(--selected), 5px 0 0 var(--selected); color: var(--text); }
-.flatpickr-day.selected, .flatpickr-day.startRange, .flatpickr-day.endRange,
-.flatpickr-day.selected:hover, .flatpickr-day.startRange:hover, .flatpickr-day.endRange:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
-.flatpickr-day.selected.startRange + .endRange:not(:nth-child(7n+1)),
-.flatpickr-day.startRange.startRange + .endRange:not(:nth-child(7n+1)),
-.flatpickr-day.endRange.startRange + .endRange:not(:nth-child(7n+1)) { box-shadow: -10px 0 0 var(--accent); }
 
 /* Notification connections. */
 .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -511,15 +390,6 @@ pre.snippet { background: var(--code-bg); padding: 10px; border-radius: 6px; ove
   .mcp-token-row > input { flex-basis: calc(100% - 140px); }
 }
 
-/* Sortable column headings: both arrows dim, the current direction strong. */
-th.sortable a { display: inline-flex; align-items: center; gap: 4px; color: inherit; text-decoration: none; }
-th.sortable a:hover { color: var(--text); }
-th.number.sortable a { flex-direction: row-reverse; }
-.sort-arrows { width: 8px; height: 13px; flex-shrink: 0; fill: currentColor; }
-.sort-arrows path { opacity: .3; }
-.sort-arrows.asc .up, .sort-arrows.desc .down { opacity: 1; }
-th[aria-sort] { color: var(--text); }
-
 /* Users and the account page. */
 .temporary-password { margin: 12px 0; padding: 12px; border: 1px solid var(--warning); border-radius: 8px; background: var(--warning-bg); }
 .temporary-password .copy-row { max-width: 520px; }
@@ -527,9 +397,6 @@ th[aria-sort] { color: var(--text); }
 .badge.role-admin, .badge.role-user { color: var(--text); background: var(--code-bg); }
 /* The account link sits in a nav of its own above Log out. */
 .sidebar nav.sidebar-account { flex: none; }
-.status-history { list-style: none; margin: 0; padding: 0; }
-.status-history li { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--border); }
-.status-history li:last-child { border-bottom: none; }
 /* A DSN with its copy button (projects). */
 .dsn-row { margin-top: 4px; align-items: center; }
 .dsn-row .copy-button { height: 34px; }

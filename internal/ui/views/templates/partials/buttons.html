@@ -1,7 +1,7 @@
 {{/* Buttons and links shared by pages. */}}
 
-{{/* Copies Text (copyText) or the element with id Target (copyButton); without a Label it is an icon. */}}
-{{define "copy-button"}}<button type="button" class="copy-button info-button" {{with .Text}}data-copy-text="{{.}}"{{else}}data-copy="{{.Target}}"{{end}} data-copied="{{.Copied}}" title="{{.Title}}" aria-label="{{.Title}}">
+{{/* Copies the element with id Target (copyButton); without a Label it is an icon. */}}
+{{define "copy-button"}}<button type="button" class="copy-button info-button" data-copy="{{.Target}}" data-copied="{{.Copied}}" title="{{.Title}}" aria-label="{{.Title}}">
   <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg>
   {{with .Label}}<span>{{.}}</span>{{end}}
 </button>{{end}}
@@ -16,28 +16,6 @@
 
 {{/* "Retry now" for the messages of a connection waiting for a retry (retryNow id count return; "" = the connection page). */}}
 {{define "retry-now"}}<form class="inline-action" method="post" action="/notifications/{{.ID}}/retry">{{with .Return}}<input type="hidden" name="return" value="{{.}}">{{end}}<button type="submit" title="{{.Count}} message(s) wait for a retry: send them again now">Retry now ({{.Count}})</button></form>{{end}}
-
-{{/* Issue action buttons (issueActions or bulkActions), posted as "action"; app.js confirms each, {count} = checked issues. */}}
-{{define "issue-action-buttons"}}
-{{$target := "this issue"}}{{if .Bulk}}{{$target = "{count} selected issue(s)"}}{{end}}
-{{if .Resolve}}
-<button name="action" value="resolve" class="primary"
-        data-confirm="Resolve {{$target}}? If the error happens again, it is reopened.">Resolve</button>
-<button name="action" value="ignore"
-        data-confirm="Ignore {{$target}}? New events are still recorded, but it stays out of the unresolved list.">Ignore</button>
-{{end}}
-{{if .Reopen}}
-<button name="action" value="reopen"
-        data-confirm="Reopen {{$target}}?">Reopen</button>
-{{end}}
-{{if .CanDelete}}
-<button name="action" value="delete" class="danger"
-        data-confirm="Delete {{$target}} and all its events? This cannot be undone. If the error happens again, it starts a new issue.">Delete</button>
-{{end}}
-{{end}}
-
-{{/* Copies the MCP request of an issue (its ID), as notifications carry it. */}}
-{{define "mcp-copy"}}{{template "copy-button" (copyText (mcpReference .) "MCP" "Copy the MCP request for a coding agent" "MCP request copied to clipboard.")}}{{end}}
 
 {{/* A delete form (deleteProject or deleteConnection) that asks first; without a Label the button is a trash icon. */}}
 {{define "delete-button"}}<form method="post" action="{{.URL}}">
