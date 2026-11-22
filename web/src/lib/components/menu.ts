@@ -10,11 +10,19 @@ export type MenuItem = {
 	/** A line above it: destructive items come last, after one. */
 	separatorBefore?: boolean;
 } & (
-	| { href: string; action?: never; confirm?: never }
+	| { href: string; action?: never; confirm?: never; disabled?: never }
 	| {
 			action: ConfirmedAction;
 			href?: never;
 			/** Asked in a ConfirmDialog before the action runs. */
 			confirm?: Confirmation;
+			disabled?: never;
+	  }
+	| {
+			/** Why it cannot be chosen: shown under the label. */
+			disabled: string;
+			href?: never;
+			action?: never;
+			confirm?: never;
 	  }
 );

@@ -2,11 +2,11 @@
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { help, levels } from '#lib/api/catalog.gen.ts';
-	import { ApiError, post, type Item } from '#lib/api/client.ts';
+	import { post, type Item } from '#lib/api/client.ts';
 	import Badge from '#lib/components/Badge.svelte';
 	import Button from '#lib/components/Button.svelte';
 	import Card from '#lib/components/Card.svelte';
-	import Dialog from '#lib/components/Dialog.svelte';
+	import FormDialog from '#lib/components/FormDialog.svelte';
 	import Hint from '#lib/components/Hint.svelte';
 	import LevelBadge from '#lib/components/LevelBadge.svelte';
 	import type { MenuItem } from '#lib/components/menu.ts';
@@ -18,7 +18,9 @@
 	import UsageBar from '#lib/components/UsageBar.svelte';
 	import { withQuery } from '#lib/nav.ts';
 	import { deleteConfirmation, deleteProject, usageSegments } from '#lib/projects.ts';
+	import { FormState } from '#lib/form.svelte.ts';
 	import { toast } from '#lib/toast.svelte.ts';
+	import ColorField from './ColorField.svelte';
 	import ProjectNameField from './ProjectNameField.svelte';
 	import type { PageProps } from './$types';
 
@@ -57,49 +59,51 @@
 		void invalidateAll();
 	}
 
-	// Rename: a dialog with the name; the server checks it (a refused name stays in the dialog).
-	let renaming: Project | undefined = $state();
+	// Rename and Change color: a small dialog each; the server checks the value (a refused one
+	// stays in the dialog with its problem).
+	let editing: Project | undefined = $state();
 	let renameOpen = $state(false);
+	let colorOpen = $state(false);
 	let newName = $state('');
-	let renameError = $state('');
-	let renameBusy = $state(false);
-	let renameForm: HTMLFormElement | undefined = $state();
+	let newColor = $state('');
+	const editForm = new FormState();
 
-	function startRename(project: Project) {
-		renaming = project;
-		newName = project.name;
-		renameError = '';
-		renameOpen = true;
-	}
+	function startEdit(project: Project, dialog: 'name' | 'color') {
+		editing = project;
+		editForm.error = '';
+		editForm.fields = {};
 
-	async function rename(event: SubmitEvent) {
-		event.preventDefault();
-
-		if (!renaming || renameBusy) return;
-
-		renameBusy = true;
-		renameError = '';
-
-		try {
-			await post('update_project', { project: String(renaming.id), name: newName.trim() });
-			renameOpen = false;
-			toast.show('Project renamed.');
-			await invalidateAll();
-		} catch (failure) {
-			renameError = failure instanceof ApiError ? failure.message : 'Could not rename the project.';
-		} finally {
-			renameBusy = false;
+		if (dialog === 'name') {
+			newName = project.name;
+			renameOpen = true;
+		} else {
+			newColor = colors[project.name] ?? '';
+			colorOpen = true;
 		}
 	}
 
-	// Projects from PROJECTS keep their name and cannot be deleted.
+	async function saveEdit(change: { name: string } | { color: string }, done: string) {
+		if (!editing) return;
+
+		await post('update_project', { project: String(editing.id), ...change });
+		toast.show(done);
+		// Saved: a failed reload of the list is not a failed save.
+		void invalidateAll();
+	}
+
+	// Projects from PROJECTS keep their name and cannot be deleted; their color can change.
 	function menuOf(project: Project): MenuItem[] {
 		const id = project.id;
 		const editable = canAdminister && !project.from_env;
 		const items: MenuItem[] = [];
 
-		if (editable) {
-			items.push({ label: 'Rename', icon: 'edit', action: () => startRename(project) });
+		if (canAdminister) {
+			items.push(
+				project.from_env
+					? { label: 'Rename', icon: 'edit', disabled: 'Its name is set in PROJECTS.' }
+					: { label: 'Rename', icon: 'edit', action: () => startEdit(project, 'name') },
+				{ label: 'Change color', icon: 'palette', action: () => startEdit(project, 'color') }
+			);
 		}
 
 		items.push({
@@ -243,18 +247,20 @@
 	{/snippet}
 </Table>
 
-<Dialog
+<FormDialog
 	title="Rename project"
 	bind:open={renameOpen}
-	size="narrow"
-	dismissible={!renameBusy}
-	onopen={() => renameForm?.querySelector('input')?.select()}
+	form={editForm}
+	save={() => saveEdit({ name: newName.trim() }, 'Project renamed.')}
 >
-	<form id="rename-project" bind:this={renameForm} onsubmit={rename}>
-		<ProjectNameField bind:value={newName} error={renameError} />
-	</form>
-	{#snippet actions()}
-		<Button disabled={renameBusy} onclick={() => (renameOpen = false)}>Cancel</Button>
-		<Button variant="primary" type="submit" form="rename-project" busy={renameBusy}>Save</Button>
-	{/snippet}
-</Dialog>
+	<ProjectNameField bind:value={newName} error={editForm.fields.name} />
+</FormDialog>
+
+<FormDialog
+	title="Change color"
+	bind:open={colorOpen}
+	form={editForm}
+	save={() => saveEdit({ color: newColor }, 'Color changed.')}
+>
+	<ColorField bind:value={newColor} name={editing?.name ?? ''} error={editForm.fields.color} />
+</FormDialog>

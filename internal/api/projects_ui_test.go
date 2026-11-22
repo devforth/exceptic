@@ -203,6 +203,17 @@ func TestUIProjectFromEnv(t *testing.T) {
 		t.Errorf("%+v", project)
 	}
 
+	// The Projects page's Change color sends the color alone; the menu's badges follow at once.
+	admin.request(http.MethodPost, "update_project", `{"project":"1","color":"#654321"}`, &project)
+
+	var session sessionAnswer
+
+	admin.read("get_session", &session)
+
+	if project.Name != "backend" || project.Color != "#654321" || session.ProjectColors["backend"] != "#654321" {
+		t.Errorf("color alone: %+v, session colors %v", project, session.ProjectColors)
+	}
+
 	if response := admin.call(http.MethodPost, "delete_project", `{"project":"1"}`); response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "PROJECTS") {
 		t.Errorf("delete: %d %s", response.Code, response.Body)
 	}

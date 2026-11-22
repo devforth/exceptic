@@ -3,7 +3,8 @@
 The actions of a table row behind one "⋯" button: a menu of links and buttons, given as data.
 Keyboard: the arrows move (and wrap), Home and End go to the ends, Esc closes it and returns to
 the button, Tab closes it; a click outside, scrolling or resizing close it too. An item with a
-confirmation asks in a ConfirmDialog first. The menu is fixed under the button (above it when
+confirmation asks in a ConfirmDialog first; a disabled item stays in the list (arrows reach it)
+and says why under its label. The menu is fixed under the button (above it when
 there is no room below), so a table's scroll box does not cut it.
 -->
 <script lang="ts">
@@ -25,6 +26,8 @@ there is no room below), so a table's scroll box does not cut it.
 	};
 
 	let { label, items }: Props = $props();
+
+	const menuId = $props.id();
 
 	const gap = 4;
 	const margin = 8;
@@ -137,12 +140,29 @@ there is no room below), so a table's scroll box does not cut it.
 	});
 
 	const itemClasses =
-		'flex w-full cursor-pointer items-center gap-2.5 rounded-control px-2.5 py-[7px] text-left whitespace-nowrap no-underline hover:no-underline focus-ring [--focus-offset:-2px]';
+		'flex w-full items-center gap-2.5 rounded-control px-2.5 py-[7px] text-left whitespace-nowrap no-underline hover:no-underline focus-ring [--focus-offset:-2px]';
 </script>
 
 {#snippet content(item: MenuItem)}
 	<span class={item.danger ? undefined : 'text-muted'}><Icon name={item.icon} size={16} /></span>
 	{item.label}
+{/snippet}
+
+{#snippet disabledItem(item: MenuItem & { disabled: string }, index: number)}
+	{@const reasonId = `${menuId}-reason-${index}`}
+	<div
+		role="menuitem"
+		tabindex="-1"
+		aria-disabled="true"
+		aria-describedby={reasonId}
+		class={[itemClasses, 'text-muted']}
+	>
+		<span><Icon name={item.icon} size={16} /></span>
+		<span class="flex flex-col">
+			{item.label}
+			<span id={reasonId} class="text-xs whitespace-normal">{item.disabled}</span>
+		</span>
+	</div>
 {/snippet}
 
 <span bind:this={toggleBox} class="inline-flex">
@@ -168,20 +188,22 @@ there is no room below), so a table's scroll box does not cut it.
 		style:right="{right}px"
 		onkeydown={keydown}
 	>
-		{#each items as item (item.label)}
+		{#each items as item, index (item.label)}
 			{#if item.separatorBefore}
 				<hr class="my-1 border-border" />
 			{/if}
 			{@const tone = item.danger
 				? 'text-error hover:bg-error-bg focus:bg-error-bg'
 				: 'text-text hover:bg-selected focus:bg-selected'}
-			{#if item.href}
+			{#if item.disabled}
+				{@render disabledItem(item, index)}
+			{:else if item.href}
 				<!-- eslint-disable svelte/no-navigation-without-resolve -- callers pass resolved paths -->
 				<a
 					role="menuitem"
 					tabindex="-1"
 					href={item.href}
-					class={[itemClasses, tone]}
+					class={[itemClasses, 'cursor-pointer', tone]}
 					onclick={() => close(false)}
 				>
 					{@render content(item)}
@@ -192,7 +214,7 @@ there is no room below), so a table's scroll box does not cut it.
 					type="button"
 					role="menuitem"
 					tabindex="-1"
-					class={[itemClasses, tone]}
+					class={[itemClasses, 'cursor-pointer', tone]}
 					onclick={() => choose(item)}
 				>
 					{@render content(item)}

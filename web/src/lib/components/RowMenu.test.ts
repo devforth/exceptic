@@ -114,3 +114,31 @@ describe('RowMenu', () => {
 		expect(menu()?.hasAttribute('data-popup')).toBe(true);
 	});
 });
+
+describe('RowMenu with a disabled item', () => {
+	it('lists it with its reason but does nothing on a click', async () => {
+		const rename = vi.fn();
+
+		render(RowMenu, {
+			label: 'Actions for backend',
+			items: [
+				{ label: 'Rename it', icon: 'edit', disabled: 'Its name is set in PROJECTS.' },
+				{ label: 'Change color', icon: 'palette', action: rename }
+			]
+		});
+		await userEvent.click(screen.getByRole('button', { name: 'Actions for backend' }));
+
+		const disabled = screen.getByRole('menuitem', { name: /Rename it/ });
+
+		expect(disabled.getAttribute('aria-disabled')).toBe('true');
+		expect(screen.getByText('Its name is set in PROJECTS.').id).toBe(
+			disabled.getAttribute('aria-describedby')
+		);
+
+		await userEvent.click(disabled);
+		expect(menu()).not.toBeNull();
+
+		await userEvent.keyboard('{ArrowDown}');
+		expect(document.activeElement?.textContent?.trim()).toBe('Change color');
+	});
+});

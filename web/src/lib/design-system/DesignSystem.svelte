@@ -5,6 +5,8 @@ Every component with its variants, on sample data. Served only by the dev server
 -->
 <script lang="ts">
 	import { levels } from '#lib/api/catalog.gen.ts';
+	import { ApiError } from '#lib/api/client.ts';
+	import { FormState } from '#lib/form.svelte.ts';
 	import Badge from '#lib/components/Badge.svelte';
 	import type { BadgeTone } from '#lib/components/badge.ts';
 	import Button from '#lib/components/Button.svelte';
@@ -23,6 +25,7 @@ Every component with its variants, on sample data. Served only by the dev server
 	import DateRange from '#lib/components/DateRange.svelte';
 	import Details from '#lib/components/Details.svelte';
 	import Dialog from '#lib/components/Dialog.svelte';
+	import FormDialog from '#lib/components/FormDialog.svelte';
 	import Facts from '#lib/components/Facts.svelte';
 	import FilterBar from '#lib/components/FilterBar.svelte';
 	import EmptyState from '#lib/components/EmptyState.svelte';
@@ -178,6 +181,17 @@ Every component with its variants, on sample data. Served only by the dev server
 	let samplePerPage = $state(20);
 	let sampleDialog = $state(false);
 	let sampleNarrowDialog = $state(false);
+	const sampleDialogForm = new FormState();
+
+	async function sampleDialogSave() {
+		await pause();
+
+		if (sampleName.trim() === 'taken') {
+			throw new ApiError(400, 'refused', { fields: { name: 'The name is taken.' } });
+		}
+
+		toast.show('Saved.');
+	}
 	let sampleRole: Role = $state('user');
 	let sampleEmail = $state(true);
 	let sampleEventLevels: string[] = $state(['fatal', 'error']);
@@ -196,6 +210,7 @@ Every component with its variants, on sample data. Served only by the dev server
 
 	const sampleMenu: MenuItem[] = [
 		{ label: 'Rename', icon: 'edit', action: () => toast.show('Rename chosen.') },
+		{ label: 'Rename (from env)', icon: 'edit', disabled: 'Its name is set in PROJECTS.' },
 		{ label: 'Show installation code', icon: 'code', href: '#row-menu' },
 		{ label: 'Settings', icon: 'settings', href: '#row-menu', separatorBefore: true },
 		{ label: 'Logs', icon: 'logs', href: '#row-menu' },
@@ -482,19 +497,28 @@ Every component with its variants, on sample data. Served only by the dev server
 			<IssueActions issueIds={['sample00']} status="resolved" canDelete={false} ondone={pause} />
 			<IssueActions issueIds={[]} canDelete ondone={pause} />
 		</Row>
-		<Row caption="RowMenu: the ⋯ of a table row, items as data; Delete asks first">
+		<Row
+			caption="RowMenu: the ⋯ of a table row, items as data; Delete asks first; a disabled item says why"
+		>
 			<span>worker</span>
 			<RowMenu label="Actions for worker" items={sampleMenu} />
 		</Row>
-		<Row caption="Dialog narrow with actions (a short form)">
+		<Row caption="FormDialog: a short form in a narrow Dialog; a refused field keeps it open">
 			<Button onclick={() => (sampleNarrowDialog = true)}>Rename</Button>
-			<Dialog title="Rename project" size="narrow" bind:open={sampleNarrowDialog}>
-				<TextField label="Name" name="name" bind:value={sampleName} required />
-				{#snippet actions()}
-					<Button onclick={() => (sampleNarrowDialog = false)}>Cancel</Button>
-					<Button variant="primary" onclick={() => (sampleNarrowDialog = false)}>Save</Button>
-				{/snippet}
-			</Dialog>
+			<FormDialog
+				title="Rename project"
+				bind:open={sampleNarrowDialog}
+				form={sampleDialogForm}
+				save={sampleDialogSave}
+			>
+				<TextField
+					label="Name"
+					name="name"
+					bind:value={sampleName}
+					error={sampleDialogForm.fields.name}
+					note="try: taken"
+				/>
+			</FormDialog>
 		</Row>
 	</Section>
 

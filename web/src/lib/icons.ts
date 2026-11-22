@@ -24,6 +24,7 @@ import Info from '@lucide/svelte/icons/info';
 import KeyRound from '@lucide/svelte/icons/key-round';
 import LogOut from '@lucide/svelte/icons/log-out';
 import Logs from '@lucide/svelte/icons/logs';
+import Palette from '@lucide/svelte/icons/palette';
 import PanelLeftClose from '@lucide/svelte/icons/panel-left-close';
 import PanelLeftOpen from '@lucide/svelte/icons/panel-left-open';
 import Pause from '@lucide/svelte/icons/pause';
@@ -53,6 +54,7 @@ export const icons = {
 	back: ArrowLeft,
 	add: Plus,
 	edit: PencilLine,
+	palette: Palette,
 	delete: Trash,
 	more: Ellipsis,
 	copy: Copy,
