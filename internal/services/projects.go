@@ -38,9 +38,9 @@ func (service *Projects) List() config.Projects {
 	return service.registry.List()
 }
 
-// RecordedLevels are the levels project records, highest first.
-func (service *Projects) RecordedLevels(project config.Project) (events, logs []string) {
-	return service.recording.RecordedLevels(project.EventLevels, project.LogLevels)
+// RecordedLogLevels are the log levels project records, highest first.
+func (service *Projects) RecordedLogLevels(project config.Project) []string {
+	return service.recording.RecordedLogLevels(project.LogLevels)
 }
 
 // ColorsByName is the shown color of every project, by name.

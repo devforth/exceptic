@@ -435,10 +435,9 @@ func TestUIProjectLevels(t *testing.T) {
 
 	var projects struct {
 		Items []struct {
-			Name        string   `json:"name"`
-			FromEnv     bool     `json:"from_env"`
-			EventLevels []string `json:"event_levels"`
-			LogLevels   []string `json:"log_levels"`
+			Name      string   `json:"name"`
+			FromEnv   bool     `json:"from_env"`
+			LogLevels []string `json:"log_levels"`
 		} `json:"items"`
 	}
 
@@ -446,9 +445,9 @@ func TestUIProjectLevels(t *testing.T) {
 		t.Fatalf("%+v %v", projects, err)
 	}
 
-	// The test settings record every level: explicit lists, highest first.
+	// The test settings record every level: an explicit list, highest first.
 	for _, project := range projects.Items {
-		if !project.FromEnv || !slices.Equal(project.EventLevels, []string{"fatal", "error", "warning", "info", "debug"}) || len(project.LogLevels) != 6 {
+		if !project.FromEnv || !slices.Equal(project.LogLevels, []string{"fatal", "error", "warn", "info", "debug", "trace"}) {
 			t.Errorf("%+v", project)
 		}
 	}
@@ -456,7 +455,7 @@ func TestUIProjectLevels(t *testing.T) {
 	// A project's own levels, in any order, come back highest first; none stays none.
 	admin := server.webUser(store.RoleAdmin, false)
 
-	if response := admin.call(http.MethodPost, "update_project", `{"project":"backend","event_levels":["warning","fatal"],"log_levels":[]}`); response.Code != http.StatusOK {
+	if response := admin.call(http.MethodPost, "update_project", `{"project":"backend","log_levels":["warn","fatal"]}`); response.Code != http.StatusOK {
 		t.Fatalf("update_project: %d %s", response.Code, response.Body)
 	}
 
@@ -465,8 +464,22 @@ func TestUIProjectLevels(t *testing.T) {
 	}
 
 	for _, project := range projects.Items {
-		if project.Name == "backend" && (!slices.Equal(project.EventLevels, []string{"fatal", "warning"}) || project.LogLevels == nil || len(project.LogLevels) != 0) {
+		if project.Name == "backend" && !slices.Equal(project.LogLevels, []string{"fatal", "warn"}) {
 			t.Errorf("own levels: %+v", project)
+		}
+	}
+
+	if response := admin.call(http.MethodPost, "update_project", `{"project":"backend","log_levels":[]}`); response.Code != http.StatusOK {
+		t.Fatalf("update_project: %d %s", response.Code, response.Body)
+	}
+
+	if err := json.Unmarshal(user.call(http.MethodGet, "list_projects", "").Body.Bytes(), &projects); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, project := range projects.Items {
+		if project.Name == "backend" && (project.LogLevels == nil || len(project.LogLevels) != 0) {
+			t.Errorf("no levels: %+v", project)
 		}
 	}
 }

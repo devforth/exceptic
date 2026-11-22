@@ -22,8 +22,9 @@ type StoreSink struct {
 	Notifier Notifier
 	// PublicURL is the UI address for links in notifications; empty means no link.
 	PublicURL string
-	// Recording gives the levels stored (a project may set its own); events
-	// and logs of other levels are dropped. The zero value stores every level.
+	// Recording gives the log levels stored (a project may set its own); logs
+	// of other levels are dropped, events of every level are stored. The zero
+	// value stores every level.
 	Recording config.Recording
 }
 
@@ -32,17 +33,10 @@ type Notifier interface {
 	Notify(notification notify.Notification)
 }
 
-// eventRecord maps an event to what is stored, or reports false when its
-// level is not recorded for the project.
-func (sink StoreSink) eventRecord(project config.Project, event *sentry.Event, received time.Time) (store.NewEvent, bool) {
+// eventRecord maps an event to what is stored; events of every level are.
+func (sink StoreSink) eventRecord(project config.Project, event *sentry.Event, received time.Time) store.NewEvent {
 	// Stored under its canonical name: filters and notifications know only those.
 	event.Level = config.EventLevel(event.Level)
-
-	if !config.Records(sink.Recording.EventLevelsFor(project.EventLevels), event.Level) {
-		sink.Logger.Debug("event of a level not recorded dropped", "project", project.Name, "level", event.Level, "event_id", event.EventID)
-
-		return store.NewEvent{}, false
-	}
 
 	trace := event.Trace()
 
@@ -61,7 +55,7 @@ func (sink StoreSink) eventRecord(project config.Project, event *sentry.Event, r
 		Timestamp:    event.Timestamp.Time,
 		ReceivedAt:   received,
 		Payload:      event.Raw,
-	}, true
+	}
 }
 
 // report logs what storing an event changed and notifies of new and

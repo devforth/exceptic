@@ -19,14 +19,13 @@ import (
 )
 
 type uiProject struct {
-	ID          int      `json:"id"`
-	Name        string   `json:"name"`
-	DSN         string   `json:"dsn"`
-	FromEnv     bool     `json:"from_env"`
-	Color       string   `json:"color"`
-	ShownColor  string   `json:"shown_color"`
-	EventLevels []string `json:"event_levels"`
-	LogLevels   []string `json:"log_levels"`
+	ID         int      `json:"id"`
+	Name       string   `json:"name"`
+	DSN        string   `json:"dsn"`
+	FromEnv    bool     `json:"from_env"`
+	Color      string   `json:"color"`
+	ShownColor string   `json:"shown_color"`
+	LogLevels  []string `json:"log_levels"`
 }
 
 // An unknown project is not found for the project page (the web app shows
@@ -84,20 +83,19 @@ func TestUIGetProjectShownColor(t *testing.T) {
 // recorded by default; only admins open it.
 func TestGetProjectDefaults(t *testing.T) {
 	server := newRESTServerWith(t, func(settings *config.Config) {
-		settings.Recording = config.Recording{EventLevels: []string{"error", "fatal"}, LogLevels: []string{"warn", "error"}}
+		settings.Recording = config.Recording{LogLevels: []string{"warn", "error"}}
 	})
 
 	var defaults struct {
-		ShownColor  string   `json:"shown_color"`
-		EventLevels []string `json:"event_levels"`
-		LogLevels   []string `json:"log_levels"`
+		ShownColor string   `json:"shown_color"`
+		LogLevels  []string `json:"log_levels"`
 	}
 
 	server.webUser(store.RoleAdmin, false).request(http.MethodGet, "get_project_defaults", "", &defaults)
 
 	next := config.DefaultProjectColor(len(fixtures.Projects()) + 1)
 
-	if defaults.ShownColor != next || !slices.Equal(defaults.EventLevels, []string{"fatal", "error"}) || !slices.Equal(defaults.LogLevels, []string{"error", "warn"}) {
+	if defaults.ShownColor != next || !slices.Equal(defaults.LogLevels, []string{"error", "warn"}) {
 		t.Errorf("%+v, want color %s", defaults, next)
 	}
 
@@ -137,11 +135,11 @@ func TestUIProjectLifecycle(t *testing.T) {
 
 	var created uiProject
 
-	admin.request(http.MethodPost, "create_project", `{"name":"mobile","color":"#123456","event_levels":["fatal","error"],"log_levels":["error","warn"]}`, &created)
+	admin.request(http.MethodPost, "create_project", `{"name":"mobile","color":"#123456","log_levels":["error","warn"]}`, &created)
 
 	match := dsnPattern.FindStringSubmatch(created.DSN)
 
-	if match == nil || created.Color != "#123456" || !slices.Equal(created.EventLevels, []string{"fatal", "error"}) {
+	if match == nil || created.Color != "#123456" || !slices.Equal(created.LogLevels, []string{"error", "warn"}) {
 		t.Fatalf("created %+v", created)
 	}
 
@@ -163,15 +161,16 @@ func TestUIProjectLifecycle(t *testing.T) {
 	ctx := context.Background()
 	issues, err := server.database.ListIssues(ctx, store.IssueFilter{ProjectIDs: []int{created.ID}, Limit: 10})
 
-	if err != nil || len(issues) != 1 || issues[0].Title != "from mobile" {
+	// Events of every level are stored: the info message is an issue too.
+	if err != nil || len(issues) != 2 {
 		t.Fatalf("issues of the new project: %+v %v", issues, err)
 	}
 
 	var updated uiProject
 
-	admin.request(http.MethodPost, "update_project", `{"project":"`+strconv.Itoa(created.ID)+`","name":"mobile-app","event_levels":["error"]}`, &updated)
+	admin.request(http.MethodPost, "update_project", `{"project":"`+strconv.Itoa(created.ID)+`","name":"mobile-app","log_levels":["error"]}`, &updated)
 
-	if updated.Name != "mobile-app" || updated.Color != "#123456" || !slices.Equal(updated.EventLevels, []string{"error"}) {
+	if updated.Name != "mobile-app" || updated.Color != "#123456" || !slices.Equal(updated.LogLevels, []string{"error"}) {
 		t.Errorf("updated %+v", updated)
 	}
 

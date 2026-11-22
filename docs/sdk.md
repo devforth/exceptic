@@ -91,7 +91,7 @@ Go, PHP and Ruby: see the project's installation code. Java, .NET and the rest: 
 
 ## What is stored
 
-- **Events** (errors and messages) of the levels the project records, by default `error` and `fatal`; set `RECORD_EVENT_LEVELS` or the project's levels to keep warnings or messages too. Events are grouped into **issues**.
+- **Events** (errors and messages) of every level, grouped into **issues**. Notifications send only the levels each connection chooses (`fatal` and `error` for a new one). To keep noise out of the SDK itself: `beforeSend`/`ignoreErrors` in JavaScript, `before_send` in Python, `error_types` in PHP (whose SDK reports warnings, notices and deprecations as events by default).
 - **Logs** of every level by default (`RECORD_LOG_LEVELS`).
 - Tracing spans, transactions, session replays, profiles, attachments and client reports are accepted and dropped.
 

@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/devforth/exceptic/internal/platform/config"
@@ -43,11 +44,10 @@ type Connection struct {
 }
 
 // NewConnection is what a new connection of channelType starts with: every
-// project, the levels recorded by default (config.Recording.RecordedEventLevels),
-// active. Issue links go to email by default; a chat may be public, so it
-// gets them only when asked.
-func NewConnection(channelType string, recording config.Recording) Connection {
-	return Connection{Type: channelType, AllProjects: true, Levels: recording.RecordedEventLevels(), Active: true, HideIssueLink: channelType != config.ChannelEmail}
+// project, errors (config.NotifyLevels), active. Issue links go to email by
+// default; a chat may be public, so it gets them only when asked.
+func NewConnection(channelType string) Connection {
+	return Connection{Type: channelType, AllProjects: true, Levels: slices.Clone(config.NotifyLevels), Active: true, HideIssueLink: channelType != config.ChannelEmail}
 }
 
 // ErrNotVerified is returned when a connection would send to an email

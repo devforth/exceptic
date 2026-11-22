@@ -13,13 +13,12 @@
 	const initial = $derived({
 		name: '',
 		color: data.defaults.shown_color,
-		eventLevels: data.defaults.event_levels ?? [],
 		logLevels: data.defaults.log_levels ?? []
 	});
 
 	// The new project's page says what to do with its DSN.
 	async function add(values: ProjectFormValues) {
-		const input = projectInput(values, false);
+		const input = projectInput(values);
 		const project = await post('create_project', { ...input, name: input.name ?? '' });
 
 		void invalidate('app:session');

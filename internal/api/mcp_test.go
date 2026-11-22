@@ -756,7 +756,7 @@ func TestSchemasListTheChoices(t *testing.T) {
 		"list_logs":           {`"trace"`, `"warn"`},
 		"update_issue_status": {`"ignored"`},
 		"fetch_skill":         {`"fetch-data"`, `"analyze-errors"`, `"update-issue-status"`},
-		"create_project":      {`"warning"`, `"trace"`},
+		"create_project":      {`"warn"`, `"trace"`},
 	} {
 		for _, want := range wants {
 			if !strings.Contains(schemas[tool], want) {

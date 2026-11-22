@@ -9,7 +9,7 @@ import (
 // The cleanup by size has CleanupSteps steps (docs/configuration.md); the
 // first CleanupAlwaysSteps run in full, the rest only while needed.
 const (
-	CleanupSteps       = 10
+	CleanupSteps       = 11
 	CleanupAlwaysSteps = 4
 	// CleanupRunsKept is how many of the latest runs the store keeps.
 	CleanupRunsKept = 100

@@ -348,7 +348,6 @@ func TestUIConnectionDefaults(t *testing.T) {
 
 	server := newNotificationsServer(t, func(settings *config.Config) {
 		settings.Notifications.SMTP = config.SMTP{}
-		settings.Recording = config.Recording{EventLevels: []string{"warning", "error"}}
 	})
 
 	var got defaults
@@ -359,7 +358,7 @@ func TestUIConnectionDefaults(t *testing.T) {
 		t.Errorf("types: %+v", got.Types)
 	}
 
-	if got.DefaultType != config.ChannelTelegram || !slices.Equal(got.Levels, []string{"warning", "error"}) || got.IssueLinksAvailable {
+	if got.DefaultType != config.ChannelTelegram || !slices.Equal(got.Levels, []string{"fatal", "error"}) || got.IssueLinksAvailable {
 		t.Errorf("defaults: %+v", got)
 	}
 
@@ -371,7 +370,7 @@ func TestUIConnectionDefaults(t *testing.T) {
 
 	linked.must("get_connection_defaults", nil, &got)
 
-	if !got.IssueLinksAvailable || got.DefaultType != config.ChannelEmail || !slices.Equal(got.Levels, config.Levels) {
+	if !got.IssueLinksAvailable || got.DefaultType != config.ChannelEmail || !slices.Equal(got.Levels, []string{"fatal", "error"}) {
 		t.Errorf("with PUBLIC_URL and SMTP: %+v", got)
 	}
 }
@@ -705,7 +704,7 @@ func TestSetConnectionActive(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	broken := store.NewConnection(config.ChannelTelegram, config.Recording{})
+	broken := store.NewConnection(config.ChannelTelegram)
 	broken.DestinationID, broken.Name = destinationID, "Broken"
 	brokenID, err := server.database.CreateConnection(ctx, broken, now)
 

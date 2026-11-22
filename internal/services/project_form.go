@@ -40,10 +40,9 @@ func readProjectForm(form url.Values, project *store.Project, recording config.R
 		}
 	}
 
-	// The levels to record. The whole list is sent with the form, so nothing
-	// checked means record nothing; the defaults are stored as "use the
-	// defaults", so a project follows RECORD_*_LEVELS until it differs.
-	project.EventLevels = chosenLevels(form["event_level"], config.Levels, recording.EventLevels)
+	// The log levels to record. The whole list is sent with the form, so
+	// nothing checked means record nothing; the default is stored as "use the
+	// default", so a project follows RECORD_LOG_LEVELS until it differs.
 	project.LogLevels = chosenLevels(form["log_level"], config.LogLevels, recording.LogLevels)
 
 	return problems
@@ -70,7 +69,7 @@ func chosenLevels(values, known, defaults []string) *[]string {
 func (service *Projects) FormValues(project store.Project) url.Values {
 	form := url.Values{"name": {project.Name}, "color": {project.Color}}
 
-	form["event_level"], form["log_level"] = service.recording.RecordedLevels(project.EventLevels, project.LogLevels)
+	form["log_level"] = service.recording.RecordedLogLevels(project.LogLevels)
 
 	return form
 }

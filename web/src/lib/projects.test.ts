@@ -39,19 +39,14 @@ describe('deleting a project', () => {
 });
 
 describe('projectInput', () => {
-	const values = { name: ' mobile ', color: '#123456', eventLevels: [], logLevels: ['error'] };
+	const values = { name: ' mobile ', color: '#123456', logLevels: [] };
 
 	it('sends the whole form, empty level lists included', () => {
-		expect(projectInput(values, false)).toEqual({
+		expect(projectInput(values)).toEqual({
 			name: 'mobile',
 			color: '#123456',
-			event_levels: [],
-			log_levels: ['error']
+			log_levels: []
 		});
-	});
-
-	it('leaves the name of a project from PROJECTS out', () => {
-		expect(projectInput(values, true)).not.toHaveProperty('name');
 	});
 });
 

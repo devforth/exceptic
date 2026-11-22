@@ -222,8 +222,8 @@ func TestInputErrorBody(t *testing.T) {
 		want ErrorBody
 	}{
 		"fields": {
-			problemsError(map[string]string{"name": "taken", "event_level": "unknown level"}, projectFormFields),
-			ErrorBody{Error: "event_levels: unknown level; name: taken", Fields: map[string]string{"name": "taken", "event_levels": "unknown level"}},
+			problemsError(map[string]string{"name": "taken", "log_level": "unknown level"}, projectFormFields),
+			ErrorBody{Error: "log_levels: unknown level; name: taken", Fields: map[string]string{"name": "taken", "log_levels": "unknown level"}},
 		},
 		"duplicate": {
 			duplicateError(services.Duplicate{ID: "conn0001", Name: "alerts"}, "sends there"),

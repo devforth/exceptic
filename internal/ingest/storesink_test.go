@@ -164,15 +164,15 @@ func TestStoreSinkLimitsRepeatedLogs(t *testing.T) {
 	}
 }
 
-// Events and logs of levels a project does not record are dropped: not
-// stored and no notification.
+// Events of every level are stored and reported to the notifier (whose
+// connections filter by level); logs of levels a project does not record
+// are dropped.
 func TestStoreSinkRecordsChosenLevels(t *testing.T) {
 	notifier := &recordingNotifier{}
 	settings := testSettings()
 	warnOnly := []string{"warn"}
 	settings.Projects[1].LogLevels = &warnOnly
-	server := startTestServer(t, settings, StoreSink{Logger: slog.New(slog.DiscardHandler), Notifier: notifier,
-		Recording: config.Recording{EventLevels: config.DefaultRecordEventLevels}})
+	server := startTestServer(t, settings, StoreSink{Logger: slog.New(slog.DiscardHandler), Notifier: notifier})
 
 	for _, projectID := range []int{1, 2} {
 		for index, level := range []string{"error", "warning", "info", "fatal", ""} {
@@ -184,13 +184,13 @@ func TestStoreSinkRecordsChosenLevels(t *testing.T) {
 
 	database := server.db
 
-	// error, fatal and an event without a level (an error) of each project.
-	if events := countEvents(t, database, nil); events != 6 {
-		t.Errorf("%d events stored, want 6", events)
+	// Every level, and an event without a level (an error), of each project.
+	if events := countEvents(t, database, nil); events != 10 {
+		t.Errorf("%d events stored, want 10", events)
 	}
 
-	if notified := len(notifier.notifications); notified != 6 {
-		t.Errorf("%d notifications, want 6: a dropped event must not notify", notified)
+	if notified := len(notifier.notifications); notified != 10 {
+		t.Errorf("%d notifications, want 10", notified)
 	}
 
 	if logs := countLogs(t, database, store.LogFilter{ProjectIDs: []int{1}}); logs != 3 {

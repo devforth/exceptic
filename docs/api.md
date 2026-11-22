@@ -22,13 +22,13 @@ The API and the [MCP tools](mcp.md) are the same endpoints with the same names, 
 
 | Endpoint | Input | |
 |---|---|---|
-| `GET list_projects` | `limit`, `cursor` | Projects: `id`, `name`, `unresolved_issues`, `dsn`, `from_env` (set by `PROJECTS`), `event_levels` and `log_levels` (recorded, highest first). |
+| `GET list_projects` | `limit`, `cursor` | Projects: `id`, `name`, `unresolved_issues`, `dsn`, `from_env` (from `PROJECTS`: its key comes from there and it cannot be deleted), `log_levels` (recorded, highest first; events of every level are stored). |
 | `GET list_issues` | see below | Issues: `id`, `project`, `title`, `location`, `level`, `status`, `event_count`, `first_seen`, `last_seen`, `resolved_at`. |
 | `GET get_issues` | `issue_ids` (1–100) | `{"issues": [...], "missing_issue_ids": [...]}`. |
 | `GET get_issue` | `issue_id`, `event_id` | The latest (or given) event of an issue as a text prompt for a coding agent: exception, stack, request, breadcrumbs, related logs, status, event count, first and last seen. |
 | `GET list_issue_events` | `issue_id`, `limit`, `cursor` | Events of an issue, newest first: `event_id`, `timestamp`, `level`, `environment`, `release`, `trace_id`, `received_at`. |
 | `GET get_event` | `project`, `event_id` | Like `get_issue`, for an event ID (32 hex characters, with or without dashes). |
-| `GET list_logs` | `project`, `level`, `query` (text in the line), `trace_id`, `since`, `until`, `limit`, `cursor` or `offset` (logs to skip, for numbered pages) | Logs, newest first: `time`, `project`, `level`, `body`, `trace_id`, `issue` (`id` and `title` of the error raised in the same request, when there is one). |
+| `GET list_logs` | `project`, `level`, `query` (text in the line), `trace_id`, `since`, `until` (by the SDK's time of the log; with `until`, logs stored more than about an hour after it are left out: sent from an offline cache or delayed by an ingest backlog), `limit`, `cursor` or `offset` (logs to skip, for numbered pages) | Logs, newest first: `time`, `project`, `level`, `body`, `trace_id`, `issue` (`id` and `title` of the error raised in the same request, when there is one). |
 | `POST update_issue_status` | `issue_ids` (1–100), `status` | Set `resolved`, `ignored` or `unresolved` on all of them or none; returns the updated issues. |
 | `GET get_event_payload` | `project`, `event_id` | REST only. The event with its JSON as stored in `payload`: without credentials and the parts that do not help a fix ([What is stored](sdk.md#what-is-stored)); `thinned` marks an old event reduced as [Retention](configuration.md#retention) says. |
 | `GET list_trace` | `trace_id` | REST only. Events (without payloads) and logs, with their attributes, of one trace, up to 100 of each. |

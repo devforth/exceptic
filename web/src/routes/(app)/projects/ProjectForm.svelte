@@ -77,33 +77,14 @@ shows its problem beside it.
 		{/if}
 	</div>
 
-	<Details
-		title="Levels to record"
-		variant="form"
-		invalid={Boolean(form.fields.event_levels || form.fields.log_levels)}
-	>
+	<Details title="Logs to record" variant="form" invalid={Boolean(form.fields.log_levels)}>
 		{#snippet summary()}
-			<span class="flex flex-wrap items-center gap-1.5">
-				<span class="text-muted">Errors</span>
-				<LevelSummary kind="event" chosen={values.eventLevels} />
-			</span>
-			<span class="flex flex-wrap items-center gap-1.5">
-				<span class="text-muted">Logs</span>
-				<LevelSummary kind="log" chosen={values.logLevels} />
-			</span>
+			<LevelSummary kind="log" chosen={values.logLevels} />
 		{/snippet}
 		<p class="text-xs text-muted">
-			Errors and logs of levels left unchecked are dropped when they arrive: not stored, no
-			notifications.
+			Logs of levels left unchecked are dropped when they arrive. Errors and messages of every level
+			are kept; each notification connection chooses the levels it sends.
 		</p>
-		<LevelChoices
-			kind="event"
-			legend="Errors and messages"
-			hint={projectHelp['Errors and messages']}
-			selected={values.eventLevels}
-			onchange={(selected: string[]) => (values.eventLevels = selected)}
-			error={form.fields.event_levels}
-		/>
 		<LevelChoices
 			kind="log"
 			legend="Logs"

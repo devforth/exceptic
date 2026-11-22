@@ -6,11 +6,11 @@ import (
 	"strings"
 )
 
-// Recording: which levels are stored. Events and logs of other levels are
-// dropped at ingest. A nil list means every level.
+// Recording: which log levels are stored (RECORD_LOG_LEVELS); logs of other
+// levels are dropped at ingest. A nil list means every level. Events of every
+// level are stored: issues group them, and notifications filter by level.
 type Recording struct {
-	EventLevels []string
-	LogLevels   []string
+	LogLevels []string
 }
 
 // Levels are the event levels from lowest to highest, as Sentry SDKs send them.
@@ -38,37 +38,24 @@ func InLevelOrder(levels, known []string) []string {
 	return slices.DeleteFunc(HighestFirst(known), func(level string) bool { return !slices.Contains(levels, level) })
 }
 
-// DefaultRecordEventLevels: errors only by default; messages and warnings
-// are recorded when a project asks for them.
-var DefaultRecordEventLevels = []string{"error", "fatal"}
+// NotifyLevels are the event levels a new notification connection sends:
+// errors, not messages or warnings.
+var NotifyLevels = []string{"fatal", "error"}
 
 func parseRecording(getenv func(string) string) (Recording, error) {
-	recording := Recording{EventLevels: DefaultRecordEventLevels}
+	value := strings.TrimSpace(getenv("RECORD_LOG_LEVELS"))
 
-	for _, setting := range []struct {
-		name   string
-		known  []string
-		target *[]string
-	}{
-		{"RECORD_EVENT_LEVELS", Levels, &recording.EventLevels},
-		{"RECORD_LOG_LEVELS", LogLevels, &recording.LogLevels},
-	} {
-		value := strings.TrimSpace(getenv(setting.name))
-
-		if value == "" {
-			continue
-		}
-
-		levels, err := ParseLevels(value, setting.known)
-
-		if err != nil {
-			return recording, fmt.Errorf("%s: %w", setting.name, err)
-		}
-
-		*setting.target = levels
+	if value == "" {
+		return Recording{}, nil
 	}
 
-	return recording, nil
+	levels, err := ParseLevels(value, LogLevels)
+
+	if err != nil {
+		return Recording{}, fmt.Errorf("RECORD_LOG_LEVELS: %w", err)
+	}
+
+	return Recording{LogLevels: levels}, nil
 }
 
 // ParseLevels reads "error,fatal" against the known levels; "all" is nil
@@ -103,47 +90,26 @@ func Records(levels []string, level string) bool {
 	return levels == nil || slices.Contains(levels, level)
 }
 
-// EventLevelsFor and LogLevelsFor give the levels a project records: its
-// own list (Project.EventLevels, LogLevels), or nil for these defaults.
-func (recording Recording) EventLevelsFor(own *[]string) []string {
-	return ownOr(own, recording.EventLevels)
-}
-
+// LogLevelsFor gives the log levels a project records: its own list
+// (Project.LogLevels), or nil for the default (RECORD_LOG_LEVELS).
 func (recording Recording) LogLevelsFor(own *[]string) []string {
-	return ownOr(own, recording.LogLevels)
-}
-
-// RecordedLevels are the levels a project records (its own lists or the
-// defaults) as explicit lists, highest first: every level when they are nil.
-func (recording Recording) RecordedLevels(eventOwn, logOwn *[]string) (events, logs []string) {
-	return explicitLevels(recording.EventLevelsFor(eventOwn), Levels), explicitLevels(recording.LogLevelsFor(logOwn), LogLevels)
-}
-
-func explicitLevels(levels, known []string) []string {
-	if levels == nil {
-		levels = known
-	}
-
-	return InLevelOrder(levels, known)
-}
-
-// RecordedEventLevels lists the event levels recorded by default
-// (RECORD_EVENT_LEVELS), every level when all are; a new notification
-// connection starts with them.
-func (recording Recording) RecordedEventLevels() []string {
-	if recording.EventLevels == nil {
-		return slices.Clone(Levels)
-	}
-
-	return slices.Clone(recording.EventLevels)
-}
-
-func ownOr(own *[]string, defaults []string) []string {
 	if own != nil {
 		return *own
 	}
 
-	return defaults
+	return recording.LogLevels
+}
+
+// RecordedLogLevels are the log levels a project records (its own list or
+// the default) as an explicit list, highest first: every level when nil.
+func (recording Recording) RecordedLogLevels(own *[]string) []string {
+	levels := recording.LogLevelsFor(own)
+
+	if levels == nil {
+		levels = LogLevels
+	}
+
+	return InLevelOrder(levels, LogLevels)
 }
 
 // EventLevelAliases are the other names SDKs give event levels (log levels

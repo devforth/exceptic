@@ -23,15 +23,15 @@ import (
 // Project is a source of events (e.g. "backend", "frontend") with its own DSN.
 // ID is the number at the end of the DSN and identifies the project's stored
 // data, so it must never change once in use. Projects live in the database;
-// the ones in PROJECTS are written there at every start with the same values.
+// the ones in PROJECTS are created there when missing and take their key from
+// PROJECTS at every start.
 type Project struct {
 	ID        int
 	Name      string
 	PublicKey string
-	// EventLevels and LogLevels are the project's own lists of levels to
-	// record; nil uses Recording (an empty list records nothing).
-	EventLevels *[]string
-	LogLevels   *[]string
+	// LogLevels is the project's own list of log levels to record; nil uses
+	// Recording (an empty list records nothing).
+	LogLevels *[]string
 	// Color marks the project in lists and emails: "#rrggbb", set in the UI
 	// or picked from ProjectPalette by id.
 	Color string

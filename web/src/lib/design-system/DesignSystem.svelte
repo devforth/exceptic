@@ -605,13 +605,13 @@ Every component with its variants, on sample data. Served only by the dev server
 			{#snippet summary()}<code>GET http://localhost:3500/api/debug-sentry/cause</code>{/snippet}
 			<p>A detail cut to one line in the heading.</p>
 		</Details>
-		<Details title="Levels to record" variant="form" hint="What this project stores.">
-			{#snippet summary()}<LevelSummary kind="event" chosen={sampleEventLevels} />{/snippet}
+		<Details title="Logs to record" variant="form" hint="What this project stores.">
+			{#snippet summary()}<LevelSummary kind="log" chosen={sampleLogLevels} />{/snippet}
 			<LevelChoices
-				kind="event"
-				legend="Error levels"
-				selected={sampleEventLevels}
-				onchange={(chosen: string[]) => (sampleEventLevels = chosen)}
+				kind="log"
+				legend="Log levels"
+				selected={sampleLogLevels}
+				onchange={(chosen: string[]) => (sampleLogLevels = chosen)}
 			/>
 		</Details>
 		<Details title="Projects" variant="form" invalid>

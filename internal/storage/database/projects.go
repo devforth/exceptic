@@ -22,12 +22,10 @@ const (
 	projectIDRange = 90_000_000
 )
 
-// keepNone keeps "no level" (a set but empty list) apart from nil, "the defaults", through JSON.
+// keepNone keeps "no level" (a set but empty list) apart from nil, "the default", through JSON.
 func keepNone(project store.Project) store.Project {
-	for _, levels := range []**[]string{&project.EventLevels, &project.LogLevels} {
-		if *levels != nil && **levels == nil {
-			*levels = &[]string{}
-		}
+	if project.LogLevels != nil && *project.LogLevels == nil {
+		project.LogLevels = &[]string{}
 	}
 
 	return project

@@ -21,17 +21,16 @@ type Connections struct {
 	factory       notify.Factory
 	projects      config.ProjectList
 	notifications config.Notifications
-	recording     config.Recording
 	now           func() time.Time
 }
 
 func newConnections(logger *slog.Logger, database store.Store, factory notify.Factory, projects config.ProjectList, settings *config.Config) *Connections {
-	return &Connections{logger: logger, store: database, factory: factory, projects: projects, notifications: settings.Notifications, recording: settings.Recording, now: time.Now}
+	return &Connections{logger: logger, store: database, factory: factory, projects: projects, notifications: settings.Notifications, now: time.Now}
 }
 
 // New is what a new connection of channelType starts with (store.NewConnection).
 func (service *Connections) New(channelType string) store.Connection {
-	return store.NewConnection(channelType, service.recording)
+	return store.NewConnection(channelType)
 }
 
 // List returns every connection.
@@ -167,7 +166,7 @@ func (service *Connections) Types() []ChannelType {
 		available, reason := service.notifications.ChannelAvailable(channelType)
 		types = append(types, ChannelType{
 			Type: channelType, Available: available, Reason: reason,
-			IncludeIssueLink: !store.NewConnection(channelType, service.recording).HideIssueLink,
+			IncludeIssueLink: !store.NewConnection(channelType).HideIssueLink,
 			NamePlaceholder:  namePlaceholders[channelType],
 		})
 	}

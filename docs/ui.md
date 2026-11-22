@@ -4,14 +4,13 @@ What the fields of the settings pages mean. The UI shows the same text as hints 
 
 ## Projects
 
-A project is one service (backend, frontend, worker) with its own DSN. Projects from `PROJECTS` keep their name and key from the environment; the rest of their settings change here. Deleting a project stops its DSN at once, then deletes its issues, events and logs; a deletion stopped by a restart goes on at the next start.
+A project is one service (backend, frontend, worker) with its own DSN. Projects from `PROJECTS` take their key from the environment (their name only when they are created) and cannot be deleted here; the rest of their settings change here. Deleting a project stops its DSN at once, then deletes its issues, events and logs; a deletion stopped by a restart goes on at the next start.
 
 | Field | |
 |---|---|
 | Color | Marks the project's badge in lists and the header of its emails. |
 | DSN | The address the app's Sentry SDK sends errors and logs to. The key in it only allows sending to this project, so it can be in browser code. |
-| Errors and messages | Event levels to store. Events of other levels are dropped when they arrive: not stored, no notifications. Unchanged, the project follows RECORD_EVENT_LEVELS. |
-| Logs | Log levels to store; others are dropped when they arrive. Unchanged, the project follows RECORD_LOG_LEVELS. |
+| Logs | Log levels to store; others are dropped when they arrive. Unchanged, the project follows RECORD_LOG_LEVELS. Errors and messages of every level are stored. |
 
 ## Notifications
 

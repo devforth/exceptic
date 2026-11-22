@@ -146,20 +146,20 @@ func TestDestructiveToolsAskForConfirmation(t *testing.T) {
 }
 
 type projectSettings struct {
-	ID          int      `json:"id"`
-	Name        string   `json:"name"`
-	DSN         string   `json:"dsn"`
-	Color       string   `json:"color"`
-	EventLevels []string `json:"event_levels"`
+	ID        int      `json:"id"`
+	Name      string   `json:"name"`
+	DSN       string   `json:"dsn"`
+	Color     string   `json:"color"`
+	LogLevels []string `json:"log_levels"`
 }
 
 func TestManageProjects(t *testing.T) {
 	server := newTestServer(t)
 
 	var created projectSettings
-	server.decode("create_project", map[string]any{"name": "worker", "event_levels": []string{"error"}}, &created)
+	server.decode("create_project", map[string]any{"name": "worker", "log_levels": []string{"error"}}, &created)
 
-	if created.ID == 0 || !strings.Contains(created.DSN, "/"+strconv.Itoa(created.ID)) || !slices.Equal(created.EventLevels, []string{"error"}) {
+	if created.ID == 0 || !strings.Contains(created.DSN, "/"+strconv.Itoa(created.ID)) || !slices.Equal(created.LogLevels, []string{"error"}) {
 		t.Fatalf("created = %+v", created)
 	}
 
@@ -167,15 +167,15 @@ func TestManageProjects(t *testing.T) {
 	var updated projectSettings
 	server.decode("update_project", map[string]any{"project": "worker", "color": "#123456"}, &updated)
 
-	if updated.Color != "#123456" || !slices.Equal(updated.EventLevels, []string{"error"}) || updated.Name != "worker" {
+	if updated.Color != "#123456" || !slices.Equal(updated.LogLevels, []string{"error"}) || updated.Name != "worker" {
 		t.Fatalf("updated = %+v", updated)
 	}
 
 	// An empty list records nothing; the color is kept.
 	var reset projectSettings
-	server.decode("update_project", map[string]any{"project": "worker", "event_levels": []string{}}, &reset)
+	server.decode("update_project", map[string]any{"project": "worker", "log_levels": []string{}}, &reset)
 
-	if len(reset.EventLevels) != 0 || reset.Color != "#123456" {
+	if reset.LogLevels == nil || len(reset.LogLevels) != 0 || reset.Color != "#123456" {
 		t.Fatalf("after reset = %+v, want no levels and the color kept", reset)
 	}
 
@@ -340,7 +340,7 @@ func TestSendTestMessageWithoutChannel(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	connection := store.NewConnection(config.ChannelEmail, config.Recording{})
+	connection := store.NewConnection(config.ChannelEmail)
 	connection.DestinationID = destinationID
 	connectionID, err := server.database.CreateConnection(ctx, connection, now)
 

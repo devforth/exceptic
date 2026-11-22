@@ -150,9 +150,7 @@ export interface Endpoints {
 			name: string;
 			/** #rrggbb, or empty for the palette color. */
 			color?: string | null;
-			/** Event levels to store; an empty list stores none. */
-			event_levels?: ('debug' | 'info' | 'warning' | 'error' | 'fatal')[] | null;
-			/** Log levels to store; an empty list stores none. */
+			/** Log levels to store; an empty list stores none. Events of every level are stored. */
 			log_levels?: ('trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal')[] | null;
 		};
 		out: {
@@ -160,7 +158,6 @@ export interface Endpoints {
 			name: string;
 			dsn?: string;
 			from_env?: boolean;
-			event_levels: string[] | null;
 			log_levels: string[] | null;
 			color?: string;
 			shown_color: string;
@@ -466,7 +463,6 @@ export interface Endpoints {
 			name: string;
 			dsn?: string;
 			from_env?: boolean;
-			event_levels: string[] | null;
 			log_levels: string[] | null;
 			color?: string;
 			shown_color: string;
@@ -476,7 +472,6 @@ export interface Endpoints {
 		in: Record<string, never>;
 		out: {
 			shown_color: string;
-			event_levels: string[] | null;
 			log_levels: string[] | null;
 		};
 	};
@@ -801,7 +796,6 @@ export interface Endpoints {
 				name: string;
 				dsn?: string;
 				from_env?: boolean;
-				event_levels: string[] | null;
 				log_levels: string[] | null;
 				unresolved_issues: number;
 			})[] | null;
@@ -1031,9 +1025,7 @@ export interface Endpoints {
 			name?: string | null;
 			/** #rrggbb, or empty for the palette color. */
 			color?: string | null;
-			/** Event levels to store; an empty list stores none. */
-			event_levels?: ('debug' | 'info' | 'warning' | 'error' | 'fatal')[] | null;
-			/** Log levels to store; an empty list stores none. */
+			/** Log levels to store; an empty list stores none. Events of every level are stored. */
 			log_levels?: ('trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal')[] | null;
 		};
 		out: {
@@ -1041,7 +1033,6 @@ export interface Endpoints {
 			name: string;
 			dsn?: string;
 			from_env?: boolean;
-			event_levels: string[] | null;
 			log_levels: string[] | null;
 			color?: string;
 			shown_color: string;
@@ -1227,7 +1218,6 @@ export const choices = {
 		levels: ['debug', 'info', 'warning', 'error', 'fatal'],
 	},
 	create_project: {
-		event_levels: ['debug', 'info', 'warning', 'error', 'fatal'],
 		log_levels: ['trace', 'debug', 'info', 'warn', 'error', 'fatal'],
 	},
 	create_user: {
@@ -1252,7 +1242,6 @@ export const choices = {
 		status: ['unresolved', 'resolved', 'ignored'],
 	},
 	update_project: {
-		event_levels: ['debug', 'info', 'warning', 'error', 'fatal'],
 		log_levels: ['trace', 'debug', 'info', 'warn', 'error', 'fatal'],
 	},
 	update_user: {
@@ -1349,8 +1338,7 @@ export const help = {
 		'Projects': {
 			'Color': 'Marks the project\'s badge in lists and the header of its emails.',
 			'DSN': 'The address the app\'s Sentry SDK sends errors and logs to. The key in it only allows sending to this project, so it can be in browser code.',
-			'Errors and messages': 'Event levels to store. Events of other levels are dropped when they arrive: not stored, no notifications. Unchanged, the project follows RECORD_EVENT_LEVELS.',
-			'Logs': 'Log levels to store; others are dropped when they arrive. Unchanged, the project follows RECORD_LOG_LEVELS.',
+			'Logs': 'Log levels to store; others are dropped when they arrive. Unchanged, the project follows RECORD_LOG_LEVELS. Errors and messages of every level are stored.',
 		},
 	},
 	settings: {
@@ -1373,8 +1361,7 @@ export const help = {
 		PROJECTS: 'Optional: id:name:public_key,..., e.g. 1:backend:<key>,2:frontend:<key>. The id is from 1 to 4294967295, the key is 16–64 letters or digits (openssl rand -hex 16). Created at start when missing, with that name; after that the name, color and levels change on the Projects page, and only the key follows PROJECTS at every start (a changed key stops the old DSN). A new entry whose name or key another project holds stops the start with a message naming that project. Such a project cannot be deleted on the Projects page; one removed from the list stays, DSN included, and can then be deleted there. Projects can also be added on the Projects page.',
 		PUBLIC_URL: 'The address users and SDKs reach the server at, e.g. https://errors.example.com (a path prefix is kept). Used for links in notifications, the DSNs on the Projects page and the MCP address. Without it, DSNs use the address the UI was opened with and notifications have no links.',
 		RATE_LIMIT_PER_MINUTE: 'Envelopes with events or logs per project per minute (spans and other dropped items do not count); over it SDKs get 429 and back off. 0 = no limit.',
-		RECORD_EVENT_LEVELS: 'Event levels to store: fatal, error, warning, info, debug, or all/none. Others are dropped on arrival and never notify. A project can choose its own on the Projects page.',
-		RECORD_LOG_LEVELS: 'Log levels to store: fatal, error, warn, info, debug, trace, or all/none.',
+		RECORD_LOG_LEVELS: 'Log levels to store: fatal, error, warn, info, debug, trace, or all/none. Others are dropped on arrival. A project can choose its own on the Projects page. Events (errors and messages) of every level are stored.',
 		SECRET_KEY: 'At least 32 characters (openssl rand -hex 32). Encrypts Telegram tokens and Slack webhooks and tokens in the database. Without it a key is generated at the first start into DATA_DIR/secret.key; that protects a leaked copy of the database (DATA_DIR/leveldb) but not a copy of the whole data directory, so on a server set it and keep it outside. Do not lose or change it: stored chats stop working (enter their tokens again). To move a generated key out, set SECRET_KEY to the contents of secret.key, then delete the file.',
 		SESSION_LIFETIME: 'How long a login to the UI lasts (12h, 7d); it is not extended by use, so then you log in again.',
 		SMTP_HOST: 'Mail server, without the port (that is SMTP_PORT); required for email.',

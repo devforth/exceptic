@@ -18,16 +18,15 @@ type projectView struct {
 	Name string `json:"name"`
 	// DSN configures a Sentry SDK to report to the project.
 	DSN string `json:"dsn,omitempty"`
-	// FromEnv: set by PROJECTS, so only its color and levels change.
+	// FromEnv: set by PROJECTS, so its key comes from there and it cannot be deleted.
 	FromEnv bool `json:"from_env,omitempty"`
-	// EventLevels and LogLevels are recorded, highest first.
-	EventLevels []string `json:"event_levels"`
-	LogLevels   []string `json:"log_levels"`
+	// LogLevels are the log levels recorded, highest first; events of every level are.
+	LogLevels []string `json:"log_levels"`
 }
 
 func (handler *handlers) projectView(call Call, project config.Project) projectView {
 	view := projectView{ID: project.ID, Name: project.Name, FromEnv: handler.services.Projects.FromEnv(project.ID)}
-	view.EventLevels, view.LogLevels = handler.services.Projects.RecordedLevels(project)
+	view.LogLevels = handler.services.Projects.RecordedLogLevels(project)
 
 	if call.Address != nil {
 		view.DSN = project.DSN(call.Address)

@@ -147,12 +147,27 @@ func TestCleanupGoesDeeper(t *testing.T) {
 		t.Fatalf("debug %d, error %d", debug, errors)
 	}
 
-	// Every log and one event more: the oldest error goes, the newer warnings stay.
+	// A warning goes before any error (and before the error logs), newer or not, down to its latest.
+	for range 10 {
+		if storedEvents(database, "new-warning") == 1 {
+			break
+		}
+
+		if _, _, err := database.cleanTo(ctx, database.logicalSize()-1); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if countLogs(t, database, store.LogFilter{}) != 30 || storedEvents(database, "old-error") != 5 || storedEvents(database, "new-warning") != 1 {
+		t.Fatalf("logs %d, old-error %d, new-warning %d", countLogs(t, database, store.LogFilter{}), storedEvents(database, "old-error"), storedEvents(database, "new-warning"))
+	}
+
+	// Every log and one event more: the oldest error goes.
 	if _, _, err := database.cleanTo(ctx, bytesOf(database, kindEvent, 255)+bytesOf(database, kindIssue, 255)-1); err != nil {
 		t.Fatal(err)
 	}
 
-	if countLogs(t, database, store.LogFilter{}) != 0 || storedEvents(database, "old-error") != 4 || storedEvents(database, "new-warning") != 5 {
+	if countLogs(t, database, store.LogFilter{}) != 0 || storedEvents(database, "old-error") != 4 || storedEvents(database, "new-warning") != 1 {
 		t.Fatalf("logs %d, old-error %d, new-warning %d", countLogs(t, database, store.LogFilter{}), storedEvents(database, "old-error"), storedEvents(database, "new-warning"))
 	}
 
@@ -166,14 +181,14 @@ func TestCleanupGoesDeeper(t *testing.T) {
 	}
 }
 
-// Events older than a week go before recent ones, whatever their level.
+// Error events older than a week go before recent ones, fatal or not.
 func TestCleanupOlderThanAWeekFirst(t *testing.T) {
 	ctx := context.Background()
 	database := openTest(t)
 	clockAt(database, time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC))
 	writeEvents(t, database, "week-old", "fatal", 5)
 	clockAt(database, time.Date(2026, 11, 9, 9, 0, 0, 0, time.UTC))
-	writeEvents(t, database, "recent", "debug", 5)
+	writeEvents(t, database, "recent", "error", 5)
 	clockAt(database, time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC))
 
 	// One event at a time: the week-old ones go first, down to their latest.
@@ -333,6 +348,48 @@ func TestCleanupOrderOfEvents(t *testing.T) {
 		if stored := storedEvents(database, fingerprint); stored != want {
 			t.Errorf("then %s keeps %d events, want %d", fingerprint, stored, want)
 		}
+	}
+}
+
+// Events below error (debug, info, warning) go before any error event or
+// error log, oldest first, down to the latest of their issue.
+func TestCleanupMinorEventsBeforeErrors(t *testing.T) {
+	ctx := context.Background()
+	database := openTest(t)
+	clockAt(database, time.Date(2026, 11, 9, 9, 0, 0, 0, time.UTC))
+	writeEvents(t, database, "error", "error", 5)
+	clockAt(database, time.Date(2026, 11, 10, 8, 0, 0, 0, time.UTC))
+	writeEvents(t, database, "info", "info", 5)
+	writeEvents(t, database, "warning", "warning", 5)
+	writeLogs(t, database, "error", 5, "error")
+	clockAt(database, time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC))
+
+	// A little at a time: nothing of the errors goes while a minor event can.
+	for range 20 {
+		if storedEvents(database, "info") == 1 && storedEvents(database, "warning") == 1 {
+			break
+		}
+
+		if _, _, err := database.cleanTo(ctx, database.logicalSize()-1); err != nil {
+			t.Fatal(err)
+		}
+
+		if errors, logs := storedEvents(database, "error"), countLogs(t, database, store.LogFilter{}); errors != 5 || logs != 5 {
+			t.Fatalf("errors went first: %d error events, %d error logs left", errors, logs)
+		}
+	}
+
+	if info, warning := storedEvents(database, "info"), storedEvents(database, "warning"); info != 1 || warning != 1 {
+		t.Fatalf("info keeps %d, warning %d; want the latest of each", info, warning)
+	}
+
+	// Then the error logs go before the error events.
+	if _, _, err := database.cleanTo(ctx, database.logicalSize()-1); err != nil {
+		t.Fatal(err)
+	}
+
+	if errors, logs := storedEvents(database, "error"), countLogs(t, database, store.LogFilter{}); errors != 5 || logs != 4 {
+		t.Fatalf("next: %d error events, %d error logs; want 5 and 4", errors, logs)
 	}
 }
 
@@ -618,7 +675,7 @@ func TestCleanupJudgesIssuesAsTheyAre(t *testing.T) {
 	clockAt(database, time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC))
 
 	// Step 9: the first batch has room for one issue.
-	position, finished := runBatch(t, database, 9, nil, cleanupChunk-1)
+	position, finished := runBatch(t, database, 10, nil, cleanupChunk-1)
 
 	if finished || storedEvents(database, "first") != 0 || storedEvents(database, "second") != 1 {
 		t.Fatalf("first batch: finished %v, first %d, second %d", finished, storedEvents(database, "first"), storedEvents(database, "second"))
@@ -626,7 +683,7 @@ func TestCleanupJudgesIssuesAsTheyAre(t *testing.T) {
 
 	writeEvents(t, database, "second", "error", 1)
 
-	if _, finished := runBatch(t, database, 9, position, 0); !finished || storedEvents(database, "second") != 2 {
+	if _, finished := runBatch(t, database, 10, position, 0); !finished || storedEvents(database, "second") != 2 {
 		t.Fatalf("seen again, second keeps %d events (finished %v)", storedEvents(database, "second"), finished)
 	}
 
@@ -658,7 +715,7 @@ func TestCleanupGoesOnInsideAnIssue(t *testing.T) {
 	writeEvents(t, database, "large", "error", 30)
 	issueID := storedIssue(database, "large").ID
 
-	position, finished := runBatch(t, database, 10, nil, cleanupChunk-10)
+	position, finished := runBatch(t, database, 11, nil, cleanupChunk-10)
 
 	if finished || storedEvents(database, "large") != 20 {
 		t.Fatalf("first batch: finished %v, %d events left", finished, storedEvents(database, "large"))
@@ -674,7 +731,7 @@ func TestCleanupGoesOnInsideAnIssue(t *testing.T) {
 		t.Fatalf("position: issue %q, from %d; next event %d (%v)", started, from, next.Record.Sequence, err)
 	}
 
-	if _, finished := runBatch(t, database, 10, position, 0); !finished || storedIssue(database, "large") != nil {
+	if _, finished := runBatch(t, database, 11, position, 0); !finished || storedIssue(database, "large") != nil {
 		t.Fatalf("second batch: finished %v, issue left %v", finished, storedIssue(database, "large") != nil)
 	}
 }
@@ -693,7 +750,7 @@ func TestCleanupStopsAtTheGoal(t *testing.T) {
 	}
 
 	// Step 6 deletes one event.
-	if reached != 6 || storedEvents(database, "busy") != 299 || len(steps) != 1 || steps[0].Projects[1].Events != 1 {
+	if reached != 7 || storedEvents(database, "busy") != 299 || len(steps) != 1 || steps[0].Projects[1].Events != 1 {
 		t.Fatalf("reached %d, busy keeps %d, steps %+v", reached, storedEvents(database, "busy"), steps)
 	}
 }
@@ -707,8 +764,8 @@ func TestCleanupGoesOn(t *testing.T) {
 	clockAt(database, time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC))
 	writeLogs(t, database, "error", 10, "error")
 
-	// Stopped at step 5 with the goal still ahead; steps 1 to 4 do not run again.
-	run := CleanupRun{Status: cleanupRunning, Reached: 5, Goal: database.logicalSize() - bytesOf(database, kindLog, levelRank("error")), Limit: 1 << 40}
+	// Stopped at step 6 with the goal still ahead; steps 1 to 5 do not run again.
+	run := CleanupRun{Status: cleanupRunning, Reached: 6, Goal: database.logicalSize() - bytesOf(database, kindLog, levelRank("error")), Limit: 1 << 40}
 
 	if err := database.saveCleanup(&run); err != nil {
 		t.Fatal(err)
@@ -716,7 +773,7 @@ func TestCleanupGoesOn(t *testing.T) {
 
 	done, err := database.Cleanup(ctx, 1<<40)
 
-	if err != nil || done.Status != cleanupDone || done.Reached != 5 || len(done.Steps) != 1 || done.Steps[0].Number != 5 {
+	if err != nil || done.Status != cleanupDone || done.Reached != 6 || len(done.Steps) != 1 || done.Steps[0].Number != 6 {
 		t.Fatalf("run: %+v, %v", done, err)
 	}
 
@@ -745,7 +802,7 @@ func TestCleanupStopsWhenLimitChanged(t *testing.T) {
 			clockAt(database, time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC))
 			writeLogs(t, database, "error", 10, "error")
 
-			run := CleanupRun{Status: cleanupRunning, Reached: 5, Goal: database.logicalSize() - bytesOf(database, kindLog, levelRank("error")), Limit: 1}
+			run := CleanupRun{Status: cleanupRunning, Reached: 6, Goal: database.logicalSize() - bytesOf(database, kindLog, levelRank("error")), Limit: 1}
 
 			if err := database.saveCleanup(&run); err != nil {
 				t.Fatal(err)

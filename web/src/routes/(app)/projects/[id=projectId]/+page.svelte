@@ -27,13 +27,12 @@
 	const initial = $derived({
 		name: project.name,
 		color: project.shown_color,
-		eventLevels: project.event_levels ?? [],
 		logLevels: project.log_levels ?? []
 	});
 
 	// The badges take a new color from the session, which the reload brings.
 	async function save(values: ProjectFormValues) {
-		await post('update_project', { project: String(id), ...projectInput(values, fromEnv) });
+		await post('update_project', { project: String(id), ...projectInput(values) });
 		toast.show('Saved.');
 		void invalidateAll();
 	}

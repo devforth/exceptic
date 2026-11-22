@@ -14,17 +14,17 @@ func TestRecording(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if fmt.Sprint(defaults.Recording.EventLevels) != "[error fatal]" || defaults.Recording.LogLevels != nil {
+	if defaults.Recording.LogLevels != nil {
 		t.Fatalf("defaults: %+v", defaults.Recording)
 	}
 
-	values, err := loadFrom(env(map[string]string{"RECORD_EVENT_LEVELS": "all", "RECORD_LOG_LEVELS": "Warn, error, warn"}))
+	values, err := loadFrom(env(map[string]string{"RECORD_LOG_LEVELS": "Warn, error, warn"}))
 
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if values.Recording.EventLevels != nil || fmt.Sprint(values.Recording.LogLevels) != "[warn error]" {
+	if fmt.Sprint(values.Recording.LogLevels) != "[warn error]" {
 		t.Fatalf("values: %+v", values.Recording)
 	}
 
@@ -32,10 +32,8 @@ func TestRecording(t *testing.T) {
 		t.Fatal(`"none" must be an empty list, not nil (which records every level)`)
 	}
 
-	for name, value := range map[string]string{"RECORD_EVENT_LEVELS": "warn", "RECORD_LOG_LEVELS": "warning"} {
-		if _, err := loadFrom(env(map[string]string{name: value})); err == nil || !strings.Contains(err.Error(), name) {
-			t.Errorf("%s=%s: %v", name, value, err)
-		}
+	if _, err := loadFrom(env(map[string]string{"RECORD_LOG_LEVELS": "warning"})); err == nil || !strings.Contains(err.Error(), "RECORD_LOG_LEVELS") {
+		t.Errorf("RECORD_LOG_LEVELS=warning: %v", err)
 	}
 }
 
@@ -59,22 +57,25 @@ func TestLevelNames(t *testing.T) {
 	}
 }
 
-// A project's recorded levels as explicit lists, highest first: its own,
-// else the defaults, else every level; an empty list stays empty.
-func TestRecordedLevels(t *testing.T) {
-	recording := Recording{EventLevels: []string{"error", "fatal"}}
+// A project's recorded log levels as an explicit list, highest first: its
+// own, else the default, else every level; an empty list stays empty.
+func TestRecordedLogLevels(t *testing.T) {
 	none := []string{}
 	own := []string{"debug", "fatal", "error"}
 
-	events, logs := recording.RecordedLevels(nil, nil)
-
-	if !slices.Equal(events, []string{"fatal", "error"}) || !slices.Equal(logs, HighestFirst(LogLevels)) {
-		t.Errorf("defaults: %v %v", events, logs)
+	if logs := (Recording{}).RecordedLogLevels(nil); !slices.Equal(logs, HighestFirst(LogLevels)) {
+		t.Errorf("every level: %v", logs)
 	}
 
-	events, logs = recording.RecordedLevels(&own, &none)
+	if logs := (Recording{LogLevels: []string{"error", "warn"}}).RecordedLogLevels(nil); !slices.Equal(logs, []string{"error", "warn"}) {
+		t.Errorf("default: %v", logs)
+	}
 
-	if !slices.Equal(events, []string{"fatal", "error", "debug"}) || logs == nil || len(logs) != 0 {
-		t.Errorf("own: %v %v", events, logs)
+	if logs := (Recording{}).RecordedLogLevels(&own); !slices.Equal(logs, []string{"fatal", "error", "debug"}) {
+		t.Errorf("own: %v", logs)
+	}
+
+	if logs := (Recording{}).RecordedLogLevels(&none); logs == nil || len(logs) != 0 {
+		t.Errorf("none: %v", logs)
 	}
 }

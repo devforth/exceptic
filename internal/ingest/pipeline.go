@@ -318,10 +318,8 @@ func (pipeline *Pipeline) process(entry database.InboxEntry) (processed, bool) {
 	}
 
 	for _, event := range events {
-		if record, ok := pipeline.sink.eventRecord(project, event, entry.Received); ok {
-			result.Events = append(result.Events, record)
-			result.events = append(result.events, event)
-		}
+		result.Events = append(result.Events, pipeline.sink.eventRecord(project, event, entry.Received))
+		result.events = append(result.events, event)
 	}
 
 	if result.Logs, err = pipeline.sink.logRecords(project, logs); err != nil {

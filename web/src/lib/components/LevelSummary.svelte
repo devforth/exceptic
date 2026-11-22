@@ -1,6 +1,7 @@
 <!--
 @component
-Chosen levels as LevelBadges, highest first, or a muted "none".
+Chosen levels as LevelBadges, highest first; "all" when every level is chosen, a muted "none"
+when none is.
 -->
 <script lang="ts">
 	import { levels } from '#lib/api/catalog.gen.ts';
@@ -16,9 +17,13 @@ Chosen levels as LevelBadges, highest first, or a muted "none".
 </script>
 
 <span class="inline-flex flex-wrap items-center gap-1">
-	{#each shown as level (level)}
-		<LevelBadge {level} />
+	{#if shown.length === levels[kind].length}
+		all
 	{:else}
-		<span class="text-muted">none</span>
-	{/each}
+		{#each shown as level (level)}
+			<LevelBadge {level} />
+		{:else}
+			<span class="text-muted">none</span>
+		{/each}
+	{/if}
 </span>

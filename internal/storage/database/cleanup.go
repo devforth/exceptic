@@ -357,10 +357,12 @@ func (database *Store) logicalSize() int64 {
 	return total
 }
 
-// Logs below error go whenever the cleanup runs; error and fatal ones only while needed.
+// The ranks of the levels below error (logs and events share them: warning
+// is warn): those logs go whenever the cleanup runs, those events before any
+// error; error and fatal ones only while needed.
 var (
-	minorLogRanks = allRanks[:levelRank("error")]
-	majorLogRanks = allRanks[levelRank("error"):]
+	minorRanks = allRanks[:levelRank("error")]
+	majorRanks = allRanks[levelRank("error"):]
 )
 
 // cleanupStep deletes in batches: each batch reads the data as it is then,
@@ -406,11 +408,12 @@ func (database *Store) cleanupSteps() []cleanupStep {
 		{"events of resolved and ignored issues but the latest", true, database.trimIssues(1, time.Time{}, func(issue *issueRecord) bool {
 			return issue.Status != store.StatusUnresolved
 		})},
-		{"logs below error", true, database.deleteLogs(minorLogRanks, nil)},
-		{"error and fatal logs", false, database.deleteOldestLogs(majorLogRanks)},
+		{"logs below error", true, database.deleteLogs(minorRanks, nil)},
+		{"events below error but the latest of their issue", false, database.deleteOldestEvents(time.Time{}, minorRanks)},
+		{"error and fatal logs", false, database.deleteOldestLogs(majorRanks)},
 		{"events beyond the newest of their issue", false, database.trimIssues(config.OldEventsPerIssue, time.Time{}, nil)},
-		{"events older than a week", false, database.deleteOldestEvents(week)},
-		{"events of the last week", false, database.deleteOldestEvents(time.Time{})},
+		{"events older than a week", false, database.deleteOldestEvents(week, allRanks)},
+		{"events of the last week", false, database.deleteOldestEvents(time.Time{}, allRanks)},
 		{"latest events of issues not seen for a week", false, database.deleteUnseen(week, false)},
 		{"whole issues", false, database.deleteUnseen(time.Time{}, true)},
 	}
@@ -740,14 +743,15 @@ func (database *Store) trimIssues(keep int, cutoff time.Time, match func(*issueR
 	})
 }
 
-// deleteOldestEvents deletes events received before cutoff (zero: any), oldest
-// first whatever their level, but not the latest of an issue. Position: sequence.
-func (database *Store) deleteOldestEvents(cutoff time.Time) cleanupBatch {
+// deleteOldestEvents deletes events of ranks received before cutoff (zero:
+// any), oldest first whatever their level among those, but not the latest of
+// an issue. Position: sequence.
+func (database *Store) deleteOldestEvents(cutoff time.Time, ranks []byte) cleanupBatch {
 	return func(writer *batchWriter, cursor *cleanupCursor) (bool, error) {
 		from := cursor.number(0)
-		queries := make([]kv.Query[eventRecord], 0, len(allRanks))
+		queries := make([]kv.Query[eventRecord], 0, len(ranks))
 
-		for _, rank := range allRanks {
+		for _, rank := range ranks {
 			queries = append(queries, database.events.By("age", kv.U8(rank)).From(kv.U64(from)).Head())
 		}
 

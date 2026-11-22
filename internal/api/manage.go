@@ -262,22 +262,21 @@ func (handler *handlers) findProject(ctx context.Context, nameOrID string) (stor
 }
 
 func (handler *handlers) settings(call Call, project store.Project) projectSettings {
-	shown := config.Project{ID: project.ID, Name: project.Name, PublicKey: project.PublicKey, EventLevels: project.EventLevels, LogLevels: project.LogLevels}
+	shown := config.Project{ID: project.ID, Name: project.Name, PublicKey: project.PublicKey, LogLevels: project.LogLevels}
 
 	return projectSettings{projectView: handler.projectView(call, shown), Color: project.Color, ShownColor: handler.services.Projects.Color(project)}
 }
 
 // projectDefaults is what the form of a new project starts with.
 type projectDefaults struct {
-	ShownColor  string   `json:"shown_color"`
-	EventLevels []string `json:"event_levels"`
-	LogLevels   []string `json:"log_levels"`
+	ShownColor string   `json:"shown_color"`
+	LogLevels  []string `json:"log_levels"`
 }
 
 func (handler *handlers) getProjectDefaults(context.Context, Call, noInput) (projectDefaults, error) {
 	defaults := handler.services.Projects.FormValues(store.Project{})
 
-	return projectDefaults{ShownColor: handler.services.Projects.Color(store.Project{}), EventLevels: defaults["event_level"], LogLevels: defaults["log_level"]}, nil
+	return projectDefaults{ShownColor: handler.services.Projects.Color(store.Project{}), LogLevels: defaults["log_level"]}, nil
 }
 
 type projectIDInput struct {
@@ -336,21 +335,16 @@ func (handler *handlers) getProject(ctx context.Context, call Call, input projec
 
 // projectFields are the settings a tool may change; nil keeps the value.
 type projectFields struct {
-	Color       *string   `json:"color,omitempty" jsonschema:"#rrggbb, or empty for the palette color."`
-	EventLevels *[]string `json:"event_levels,omitempty" jsonschema:"Event levels to store; an empty list stores none."`
-	LogLevels   *[]string `json:"log_levels,omitempty" jsonschema:"Log levels to store; an empty list stores none."`
+	Color     *string   `json:"color,omitempty" jsonschema:"#rrggbb, or empty for the palette color."`
+	LogLevels *[]string `json:"log_levels,omitempty" jsonschema:"Log levels to store; an empty list stores none. Events of every level are stored."`
 }
 
-var projectChoices = map[string][]string{"event_levels": config.Levels, "log_levels": config.LogLevels}
+var projectChoices = map[string][]string{"log_levels": config.LogLevels}
 
 // apply writes the given fields over the form.
 func (fields projectFields) apply(form url.Values) {
 	if fields.Color != nil {
 		form.Set("color", *fields.Color)
-	}
-
-	if fields.EventLevels != nil {
-		form["event_level"] = *fields.EventLevels
 	}
 
 	if fields.LogLevels != nil {
@@ -359,7 +353,7 @@ func (fields projectFields) apply(form url.Values) {
 }
 
 // projectFormFields names the form's fields as the tools do.
-var projectFormFields = map[string]string{"event_level": "event_levels", "log_level": "log_levels"}
+var projectFormFields = map[string]string{"log_level": "log_levels"}
 
 type createProjectInput struct {
 	Name string `json:"name" jsonschema:"Lowercase letters, digits, '-' and '_', starting with a letter or digit, not digits only (that reads as an ID): backend, frontend, worker."`

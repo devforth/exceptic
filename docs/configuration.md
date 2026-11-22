@@ -41,8 +41,7 @@ The id is part of the DSN (`https://<public_key>@errors.example.com/<id>`) and o
 |---|---|---|
 | `ALLOWED_ORIGINS` | `*` | Browser origins allowed to send events (CORS), e.g. `https://app.example.com,https://admin.example.com`. Backend SDKs send no origin and are always allowed. |
 | `RATE_LIMIT_PER_MINUTE` | `1000` | Envelopes with events or logs per project per minute (spans and other dropped items do not count); over it SDKs get 429 and back off. `0` = no limit. |
-| `RECORD_EVENT_LEVELS` | `error,fatal` | Event levels to store: `fatal`, `error`, `warning`, `info`, `debug`, or `all`/`none`. Others are dropped on arrival and never notify. A project can choose its own on the Projects page. |
-| `RECORD_LOG_LEVELS` | `all` | Log levels to store: `fatal`, `error`, `warn`, `info`, `debug`, `trace`, or `all`/`none`. |
+| `RECORD_LOG_LEVELS` | `all` | Log levels to store: `fatal`, `error`, `warn`, `info`, `debug`, `trace`, or `all`/`none`. Others are dropped on arrival. A project can choose its own on the Projects page. Events (errors and messages) of every level are stored. |
 
 ## Notifications
 
@@ -78,12 +77,13 @@ The size is checked at startup, every 10 minutes and after every 50 MB written. 
 
 Then, only while the database is still above 80%, each step after the one before:
 
-5. Error and fatal logs together, oldest first.
-6. Every issue down to its newest 20 events (new events are not capped as they arrive).
-7. Events older than a week, oldest first whatever their level, but the latest of each issue.
-8. Events of the last week, oldest first whatever their level, but the latest of each issue.
-9. The latest event of issues not seen for a week, longest unseen first: the issue stays listed with its title, count and dates.
-10. Whole issues, longest unseen first.
+5. Events below error (debug, info, warning: messages, PHP notices, console warnings), oldest first, but the latest of each issue.
+6. Error and fatal logs together, oldest first.
+7. Every issue down to its newest 20 events (new events are not capped as they arrive).
+8. Events older than a week, oldest first whatever their level, but the latest of each issue.
+9. Events of the last week, oldest first whatever their level, but the latest of each issue.
+10. The latest event of issues not seen for a week, longest unseen first: the issue stays listed with its title, count and dates.
+11. Whole issues, longest unseen first.
 
 It deletes in batches of up to 2000 records and stops as soon as enough is freed. Each batch looks at the data as it is then, so an issue that gets a new event or is reopened meanwhile is judged by that. A cleanup stopped by a restart goes on where it stopped, unless `MAX_DATABASE_SIZE` changed meanwhile: then it ends as failed ("stopped: MAX_DATABASE_SIZE changed to …" or "… turned off") and the next one, if the limit is on, starts from the new limit. Each run is logged with what every step deleted per project, and the last 100 runs with their steps are on the Projects page (Cleanup history).
 

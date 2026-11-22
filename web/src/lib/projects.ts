@@ -21,28 +21,24 @@ export async function deleteProject(id: number): Promise<void> {
 }
 
 type ProjectInput = Omit<In<'update_project'>, 'project'>;
-type EventLevel = NonNullable<ProjectInput['event_levels']>[number];
 type LogLevel = NonNullable<ProjectInput['log_levels']>[number];
 
 /** What the project form holds. */
 export type ProjectFormValues = {
 	name: string;
 	color: string;
-	eventLevels: string[];
 	logLevels: string[];
 };
 
 /**
  * The input of create_project and update_project: the whole form, levels as full lists (an
- * empty one records nothing; leaving them out would keep the stored ones), and no name for a
- * project from PROJECTS, which keeps its own.
+ * empty one records nothing; leaving them out would keep the stored ones).
  */
-export function projectInput(values: ProjectFormValues, fromEnv: boolean): ProjectInput {
+export function projectInput(values: ProjectFormValues): ProjectInput {
 	return {
-		...(fromEnv ? {} : { name: values.name.trim() }),
+		name: values.name.trim(),
 		color: values.color,
 		// The checkboxes offer only the generated levels.
-		event_levels: values.eventLevels as EventLevel[],
 		log_levels: values.logLevels as LogLevel[]
 	};
 }

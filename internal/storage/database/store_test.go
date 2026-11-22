@@ -543,7 +543,7 @@ func TestProjectKeepsNoLevels(t *testing.T) {
 
 	var none []string
 
-	id, err := database.CreateProject(ctx, store.Project{Name: "api", PublicKey: "0123456789abcdef", EventLevels: &none}, time.Now())
+	id, err := database.CreateProject(ctx, store.Project{Name: "api", PublicKey: "0123456789abcdef", LogLevels: &none}, time.Now())
 
 	if err != nil {
 		t.Fatal(err)
@@ -551,8 +551,8 @@ func TestProjectKeepsNoLevels(t *testing.T) {
 
 	project, err := database.GetProject(ctx, id)
 
-	if err != nil || project.EventLevels == nil || len(*project.EventLevels) != 0 || project.LogLevels != nil {
-		t.Fatalf("stored levels: %v, %v (%v)", project.EventLevels, project.LogLevels, err)
+	if err != nil || project.LogLevels == nil || len(*project.LogLevels) != 0 {
+		t.Fatalf("stored levels: %v (%v)", project.LogLevels, err)
 	}
 
 	if id < firstProjectID || id >= firstProjectID+projectIDRange {
