@@ -2,32 +2,14 @@ import tailwindcss from '@tailwindcss/vite';
 import { svelteTesting } from '@testing-library/svelte/vite';
 import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
-import { readdirSync } from 'node:fs';
 import { defineConfig } from 'vitest/config';
 
-// `pnpm dev` serves the app's pages and sends every other address to the Go server, as the
-// Go server serves its own routes and leaves the rest to the app. changeOrigin stays off:
-// the Origin check of /api/ui compares with the Host the browser used.
+// `pnpm dev` serves the app and sends the Go server's own addresses (its API, MCP, OAuth,
+// health) to it. changeOrigin stays off: the Origin check of /api/ui compares with the Host
+// the browser used.
 const goServer = process.env.EXCEPTIC_URL ?? 'http://localhost:8000';
-
-/** The paths of the app's pages, read from src/routes ([param] matches one segment). */
-function appPages(directory = 'src/routes', path = ''): string[] {
-	return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-		if (entry.isDirectory()) {
-			// A (group) folder adds nothing to the path.
-			const segment = entry.name.startsWith('(') ? '' : `/${entry.name}`;
-
-			return appPages(`${directory}/${entry.name}`, path + segment);
-		}
-
-		return entry.name.startsWith('+page.') ? [path.replace(/\[[^\]]+\]/g, '[^/]+') || '/'] : [];
-	});
-}
-
-// Vite's own files (its client, modules, the sources) and the app's pages stay here.
-const servedHere = ['/@', '/src/', '/node_modules/', '/.svelte-kit/', '/_app/']
-	.map((prefix) => prefix.replace(/[.]/g, '\\.'))
-	.concat([...new Set(appPages())].map((page) => `${page}/?(\\?|$)`));
+const goAddresses =
+	'^/(api/|mcp(/|\\?|$)|health(\\?|$)|oauth/(token|register|jwks)(\\?|$)|\\.well-known/)';
 
 export default defineConfig({
 	plugins: [
@@ -45,14 +27,13 @@ export default defineConfig({
 		svelteTesting()
 	],
 	server: {
-		proxy: { [`^(?!${servedHere.map((pattern) => `(${pattern})`).join('|')})`]: goServer }
+		proxy: { [goAddresses]: goServer }
 	},
 	// Tests of the client code and of the components in a simulated browser (pnpm test, part
 	// of make web-check).
 	test: {
 		include: ['src/**/*.test.ts'],
 		environment: 'jsdom',
-		setupFiles: ['src/test/setup.ts'],
-		passWithNoTests: true
+		setupFiles: ['src/test/setup.ts']
 	}
 });

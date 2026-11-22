@@ -4,33 +4,25 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/netip"
 	"net/url"
 	"time"
 
 	"github.com/devforth/exceptic/internal/platform/config"
-	"github.com/devforth/exceptic/internal/server"
 	"github.com/devforth/exceptic/internal/storage/projects"
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
-// Projects answers what pages show about projects: names, DSNs, colors,
-// unresolved issues and the storage used.
+// Projects answers what the catalog shows about projects: names, DSNs,
+// colors, unresolved issues and the storage used.
 type Projects struct {
-	store          store.Store
-	registry       *projects.Registry
-	recording      config.Recording
-	retention      config.Retention
-	publicURL      string
-	trustedProxies []netip.Prefix
+	store     store.Store
+	registry  *projects.Registry
+	recording config.Recording
+	retention config.Retention
 }
 
 func newProjects(database store.Store, registry *projects.Registry, settings *config.Config) *Projects {
-	return &Projects{
-		store: database, registry: registry, recording: settings.Recording, retention: settings.Retention,
-		publicURL: settings.Notifications.PublicURL, trustedProxies: settings.TrustedProxies,
-	}
+	return &Projects{store: database, registry: registry, recording: settings.Recording, retention: settings.Retention}
 }
 
 // List gives the current projects (a config.ProjectList).
@@ -98,36 +90,10 @@ func (service *Projects) Save(ctx context.Context, form url.Values, project stor
 	return project, nil, err
 }
 
-// Delete removes a project added in the UI with its data; one from
+// Delete removes a project added in the web app with its data; one from
 // PROJECTS cannot be deleted (projects.ErrFromEnv).
 func (service *Projects) Delete(ctx context.Context, id int) error {
 	return service.registry.Delete(ctx, id)
-}
-
-// Names lists the current projects for the project filter.
-func (service *Projects) Names() []string {
-	list := service.registry.List()
-	names := make([]string, 0, len(list))
-
-	for _, project := range list {
-		names = append(names, project.Name)
-	}
-
-	return names
-}
-
-// IDs gives the ids of the ?project= names; lists.CleanListQuery has kept
-// only known projects, by name, each once. None means all projects.
-func (service *Projects) IDs(names []string) []int {
-	var ids []int
-
-	for _, name := range names {
-		if project, ok := service.registry.List().Find(name); ok {
-			ids = append(ids, project.ID)
-		}
-	}
-
-	return ids
 }
 
 // Name labels data of a deleted project by its ID.
@@ -137,16 +103,6 @@ func (service *Projects) Name(projectID int) string {
 	}
 
 	return fmt.Sprintf("project %d", projectID)
-}
-
-// URL is the address of path on this server, such as the MCP endpoint.
-func (service *Projects) URL(r *http.Request, path string) string {
-	return service.address(r).JoinPath(path).String()
-}
-
-// address is where clients reach the server (see server.PublicURL).
-func (service *Projects) address(r *http.Request) *url.URL {
-	return server.PublicURL(r, service.publicURL, service.trustedProxies)
 }
 
 // Color is the color a project shows: its own, or the palette color of

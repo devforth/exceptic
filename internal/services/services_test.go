@@ -332,7 +332,7 @@ func TestConfirmCodeOfAConfirmedAddress(t *testing.T) {
 
 	step, err := verification.ConfirmCode(ctx, id, "123456")
 
-	if err != nil || !step.Verified() || step.Error != "" || step.DestinationID != id {
+	if err != nil || !step.Verified() || step.Error != "" || step.Address != "dev@example.com" {
 		t.Fatalf("step = %+v, %v; want the address confirmed", step, err)
 	}
 }

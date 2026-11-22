@@ -6,9 +6,9 @@ import (
 	"time"
 )
 
-// Roles of the panel's users (RoleSummaries). What each may do is decided by
-// the methods of User below, the one place for these rules: routes, services
-// and templates all ask them.
+// Roles of the users (RoleSummaries). What each may do is decided by the
+// methods of User below, the one place for these rules: the catalog and
+// services ask them, and the web app shows what they answer.
 const (
 	RoleSuperadmin = "superadmin"
 	RoleAdmin      = "admin"

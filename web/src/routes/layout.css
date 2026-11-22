@@ -26,8 +26,6 @@
 	--color-selected: #eef0ff;
 	/* Every second table row, an overlay over any row color. */
 	--color-stripe: rgb(0 0 0 / 0.035);
-	--color-tooltip-bg: #1d1d22;
-	--color-tooltip-text: #ffffff;
 
 	/* Derived from the colors above, so they follow dark mode. */
 	--color-focus: color-mix(in srgb, var(--color-accent) 45%, transparent);
@@ -123,8 +121,6 @@
 			--color-debug-bg: #2a2a33;
 			--color-selected: #262640;
 			--color-stripe: rgb(255 255 255 / 0.04);
-			--color-tooltip-bg: #f1f1f5;
-			--color-tooltip-text: #141418;
 			--pop-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 20px rgb(0 0 0 / 0.35);
 			--card-shadow:
 				0 0 0 1px rgb(255 255 255 / 0.04), 0 1px 2px rgb(0 0 0 / 0.5), 0 8px 24px rgb(0 0 0 / 0.45);

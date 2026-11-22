@@ -10,7 +10,7 @@ import (
 )
 
 // handlers holds what the handlers read; one per server. Data is reached
-// only through the services, the same as the UI pages.
+// only through the services.
 type handlers struct {
 	projects config.ProjectList
 	services *services.All
@@ -33,14 +33,14 @@ func Endpoints(projects config.ProjectList, all *services.All) []Endpoint {
 			Choices:  map[string][]string{"status": statusFilters, "level": config.Levels, "sort": store.IssueSorts, "date_by": store.DateFields},
 		}, handler.listIssues),
 		Define(Endpoint{
-			Transports: AllTransports,
+			Transports: TransportREST | TransportMCP,
 			Name:       agentprompt.GetIssueTool,
 			Description: "Diagnose an issue: its latest event (or event_id) as the agent prompt of notifications, with the exception chain, " +
 				fmt.Sprintf("stack frames with source, message, request, runtime, tags, breadcrumbs, up to %d logs of the request and the issue history.", relatedLogsLimit),
 			ReadOnly: true,
 		}, handler.getIssue),
 		Define(Endpoint{
-			Transports:  AllTransports,
+			Transports:  TransportREST | TransportMCP,
 			Name:        "get_issues",
 			Description: "Summaries and current statuses of 1 to 100 known issue IDs in one call, without event details.",
 			ReadOnly:    true,
@@ -52,7 +52,7 @@ func Endpoints(projects config.ProjectList, all *services.All) []Endpoint {
 			ReadOnly:    true,
 		}, handler.listIssueEvents),
 		Define(Endpoint{
-			Transports:  AllTransports,
+			Transports:  TransportREST | TransportMCP,
 			Name:        "get_event",
 			Description: "Like get_issue, for an event ID the SDK reported to the application (with its project).",
 			ReadOnly:    true,
@@ -72,7 +72,7 @@ func Endpoints(projects config.ProjectList, all *services.All) []Endpoint {
 			ReadOnly: true,
 		}, handler.listProjects),
 		Define(Endpoint{
-			Transports: AllTransports,
+			Transports: TransportREST | TransportMCP,
 			Name:       agentprompt.UpdateIssueStatusTool,
 			Description: fmt.Sprintf("Set the status of 1 to 100 issues in one atomic call: %s (%s), %s (%s) or %s (%s). "+
 				"Only when the user asks. Returns the updated summaries.",
@@ -83,7 +83,7 @@ func Endpoints(projects config.ProjectList, all *services.All) []Endpoint {
 		}, handler.updateIssueStatus),
 
 		Define(Endpoint{
-			Transports:  AllTransports,
+			Transports:  TransportREST | TransportMCP,
 			Name:        "delete_issue",
 			Description: "Delete an issue with its events; if the error happens again it comes back as a new issue. Admins only.",
 			Destructive: true,

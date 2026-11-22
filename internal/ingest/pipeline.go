@@ -79,8 +79,6 @@ func NewPipeline(logger *slog.Logger, settings *config.Config, projects config.P
 // Handler serves POST /api/{projectID}/envelope/.
 func (pipeline *Pipeline) Handler() *Handler { return pipeline.handler }
 
-func (pipeline *Pipeline) Stored() int64 { return pipeline.stored.Load() }
-
 // WaitStored waits until the inbox is empty and no batch is being written:
 // every envelope accepted before the call is stored or dropped and reported,
 // its notifications queued (sending them is asynchronous).

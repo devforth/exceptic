@@ -78,7 +78,7 @@ export function send<N extends PlainName>(
 	name: N,
 	...[input]: Args<PlainRequests[N]['in']>
 ): Promise<PlainRequests[N]['out']> {
-	return call(name, plainRequests[name].method, false, input ?? {}, loginRequests.includes(name));
+	return call(name, plainRequests[name].method, input ?? {}, loginRequests.includes(name));
 }
 
 /** Every item of a paged list, page by page. */
@@ -100,16 +100,13 @@ export async function listAll<N extends ListName>(name: N, input?: In<N>): Promi
 }
 
 function request<N extends Name>(name: N, input: object): Promise<Out<N>> {
-	const { method, text } = endpoints[name];
-
-	return call(name, method, text, input, false);
+	return call(name, endpoints[name].method, input, false);
 }
 
 /** loginAnswer: a 401 is the answer to show, not a reason to go to the login. */
 async function call<Output>(
 	name: string,
 	method: 'GET' | 'POST',
-	text: boolean,
 	input: object,
 	loginAnswer: boolean
 ): Promise<Output> {
@@ -138,7 +135,7 @@ async function call<Output>(
 		return undefined as Output;
 	}
 
-	return (text ? await response.text() : await response.json()) as Output;
+	return (await response.json()) as Output;
 }
 
 /** A read's input as the REST transport takes it: a list as repeated names, nothing for an empty value. */

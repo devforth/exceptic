@@ -15,17 +15,14 @@ choice (its value is empty).
 		onchange: (value: string) => void;
 		/** The option of no choice, e.g. "All statuses". */
 		all?: string;
-		/** The form field. */
-		name?: string;
 	};
 
-	let { label, value, options, onchange, all, name }: Props = $props();
+	let { label, value, options, onchange, all }: Props = $props();
 </script>
 
 <select
 	class={controlClasses}
 	aria-label={label}
-	{name}
 	{value}
 	onchange={(event) => onchange(event.currentTarget.value)}
 >

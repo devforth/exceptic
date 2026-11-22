@@ -34,7 +34,7 @@ web-deps:
 web-check: web-deps
 	cd web && pnpm check && pnpm lint && pnpm test
 
-# The app with hot reload at http://localhost:5173: its pages here, every other address from `make run`.
+# The app with hot reload at http://localhost:5173; the Go server's API, MCP, OAuth and health from `make run`.
 web-dev: web-deps
 	cd web && pnpm dev
 

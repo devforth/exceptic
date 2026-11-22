@@ -1,5 +1,3 @@
 engineStrict: true
-allowBuilds:
-  esbuild: true
 patchedDependencies:
   '@sveltejs/kit': patches/@sveltejs__kit.patch

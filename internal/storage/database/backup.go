@@ -25,9 +25,9 @@ func Location(dataDir string) string { return filepath.Join(dataDir, engineName)
 
 // BackupResult is what a backup holds.
 type BackupResult struct {
-	Keys, Bytes int64 // Bytes: keys and values before compression
-	Size        int64 // on disk
-	SecretKey   bool  // DATA_DIR/secret.key was copied
+	Keys      int64
+	Size      int64 // on disk
+	SecretKey bool  // DATA_DIR/secret.key was copied
 }
 
 // Summary reads "backup written to <target>: 1200 keys, 3.4 MB on disk".
@@ -164,7 +164,7 @@ func copySnapshot(ctx context.Context, source snapshotter, dir string, progress 
 	}
 
 	reported := int64(0)
-	result.Keys, result.Bytes, err = kv.Copy(ctx, snapshot, engine, func(keys, bytes int64) {
+	result.Keys, _, err = kv.Copy(ctx, snapshot, engine, func(keys, bytes int64) {
 		if progress != nil && bytes-reported >= backupProgressBytes {
 			reported = bytes
 			progress(keys, bytes)

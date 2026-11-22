@@ -12,15 +12,13 @@ The event or log levels as checkboxes, each a LevelBadge, highest first (the gen
 	type Props = {
 		kind: keyof typeof levels;
 		legend: string;
-		/** The form field of each checkbox. */
-		name?: string;
 		selected: readonly string[];
 		onchange: (selected: string[]) => void;
 		hint?: string;
 		error?: string;
 	};
 
-	let { kind, legend, name, selected, onchange, hint, error }: Props = $props();
+	let { kind, legend, selected, onchange, hint, error }: Props = $props();
 
 	const known: readonly string[] = $derived(levels[kind]);
 </script>
@@ -29,7 +27,6 @@ The event or log levels as checkboxes, each a LevelBadge, highest first (the gen
 	{#each known as level (level)}
 		<Choice
 			type="checkbox"
-			{name}
 			value={level}
 			checked={selected.includes(level)}
 			onchange={(checked: boolean) => onchange(toggled(known, selected, level, checked))}

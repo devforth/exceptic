@@ -262,7 +262,7 @@ func TestUICrossSite(t *testing.T) {
 		request := httptest.NewRequest(method, "/api/ui/list_projects", strings.NewReader("{}"))
 
 		if method == http.MethodPost {
-			request.URL.Path = "/api/ui/update_issue_status"
+			request.URL.Path = "/api/ui/apply_issue_action"
 		}
 
 		request.AddCookie(&http.Cookie{Name: session.CookieName, Value: user.cookie})
@@ -298,7 +298,7 @@ func TestUICrossSite(t *testing.T) {
 
 	// Over HTTPS a page of the same host served over plain HTTP may not act.
 	for origin, want := range map[string]int{"http://example.com": http.StatusForbidden, "https://example.com": http.StatusBadRequest} {
-		request := httptest.NewRequest(http.MethodPost, "https://example.com/api/ui/update_issue_status", strings.NewReader("{}"))
+		request := httptest.NewRequest(http.MethodPost, "https://example.com/api/ui/apply_issue_action", strings.NewReader("{}"))
 		request.AddCookie(&http.Cookie{Name: session.CookieName, Value: user.cookie})
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("Origin", origin)
@@ -344,7 +344,7 @@ func TestUIActsAsTheUser(t *testing.T) {
 
 	issueID := issues.Items[0].ID
 
-	if response := user.call(http.MethodPost, "update_issue_status", `{"issue_ids":["`+issueID+`"],"status":"resolved"}`); response.Code != http.StatusOK {
+	if response := user.call(http.MethodPost, "apply_issue_action", `{"issue_ids":["`+issueID+`"],"action":"resolve"}`); response.Code != http.StatusOK {
 		t.Fatalf("update: %d %s", response.Code, response.Body)
 	}
 

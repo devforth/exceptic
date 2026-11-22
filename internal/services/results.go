@@ -6,8 +6,8 @@ import (
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
-// The results the services give and the inputs they take, shared by the UI
-// (its templates show them) and the agents' tools.
+// The results the services give and the inputs they take, read by the
+// request catalog (package api).
 
 // Problems are invalid fields with their messages, keyed by field name.
 type Problems map[string]string
@@ -37,13 +37,12 @@ const (
 
 // EmailStep is where confirming an address got to (its State).
 type EmailStep struct {
-	State         string
-	Address       string
-	DestinationID string
-	VerifiedAt    time.Time
-	Duplicate     *Duplicate // the connection that already uses the address
-	Error         string
-	Notice        string
+	State      string
+	Address    string
+	VerifiedAt time.Time
+	Duplicate  *Duplicate // the connection that already uses the address
+	Error      string
+	Notice     string
 }
 
 func (step EmailStep) Verified() bool { return step.State == EmailVerified }

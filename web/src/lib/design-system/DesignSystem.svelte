@@ -336,7 +336,7 @@ Every component with its variants, on sample data. Served only by the dev server
 				<div
 					class="flex flex-col items-center gap-2 rounded-popup border border-border bg-surface px-2 py-3"
 				>
-					<Icon {name} size={24} />
+					<Icon {name} />
 					<code class="text-muted">{name}</code>
 				</div>
 			{/each}
@@ -457,7 +457,7 @@ Every component with its variants, on sample data. Served only by the dev server
 		</Row>
 		<Row caption="StatusText: a state as a colored word">
 			{#each statusTones as tone (tone)}
-				<StatusText {tone} title="A {tone} state">{tone}</StatusText>
+				<StatusText {tone}>{tone}</StatusText>
 			{/each}
 		</Row>
 	</Section>

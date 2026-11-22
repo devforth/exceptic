@@ -21,9 +21,6 @@ only its icon, and title names it (tooltip and aria-label).
 		icon?: IconName;
 		/** The name of an icon-only button, or a tooltip of one with text. */
 		title?: string;
-		/** Form fields of a submit button. */
-		name?: string;
-		value?: string;
 		onclick?: (event: MouseEvent) => void;
 		/** A button that opens or closes something: whether it is open (aria-expanded). */
 		expanded?: boolean;
@@ -43,8 +40,6 @@ only its icon, and title names it (tooltip and aria-label).
 		disabled = false,
 		icon,
 		title,
-		name,
-		value,
 		onclick,
 		expanded,
 		popup,
@@ -122,8 +117,6 @@ only its icon, and title names it (tooltip and aria-label).
 		{type}
 		{form}
 		{disabled}
-		{name}
-		{value}
 		onclick={click}
 		aria-expanded={expanded}
 		aria-haspopup={popup}

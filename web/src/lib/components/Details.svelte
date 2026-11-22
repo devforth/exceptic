@@ -21,7 +21,6 @@ A part that opens and closes, its heading the toggle.
 		hint?: string;
 		/** section: a detail after the title; form: the values set inside. */
 		summary?: Snippet;
-		open?: boolean;
 		/** form: a value inside was refused, so it opens. */
 		invalid?: boolean;
 		children: Snippet;
@@ -33,10 +32,11 @@ A part that opens and closes, its heading the toggle.
 		count,
 		hint,
 		summary,
-		open = $bindable(false),
 		invalid = false,
 		children
 	}: Props = $props();
+
+	let open = $state(false);
 
 	$effect(() => {
 		if (invalid) open = true;

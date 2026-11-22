@@ -3,7 +3,6 @@ package store
 import (
 	"encoding/json"
 	"errors"
-	"slices"
 	"time"
 )
 
@@ -62,11 +61,11 @@ type LogRecord struct {
 
 // IssueFilter selects issues. Zero values mean "any".
 type IssueFilter struct {
-	ProjectIDs []int    // any of these projects (the UI filter takes several)
+	ProjectIDs []int    // any of these projects
 	Levels     []string // any of these levels
 	Status     string
 	Query      string // substring of the title or culprit
-	Sort       string // one of IssueSorts; "" is DefaultIssueSort
+	Sort       string // one of IssueSorts; "" is SortLastSeen
 	// SeenSince and SeenUntil bound the date given by DateField to
 	// [SeenSince, SeenUntil). Zero means no bound.
 	SeenSince time.Time
@@ -103,19 +102,12 @@ const (
 	SortEventCountAsc = "event_count_asc"
 	SortProject       = "project"
 	SortProjectDesc   = "project_desc"
-	// DefaultIssueSort is the order of an IssueFilter without Sort.
-	DefaultIssueSort = SortLastSeen
 )
 
 // IssueSorts are the IssueFilter.Sort values.
 var IssueSorts = []string{
 	SortProject, SortProjectDesc, SortLastSeen, SortLastSeenAsc,
 	SortFirstSeen, SortFirstSeenAsc, SortEventCount, SortEventCountAsc,
-}
-
-// ValidIssueSort reports whether sort is a supported IssueFilter.Sort value.
-func ValidIssueSort(sort string) bool {
-	return sort == "" || slices.Contains(IssueSorts, sort)
 }
 
 // EventFilter selects events. Events are listed newest first; BeforeID
@@ -138,7 +130,7 @@ type LogFilter struct {
 	Until      time.Time
 	BeforeID   int64
 	Limit      int
-	Offset     int // page offset for the UI; the API uses BeforeID
+	Offset     int // page offset (list_logs takes it or BeforeID)
 }
 
 // LogCountLimit is where counting logs stops: an exact count of millions of

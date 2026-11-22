@@ -262,7 +262,7 @@ func issueOrder(sort string, projectNames map[int]string) issueComparison {
 		return eventCount
 	case store.SortEventCountAsc:
 		return eventCount.reversed()
-	default: // store.DefaultIssueSort
+	default: // "": store.SortLastSeen
 		return lastSeen
 	}
 }

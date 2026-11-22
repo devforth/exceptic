@@ -26,6 +26,6 @@ A connection sends new issues and issues that happen again after being resolved 
 | Slack bot token | Optional, instead of the webhook: a bot token (xoxb-…) with the chat:write scope. The bot posts each error and puts the prompt for a coding agent in a thread under it. A new token replaces a saved webhook, and a new webhook without a token replaces a saved bot and its channel. Stored encrypted. |
 | Channel ID | The channel the Slack bot posts to (C0123456789, at the bottom of the channel details). Invite the bot to it first. |
 | Projects | Projects whose issues are sent. All projects includes the ones added later. |
-| Levels | Levels that are sent. Events of other levels are still stored, they only do not notify. |
+| Levels | Levels that are sent; a new connection sends fatal and error. Events of other levels are still stored, they only do not notify. |
 | Active | Off: nothing is sent, and messages waiting for a retry fail. |
 | Include Open issue link | Adds a link to the issue page; offered only when PUBLIC_URL is set. Off by default for chats, which people outside the team may read. |

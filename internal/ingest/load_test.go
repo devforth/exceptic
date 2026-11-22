@@ -108,10 +108,10 @@ func sendLoad(t *testing.T, handler http.Handler, pipeline *Pipeline, projects c
 	t.Helper()
 
 	event, logs := fixtures.Envelope(t, "node-event-unhandled"), fixtures.Envelope(t, "node-logs")
-	bursts := []burst{sendBurst(t, "events", "events"+label, handler, projects, shape.events, event, 20, pipeline.Stored, settle)}
-	before := pipeline.Stored()
+	bursts := []burst{sendBurst(t, "events", "events"+label, handler, projects, shape.events, event, 20, pipeline.stored.Load, settle)}
+	before := pipeline.stored.Load()
 
-	return append(bursts, sendBurst(t, "logs", "logs, repeats capped"+label, handler, projects, shape.logs, logs, 0, func() int64 { return pipeline.Stored() - before }, settle))
+	return append(bursts, sendBurst(t, "logs", "logs, repeats capped"+label, handler, projects, shape.logs, logs, 0, func() int64 { return pipeline.stored.Load() - before }, settle))
 }
 
 // The ingest goal: 50 DSNs sending 1000 errors each at once, through the

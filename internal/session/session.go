@@ -1,5 +1,5 @@
-// Package session is the login of the web UI and the web app: session
-// cookies, the limit on login attempts and the form tokens of pages.
+// Package session is the login of the web app: session cookies, the limit
+// on login attempts and the form token of the OAuth consent page.
 package session
 
 import (
@@ -564,7 +564,7 @@ func (auth *Auth) setSessionCookie(w http.ResponseWriter, r *http.Request, token
 		HttpOnly: true,
 		Secure:   server.IsHTTPS(r, auth.trustedProxies),
 		// Lax: the cookie is not sent with cross-site POSTs, which blocks CSRF
-		// together with the Origin check in middleware.SameOrigin.
+		// together with the Origin check of the web app's API (server.SameOrigin).
 		SameSite: http.SameSiteLaxMode,
 	})
 }

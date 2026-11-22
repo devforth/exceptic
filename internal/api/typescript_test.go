@@ -103,6 +103,11 @@ func writeEndpoints(file *strings.Builder, endpoints []Endpoint) error {
 	file.WriteString("/** Inputs and outputs of every request the web app may make. */\nexport interface Endpoints {\n")
 
 	for _, endpoint := range endpoints {
+		// The web app reads JSON only; a text answer (the agent prompt) is for agents.
+		if endpoint.output == reflect.TypeFor[Text]() {
+			return fmt.Errorf("%s answers text: the web app reads JSON only", endpoint.Name)
+		}
+
 		input, err := typescriptType(endpoint.InputSchema, "\t\t")
 
 		if err != nil {
@@ -127,8 +132,8 @@ func writeEndpoints(file *strings.Builder, endpoints []Endpoint) error {
 			method = "GET"
 		}
 
-		fmt.Fprintf(file, "\t%s: { method: '%s', text: %t, admin: %t, destructive: %t, confirm: %t },\n",
-			endpoint.Name, method, endpoint.output == reflect.TypeFor[Text](), endpoint.Admin, endpoint.Destructive, endpoint.Confirm)
+		fmt.Fprintf(file, "\t%s: { method: '%s', admin: %t, destructive: %t, confirm: %t },\n",
+			endpoint.Name, method, endpoint.Admin, endpoint.Destructive, endpoint.Confirm)
 	}
 
 	file.WriteString("} as const;\n\n")
@@ -179,11 +184,9 @@ func writeErrorBody(file *strings.Builder, _ []Endpoint) error {
 	return nil
 }
 
-// typescriptOutput is the type of a Go value as JSON: Text is a string, NoContent nothing.
+// typescriptOutput is the type of a Go value as JSON: NoContent is nothing.
 func typescriptOutput(goType reflect.Type, indent string) (string, error) {
 	switch goType {
-	case reflect.TypeFor[Text]():
-		return "string", nil
 	case reflect.TypeFor[NoContent]():
 		return "void", nil
 	}
@@ -235,6 +238,10 @@ func writeLevels(file *strings.Builder) {
 }
 
 // writeRules: the values the server's rules use, so the app never repeats them.
+// shownSettings are the environment variables whose description the web app
+// shows as a hint; a name the app uses but this lacks fails its type check.
+var shownSettings = []string{"MAX_DATABASE_SIZE"}
+
 func writeRules(file *strings.Builder) error {
 	file.WriteString("/** The limits of form fields, as the server checks them; a pattern must match the whole value. */\nexport const limits = {\n")
 
@@ -296,7 +303,12 @@ func writeRules(file *strings.Builder) error {
 
 	file.WriteString("\t},\n\tsettings: {\n")
 
-	for _, name := range slices.Sorted(maps.Keys(settings)) {
+	// Only the variables the app names: the rest would only make the bundle larger.
+	for _, name := range shownSettings {
+		if settings[name] == "" {
+			return fmt.Errorf("docs/configuration.md does not describe %s", name)
+		}
+
 		fmt.Fprintf(file, "\t\t%s: %s,\n", name, quote(settings[name]))
 	}
 

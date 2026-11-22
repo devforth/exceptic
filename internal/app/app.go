@@ -87,7 +87,7 @@ func New(ctx context.Context, options Options) (*App, error) {
 	app.pipeline = ingest.NewPipeline(logger, settings, registry, db, sink)
 	app.pipeline.MaxInboxBytes = config.MaxInboxBytes(settings.Retention.MaxDatabaseBytes)
 
-	// One catalog of requests, served as the REST API and as MCP tools, on the same services as the UI.
+	// One catalog of requests, served as the REST API, as MCP tools and to the web app.
 	endpoints := api.Endpoints(registry, all)
 	plainRequests := api.LoginRequests(logger, auth, settings.AppName)
 	maps.Copy(plainRequests, api.AgentRequests(logger, auth, all.Agents))

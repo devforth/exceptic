@@ -17,8 +17,8 @@ import (
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
-// Save applies the connection form (posted by the UI, or a tool's input
-// under the same names) to connection and stores it: a new one when its ID
+// Save applies the connection form (built by the catalog from a request's
+// input, under the form's field names) to connection and stores it: a new one when its ID
 // is empty (the type comes from the form; an email connection needs the
 // destination_id of a confirmed address), the stored one otherwise (an
 // empty chat field keeps the stored token).

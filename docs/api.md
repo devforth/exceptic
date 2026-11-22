@@ -10,7 +10,7 @@ The API and the [MCP tools](mcp.md) are the same endpoints with the same names, 
 
 ## Conventions
 
-- Each endpoint is `/api/v1/<name>`. `/api/ui/` is the web interface's own API (the endpoints below and its own, such as `get_issue_details`, plus its login), bound to its login session and same-origin checks; it is not for scripts. Endpoints that only read are `GET` with the input as query parameters (`?project=backend&limit=50`; a list takes repeated or comma-separated values: `issue_ids=k3x9q2mf,a7c2d4e9`). Endpoints that change data are `POST` with the input as a JSON object.
+- Each endpoint is `/api/v1/<name>`. `/api/ui/` is the web interface's own API (the endpoints below that the web app uses and its own, such as `get_issue_details`, plus its login), bound to its login session and same-origin checks; it is not for scripts. Endpoints that only read are `GET` with the input as query parameters (`?project=backend&limit=50`; a list takes repeated or comma-separated values: `issue_ids=k3x9q2mf,a7c2d4e9`). Endpoints that change data are `POST` with the input as a JSON object.
 - Errors: a status code with `{"error": "message"}`: 400 for invalid input (unknown parameters too, and `update_issue_status` with any ID not found), 401 without a valid token, 403 from an address outside `ALLOWED_IPS`, 404 for missing records and unknown endpoints, 500 for a server failure (logged).
 - Lists return `{"items": [...], "next_cursor": "..."}`. Pass `cursor=<next_cursor>` for the next page; there is no `next_cursor` on the last one. `limit` is 1–100, default 20.
 - `project` takes project ids (`1`) or names (`backend`), `level` levels; each takes several values (`?project=backend&project=frontend`), and none means every one.
@@ -41,7 +41,7 @@ The API and the [MCP tools](mcp.md) are the same endpoints with the same names, 
 | `project`, `level` | Filters. |
 | `status` | `unresolved` (default), `resolved`, `ignored` or `all`. |
 | `query` | Text in the title or location. |
-| `since`, `until` | Time range, `since` inclusive, `until` exclusive. Logs are matched by the time their SDK gave them; a range with `until` leaves out logs stored more than about an hour after `until` (sent from an offline cache, or delayed by an ingest backlog). |
+| `since`, `until` | Time range, `since` inclusive, `until` exclusive. |
 | `date_by` | What the range applies to: `event` (default: any event of the issue in the range, its first or last seen time included, so an issue whose events the cleanup deleted stays listed), `first_seen` or `last_seen`. |
 | `sort` | `last_seen` (default), `first_seen`, `event_count`, each newest or most first, or with `_asc`; `project` (A–Z) or `project_desc`. |
 | `limit`, `cursor` | Paging. |

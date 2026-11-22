@@ -76,7 +76,7 @@ func (verification *Verification) StartEmail(ctx context.Context, entered string
 
 // verifiedStep is the step of a confirmed address.
 func verifiedStep(destination store.Destination) EmailStep {
-	return EmailStep{State: EmailVerified, Address: destination.Address, DestinationID: destination.ID, VerifiedAt: destination.VerifiedAt}
+	return EmailStep{State: EmailVerified, Address: destination.Address, VerifiedAt: destination.VerifiedAt}
 }
 
 // FindDestination is the destination of an address entered before; ok is
@@ -150,7 +150,7 @@ func emailDestination(ctx context.Context, database store.Store, id string) (sto
 // sendCode mails a new code unless one was sent within ResendCooldown, and
 // returns the step to show. An error is a failure of the database.
 func (verification *Verification) sendCode(ctx context.Context, destination store.Destination) (EmailStep, error) {
-	step := EmailStep{State: EmailCode, Address: destination.Address, DestinationID: destination.ID}
+	step := EmailStep{State: EmailCode, Address: destination.Address}
 
 	if wait := destination.VerifySentAt.Add(ResendCooldown).Sub(verification.now()); wait > 0 {
 		step.Notice = fmt.Sprintf("A code was sent less than %s ago; check the inbox or send again in %ds.", ResendCooldown, int(wait.Seconds())+1)
@@ -186,7 +186,7 @@ func (verification *Verification) sendCode(ctx context.Context, destination stor
 // confirm checks a typed code and returns the step to show. An error is a
 // failure of the database.
 func (verification *Verification) confirm(ctx context.Context, destination store.Destination, code string) (EmailStep, error) {
-	step := EmailStep{State: EmailCode, Address: destination.Address, DestinationID: destination.ID}
+	step := EmailStep{State: EmailCode, Address: destination.Address}
 
 	result, err := verification.store.CheckVerificationCode(ctx, destination.ID, codeHash(destination.ID, code), verification.now())
 

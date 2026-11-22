@@ -41,33 +41,24 @@ describe('requests', () => {
 	it('sends a read as a GET with its query', async () => {
 		fetchMock.mockResolvedValue(answer(200, { issues: [] }));
 
-		await get('get_issues', { issue_ids: ['k3x9q2mf', 'a7c2d4e9'] });
+		await get('list_issues', { project: ['backend', 'frontend'] });
 
-		expect(fetchMock).toHaveBeenCalledWith(
-			'/api/ui/get_issues?issue_ids=k3x9q2mf&issue_ids=a7c2d4e9',
-			{
-				credentials: 'same-origin'
-			}
-		);
+		expect(fetchMock).toHaveBeenCalledWith('/api/ui/list_issues?project=backend&project=frontend', {
+			credentials: 'same-origin'
+		});
 	});
 
 	it('sends a change as JSON, without a query', async () => {
 		fetchMock.mockResolvedValue(answer(200, { issues: [] }));
 
-		await post('update_issue_status', { issue_ids: ['k3x9q2mf'], status: 'resolved' });
+		await post('apply_issue_action', { issue_ids: ['k3x9q2mf'], action: 'resolve' });
 
-		expect(fetchMock).toHaveBeenCalledWith('/api/ui/update_issue_status', {
+		expect(fetchMock).toHaveBeenCalledWith('/api/ui/apply_issue_action', {
 			method: 'POST',
 			credentials: 'same-origin',
 			headers: { 'Content-Type': 'application/json' },
-			body: '{"issue_ids":["k3x9q2mf"],"status":"resolved"}'
+			body: '{"issue_ids":["k3x9q2mf"],"action":"resolve"}'
 		});
-	});
-
-	it('reads a text answer as text', async () => {
-		fetchMock.mockResolvedValue(answer(200, 'the prompt', 'text/plain'));
-
-		expect(await get('get_issue', { issue_id: 'k3x9q2mf' })).toBe('the prompt');
 	});
 
 	it('reports a refusal with the server message, without leaving the page', async () => {
@@ -159,7 +150,7 @@ describe('types', () => {
 		// Never run: the checks are the type errors expected below.
 		const unused = () => {
 			// @ts-expect-error a change is not a read (loads run on hover)
-			void get('update_issue_status', { issue_ids: ['k3x9q2mf'], status: 'resolved' });
+			void get('apply_issue_action', { issue_ids: ['k3x9q2mf'], action: 'resolve' });
 			// @ts-expect-error a read is not a change
 			void post('list_projects');
 		};

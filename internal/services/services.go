@@ -1,5 +1,5 @@
-// Package services holds the rules of the application: the only way the UI
-// pages and the agents' tools reach the database.
+// Package services holds the rules of the application: the only way the
+// request catalog (package api: REST, MCP and the web app) reaches the database.
 package services
 
 import (
@@ -22,8 +22,8 @@ type Dependencies struct {
 	OAuth    *oauth.Server // the MCP server's sign-in
 }
 
-// All are the services the UI pages and the agents' tools (package api)
-// share, so both apply the same rules.
+// All are the services the request catalog (package api) and the login
+// (session) share, so every transport applies the same rules.
 type All struct {
 	// AppName names the server to its users (APP_NAME).
 	AppName      string

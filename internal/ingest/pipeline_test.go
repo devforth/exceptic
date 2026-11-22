@@ -93,8 +93,8 @@ func TestPipelineStoresEnvelopes(t *testing.T) {
 
 		defer cancelWait()
 
-		if err := pipeline.WaitStored(waitCtx); err != nil || pipeline.Stored() != count {
-			t.Fatalf("stored %d of %d: %v", pipeline.Stored(), count, err)
+		if err := pipeline.WaitStored(waitCtx); err != nil || pipeline.stored.Load() != count {
+			t.Fatalf("stored %d of %d: %v", pipeline.stored.Load(), count, err)
 		}
 	}
 
@@ -263,8 +263,8 @@ func TestBurstWithCleanup(t *testing.T) {
 
 	defer cancelWait()
 
-	if err := pipeline.WaitStored(waitCtx); err != nil || pipeline.Stored() != sent.Load() {
-		t.Fatalf("stored %d of %d, inbox %d bytes: %v", pipeline.Stored(), sent.Load(), db.InboxBytes(), err)
+	if err := pipeline.WaitStored(waitCtx); err != nil || pipeline.stored.Load() != sent.Load() {
+		t.Fatalf("stored %d of %d, inbox %d bytes: %v", pipeline.stored.Load(), sent.Load(), db.InboxBytes(), err)
 	}
 
 	stopCleanup()
@@ -341,7 +341,7 @@ func TestScanDoesNotStoreTwice(t *testing.T) {
 
 	for deadline := time.Now().Add(60 * time.Second); db.InboxBytes() > 0; {
 		if time.Now().After(deadline) {
-			t.Fatalf("stored %d of %d, inbox %d bytes", pipeline.Stored(), sent.Load(), db.InboxBytes())
+			t.Fatalf("stored %d of %d, inbox %d bytes", pipeline.stored.Load(), sent.Load(), db.InboxBytes())
 		}
 
 		time.Sleep(10 * time.Millisecond)
@@ -351,8 +351,8 @@ func TestScanDoesNotStoreTwice(t *testing.T) {
 	cancel()
 	<-done
 
-	if pipeline.Stored() != sent.Load() || db.InboxBytes() != 0 {
-		t.Fatalf("sent %d, stored %d, inbox %d bytes", sent.Load(), pipeline.Stored(), db.InboxBytes())
+	if pipeline.stored.Load() != sent.Load() || db.InboxBytes() != 0 {
+		t.Fatalf("sent %d, stored %d, inbox %d bytes", sent.Load(), pipeline.stored.Load(), db.InboxBytes())
 	}
 }
 

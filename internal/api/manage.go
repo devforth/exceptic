@@ -13,7 +13,7 @@ import (
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
-// The endpoints that manage the server, as the UI pages do: they act as a
+// The endpoints that manage the server: they act as a
 // user (ActsAsUser) through the same services. Users and Agents check what
 // the user may change; the Admin flag guards projects and notifications.
 // A user changes their own password only in the UI; an agent never mints
@@ -23,7 +23,7 @@ func (handler *handlers) management() []Endpoint {
 		Define(Endpoint{
 			Name:        "get_account",
 			Description: "Who the agent acts for: username, name and role (superadmin, admin or user), which decides the tools offered.",
-			ReadOnly:    true, Transports: ActsAsUser,
+			ReadOnly:    true, Transports: TransportMCP,
 		}, handler.getAccount),
 		Define(Endpoint{
 			Name:        "update_account_name",
