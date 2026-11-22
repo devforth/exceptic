@@ -139,6 +139,6 @@ describe('RowMenu with a disabled item', () => {
 		expect(menu()).not.toBeNull();
 
 		await userEvent.keyboard('{ArrowDown}');
-		expect(document.activeElement?.textContent?.trim()).toBe('Change color');
+		expect(document.activeElement?.textContent?.trim()).toBe('Name and color');
 	});
 });

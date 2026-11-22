@@ -2,7 +2,6 @@
 // One module per icon: the package's index would load every icon in the dev server.
 import type { LucideIcon } from '@lucide/svelte';
 import ArrowDown from '@lucide/svelte/icons/arrow-down';
-import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 import ArrowUp from '@lucide/svelte/icons/arrow-up';
 import ArrowUpDown from '@lucide/svelte/icons/arrow-up-down';
 import Bell from '@lucide/svelte/icons/bell';
@@ -24,7 +23,6 @@ import Info from '@lucide/svelte/icons/info';
 import KeyRound from '@lucide/svelte/icons/key-round';
 import LogOut from '@lucide/svelte/icons/log-out';
 import Logs from '@lucide/svelte/icons/logs';
-import Palette from '@lucide/svelte/icons/palette';
 import PanelLeftClose from '@lucide/svelte/icons/panel-left-close';
 import PanelLeftOpen from '@lucide/svelte/icons/panel-left-open';
 import Pause from '@lucide/svelte/icons/pause';
@@ -51,10 +49,8 @@ export const icons = {
 	logout: LogOut,
 	sidebarCollapse: PanelLeftClose,
 	sidebarExpand: PanelLeftOpen,
-	back: ArrowLeft,
 	add: Plus,
 	edit: PencilLine,
-	palette: Palette,
 	delete: Trash,
 	more: Ellipsis,
 	copy: Copy,

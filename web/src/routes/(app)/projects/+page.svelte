@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { help, levels } from '#lib/api/catalog.gen.ts';
+	import { help } from '#lib/api/catalog.gen.ts';
 	import { post, type Item } from '#lib/api/client.ts';
 	import Badge from '#lib/components/Badge.svelte';
 	import Button from '#lib/components/Button.svelte';
 	import Card from '#lib/components/Card.svelte';
 	import FormDialog from '#lib/components/FormDialog.svelte';
 	import Hint from '#lib/components/Hint.svelte';
-	import LevelBadge from '#lib/components/LevelBadge.svelte';
+	import LevelSummary from '#lib/components/LevelSummary.svelte';
 	import type { MenuItem } from '#lib/components/menu.ts';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import RowMenu from '#lib/components/RowMenu.svelte';
@@ -28,13 +28,13 @@
 
 	type Project = Item<'list_projects'>;
 	type ProjectColumn = TableColumn<
-		'project' | 'unresolved' | 'records' | 'size' | 'received' | 'actions'
+		'project' | 'unresolved' | 'logs' | 'size' | 'received' | 'actions'
 	>;
 
 	const columns: ProjectColumn[] = [
 		{ key: 'project', label: 'Project' },
 		{ key: 'unresolved', label: 'Unresolved', number: true },
-		{ key: 'records', label: 'Records', wideOnly: true },
+		{ key: 'logs', label: 'Logs recorded', wideOnly: true },
 		{ key: 'size', label: 'Size', number: true },
 		{ key: 'received', label: 'Last received', wideOnly: true },
 		{ key: 'actions', label: 'Actions', actions: true }
@@ -46,64 +46,50 @@
 	const colors = $derived(data.session.project_colors ?? {});
 	const segments = $derived(usageSegments(storage, (name) => colors[name]));
 
-	// What a project records: every level, none, or the ones listed.
-	function recorded(own: string[] | null, known: readonly string[]) {
-		const list = own ?? [];
-
-		return list.length === known.length ? 'all' : list.length === 0 ? 'none' : list;
-	}
-
 	async function remove(project: Project) {
 		await deleteProject(project.id);
 		// The delete is done: a failed reload of the list is not a failed delete.
 		void invalidateAll();
 	}
 
-	// Rename and Change color: a small dialog each; the server checks the value (a refused one
-	// stays in the dialog with its problem).
+	// Rename and recolor in one dialog; the server checks both (a refused value stays in the
+	// dialog with its problem).
 	let editing: Project | undefined = $state();
-	let renameOpen = $state(false);
-	let colorOpen = $state(false);
+	let editOpen = $state(false);
 	let newName = $state('');
 	let newColor = $state('');
 	const editForm = new FormState();
 
-	function startEdit(project: Project, dialog: 'name' | 'color') {
+	function startEdit(project: Project) {
 		editing = project;
+		newName = project.name;
+		newColor = colors[project.name] ?? '';
 		editForm.error = '';
 		editForm.fields = {};
-
-		if (dialog === 'name') {
-			newName = project.name;
-			renameOpen = true;
-		} else {
-			newColor = colors[project.name] ?? '';
-			colorOpen = true;
-		}
+		editOpen = true;
 	}
 
-	async function saveEdit(change: { name: string } | { color: string }, done: string) {
+	async function saveEdit() {
 		if (!editing) return;
 
-		await post('update_project', { project: String(editing.id), ...change });
-		toast.show(done);
+		await post('update_project', {
+			project: String(editing.id),
+			name: newName.trim(),
+			color: newColor
+		});
+		toast.show('Project saved.');
 		// Saved: a failed reload of the list is not a failed save.
 		void invalidateAll();
 	}
 
-	// Projects from PROJECTS keep their name and cannot be deleted; their color can change.
+	// Projects from PROJECTS cannot be deleted here (they would come back at the next start).
 	function menuOf(project: Project): MenuItem[] {
 		const id = project.id;
 		const editable = canAdminister && !project.from_env;
 		const items: MenuItem[] = [];
 
 		if (canAdminister) {
-			items.push(
-				project.from_env
-					? { label: 'Rename', icon: 'edit', disabled: 'Its name is set in PROJECTS.' }
-					: { label: 'Rename', icon: 'edit', action: () => startEdit(project, 'name') },
-				{ label: 'Change color', icon: 'palette', action: () => startEdit(project, 'color') }
-			);
+			items.push({ label: 'Name and color', icon: 'edit', action: () => startEdit(project) });
 		}
 
 		items.push({
@@ -221,18 +207,8 @@
 			<Button variant="link" href={withQuery(resolve('/(app)/issues'), { project: project.name })}>
 				{project.unresolved_issues}
 			</Button>
-		{:else if column.key === 'records'}
-			{@const events = recorded(project.event_levels, levels.event)}
-			{@const logs = recorded(project.log_levels, levels.log)}
-			<div class="flex flex-wrap gap-1 text-xs">
-				{#if events === 'all'}all errors{:else if events === 'none'}<span class="text-muted">
-						no errors
-					</span>{:else}{#each events as level (level)}<LevelBadge
-							{level}
-							href={withQuery(resolve('/(app)/issues'), { level })}
-						/>{/each}{/if}
-			</div>
-			<div class="text-xs text-muted">logs: {typeof logs === 'string' ? logs : logs.join(' ')}</div>
+		{:else if column.key === 'logs'}
+			<span class="text-xs"><LevelSummary kind="log" chosen={project.log_levels ?? []} /></span>
 		{:else if column.key === 'size'}
 			{#if storage.counting}
 				<span class="text-xs text-muted">counting…</span>
@@ -254,20 +230,7 @@
 	{/snippet}
 </Table>
 
-<FormDialog
-	title="Rename project"
-	bind:open={renameOpen}
-	form={editForm}
-	save={() => saveEdit({ name: newName.trim() }, 'Project renamed.')}
->
+<FormDialog title="Edit project" bind:open={editOpen} form={editForm} save={saveEdit}>
 	<ProjectNameField bind:value={newName} error={editForm.fields.name} />
-</FormDialog>
-
-<FormDialog
-	title="Change color"
-	bind:open={colorOpen}
-	form={editForm}
-	save={() => saveEdit({ color: newColor }, 'Color changed.')}
->
-	<ColorField bind:value={newColor} name={editing?.name ?? ''} error={editForm.fields.color} />
+	<ColorField bind:value={newColor} name={newName.trim()} error={editForm.fields.color} />
 </FormDialog>
