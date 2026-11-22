@@ -103,10 +103,10 @@ func (database *Store) UpdateProject(_ context.Context, project store.Project) e
 	})
 }
 
-// SeedProject writes a project from PROJECTS: created if missing, otherwise
-// its name and key are set to the env values (settings from the UI stay). A
-// name or key taken by another project is an error, so a typo in PROJECTS
-// cannot take over another DSN.
+// SeedProject writes a project from PROJECTS: created with its name if
+// missing, otherwise only its key is set to the env value (the name and the
+// settings from the web app stay). A name or key taken by another project is
+// an error, so a typo in PROJECTS cannot take over another DSN.
 func (database *Store) SeedProject(_ context.Context, project store.Project, now time.Time) error {
 	err := database.db.Update(true, func(batch *kv.Batch) error {
 		stored, err := database.projects.Get(batch, projectKey(project.ID))
@@ -120,11 +120,11 @@ func (database *Store) SeedProject(_ context.Context, project store.Project, now
 			return projectConflict(database.projects.Insert(batch, project))
 		case err != nil:
 			return err
-		case stored.Name == project.Name && stored.PublicKey == project.PublicKey:
+		case stored.PublicKey == project.PublicKey:
 			return nil
 		}
 
-		stored.Name, stored.PublicKey = project.Name, project.PublicKey
+		stored.PublicKey = project.PublicKey
 
 		return projectConflict(database.projects.Save(batch, stored))
 	})

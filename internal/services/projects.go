@@ -54,7 +54,7 @@ func (service *Projects) ColorsByName() map[string]string {
 	return colors
 }
 
-// FromEnv: the project comes from PROJECTS (its name and key are fixed).
+// FromEnv: the project comes from PROJECTS (its key is fixed; it cannot be deleted).
 func (service *Projects) FromEnv(id int) bool {
 	return service.registry.FromEnv(id)
 }
@@ -65,11 +65,10 @@ func (service *Projects) Get(ctx context.Context, id int) (store.Project, error)
 }
 
 // Save applies the form to project and stores it: a new one when its ID is
-// 0, the stored one otherwise (a project from PROJECTS keeps its name).
+// 0, the stored one otherwise.
 // It returns the project as read from the form (with its id once saved) and
 // the field errors when nothing was saved.
 func (service *Projects) Save(ctx context.Context, form url.Values, project store.Project) (store.Project, Problems, error) {
-	nameEditable := project.ID == 0 || !service.registry.FromEnv(project.ID)
 	// A new project's id is random, so its palette color is not known yet:
 	// the color the form showed is stored as chosen.
 	paletteColor := ""
@@ -78,7 +77,7 @@ func (service *Projects) Save(ctx context.Context, form url.Values, project stor
 		paletteColor = service.Color(store.Project{ID: project.ID})
 	}
 
-	problems := readProjectForm(form, &project, nameEditable, service.recording, paletteColor)
+	problems := readProjectForm(form, &project, service.recording, paletteColor)
 
 	if len(problems) > 0 {
 		return project, problems, nil

@@ -30,10 +30,32 @@ var _ config.ProjectList = (*Registry)(nil)
 func Open(ctx context.Context, logger *slog.Logger, database store.Store, env config.Projects) (*Registry, error) {
 	registry := &Registry{store: database, env: env}
 
+	stored, err := database.ListProjects(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("load projects: %w", err)
+	}
+
 	for _, project := range env {
-		if existing, err := database.GetProject(ctx, project.ID); err == nil && (existing.Name != project.Name || existing.PublicKey != project.PublicKey) {
-			logger.Warn("project changed by PROJECTS", "id", project.ID, "name", project.Name, "previous_name", existing.Name,
-				"key_changed", existing.PublicKey != project.PublicKey)
+		existing, found := findProject(stored, func(other store.Project) bool { return other.ID == project.ID })
+
+		switch {
+		case !found:
+			// A name or key another project holds stops the start: say which one.
+			if holder, taken := findProject(stored, func(other store.Project) bool { return other.Name == project.Name }); taken {
+				return nil, fmt.Errorf("PROJECTS: project %d %q: the name is used by project %d; rename that project or choose another name", project.ID, project.Name, holder.ID)
+			}
+
+			if holder, taken := findProject(stored, func(other store.Project) bool { return other.PublicKey == project.PublicKey }); taken {
+				return nil, fmt.Errorf("PROJECTS: project %d %q: the key is used by project %d %q", project.ID, project.Name, holder.ID, holder.Name)
+			}
+		case existing.PublicKey != project.PublicKey:
+			logger.Warn("project key changed by PROJECTS: the old DSN stops working", "id", project.ID, "name", existing.Name)
+		}
+
+		if found && existing.Name != project.Name {
+			logger.Info("PROJECTS names a project otherwise: its stored name is kept (rename it on the Projects page)",
+				"id", project.ID, "name", existing.Name, "env_name", project.Name)
 		}
 
 		if err := database.SeedProject(ctx, store.Project{ID: project.ID, Name: project.Name, PublicKey: project.PublicKey}, time.Now()); err != nil {
@@ -57,8 +79,8 @@ func (registry *Registry) List() config.Projects {
 	return nil
 }
 
-// FromEnv reports whether a project is defined in PROJECTS: its name and key
-// are set there, not in the UI, and it cannot be deleted in the UI.
+// FromEnv reports whether a project is defined in PROJECTS: its key is set
+// there (its name only when it is created), and it cannot be deleted in the web app.
 func (registry *Registry) FromEnv(id int) bool {
 	_, ok := registry.env.ByID(id)
 
@@ -114,11 +136,10 @@ func (registry *Registry) Create(ctx context.Context, project store.Project) (in
 	return id, registry.Reload(ctx)
 }
 
-// Update saves a project. For a project from PROJECTS only the color and levels
-// change: its name and key are kept as env has them.
+// Update saves a project. A project from PROJECTS keeps the key env gives it.
 func (registry *Registry) Update(ctx context.Context, project store.Project) error {
 	if envProject, ok := registry.env.ByID(project.ID); ok {
-		project.Name, project.PublicKey = envProject.Name, envProject.PublicKey
+		project.PublicKey = envProject.PublicKey
 	}
 
 	if err := registry.store.UpdateProject(ctx, project); err != nil {
@@ -158,4 +179,15 @@ func NewPublicKey() string {
 	_, _ = rand.Read(key[:])
 
 	return hex.EncodeToString(key[:])
+}
+
+// findProject is the first of projects that match.
+func findProject(projects []store.Project, match func(store.Project) bool) (store.Project, bool) {
+	for _, project := range projects {
+		if match(project) {
+			return project, true
+		}
+	}
+
+	return store.Project{}, false
 }

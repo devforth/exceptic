@@ -1027,7 +1027,7 @@ export interface Endpoints {
 		in: {
 			/** Project name or ID. */
 			project: string;
-			/** A new name (not for projects from PROJECTS). */
+			/** A new name. */
 			name?: string | null;
 			/** #rrggbb, or empty for the palette color. */
 			color?: string | null;
@@ -1370,7 +1370,7 @@ export const help = {
 		NOTIFY_KEEP_SENT: 'Delivered messages are deleted from the delivery log after this.',
 		NOTIFY_RETRY_FOR: 'A message that cannot be delivered is retried (2s, 10s, 30s, … then hourly) this long, then marked failed.',
 		PORT: 'Port to listen on.',
-		PROJECTS: 'Optional: id:name:public_key,..., e.g. 1:backend:<key>,2:frontend:<key>. The id is from 1 to 4294967295, the key is 16–64 letters or digits (openssl rand -hex 16). Written to the database at every start; such projects can only change their color and levels in the UI. One removed from the list stays, DSN included, and can then be edited or deleted on the Projects page. Projects can also be added in the UI.',
+		PROJECTS: 'Optional: id:name:public_key,..., e.g. 1:backend:<key>,2:frontend:<key>. The id is from 1 to 4294967295, the key is 16–64 letters or digits (openssl rand -hex 16). Created at start when missing, with that name; after that the name, color and levels change on the Projects page, and only the key follows PROJECTS at every start (a changed key stops the old DSN). A new entry whose name or key another project holds stops the start with a message naming that project. Such a project cannot be deleted on the Projects page; one removed from the list stays, DSN included, and can then be deleted there. Projects can also be added on the Projects page.',
 		PUBLIC_URL: 'The address users and SDKs reach the server at, e.g. https://errors.example.com (a path prefix is kept). Used for links in notifications, the DSNs on the Projects page and the MCP address. Without it, DSNs use the address the UI was opened with and notifications have no links.',
 		RATE_LIMIT_PER_MINUTE: 'Envelopes with events or logs per project per minute (spans and other dropped items do not count); over it SDKs get 429 and back off. 0 = no limit.',
 		RECORD_EVENT_LEVELS: 'Event levels to store: fatal, error, warning, info, debug, or all/none. Others are dropped on arrival and never notify. A project can choose its own on the Projects page.',

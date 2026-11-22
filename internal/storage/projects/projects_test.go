@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/storage/store"
 	"github.com/devforth/exceptic/internal/storage/storetest"
 )
@@ -113,5 +115,74 @@ func TestDeleteOutlivesTheRequest(t *testing.T) {
 
 	if issues, _ := database.CountIssues(ctx, store.IssueFilter{ProjectIDs: []int{id}}); issues != 0 {
 		t.Fatalf("%d issues of the deleted project left", issues)
+	}
+}
+
+// PROJECTS names a project only when it creates it: a rename in the web app
+// survives restarts, while the key always follows PROJECTS.
+func TestEnvProjectKeepsItsRename(t *testing.T) {
+	ctx := context.Background()
+	database := storetest.Open(t)
+	env := config.Projects{{ID: 1, Name: "backend", PublicKey: "0123456789abcdef"}}
+	logger := slog.New(slog.DiscardHandler)
+
+	registry, err := Open(ctx, logger, database, env)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stored, err := registry.Get(ctx, 1)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stored.Name, stored.PublicKey = "api", "fedcba9876543210"
+
+	if err := registry.Update(ctx, stored); err != nil {
+		t.Fatal(err)
+	}
+
+	if project, _ := registry.List().ByID(1); project.Name != "api" || project.PublicKey != env[0].PublicKey {
+		t.Fatalf("after the rename: %+v, want the name api and the key of PROJECTS", project)
+	}
+
+	env[0].PublicKey = "abcdef0123456789"
+
+	if registry, err = Open(ctx, logger, database, env); err != nil {
+		t.Fatal(err)
+	}
+
+	if project, _ := registry.List().ByID(1); project.Name != "api" || project.PublicKey != "abcdef0123456789" || !registry.FromEnv(1) {
+		t.Fatalf("after a restart with a new key: %+v", project)
+	}
+}
+
+// A new entry of PROJECTS whose name another project took (a rename in the
+// web app) stops the start with a message naming that project.
+func TestEnvNameTakenStopsTheStart(t *testing.T) {
+	ctx := context.Background()
+	database := storetest.Open(t)
+	logger := slog.New(slog.DiscardHandler)
+	env := config.Projects{{ID: 1, Name: "backend", PublicKey: "0123456789abcdef"}}
+
+	registry, err := Open(ctx, logger, database, env)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stored, _ := registry.Get(ctx, 1)
+	stored.Name = "api"
+
+	if err := registry.Update(ctx, stored); err != nil {
+		t.Fatal(err)
+	}
+
+	env = append(env, config.Project{ID: 2, Name: "api", PublicKey: "abcdef0123456789"})
+
+	if _, err := Open(ctx, logger, database, env); err == nil || !strings.Contains(err.Error(), `"api": the name is used by project 1`) {
+		t.Fatalf("err = %v, want the project that holds the name", err)
 	}
 }

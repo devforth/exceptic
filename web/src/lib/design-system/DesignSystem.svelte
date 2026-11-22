@@ -210,7 +210,6 @@ Every component with its variants, on sample data. Served only by the dev server
 
 	const sampleMenu: MenuItem[] = [
 		{ label: 'Rename', icon: 'edit', action: () => toast.show('Rename chosen.') },
-		{ label: 'Rename (from env)', icon: 'edit', disabled: 'Its name is set in PROJECTS.' },
 		{ label: 'Show installation code', icon: 'code', href: '#row-menu' },
 		{ label: 'Settings', icon: 'settings', href: '#row-menu', separatorBefore: true },
 		{ label: 'Logs', icon: 'logs', href: '#row-menu' },
@@ -225,6 +224,12 @@ Every component with its variants, on sample data. Served only by the dev server
 				confirmLabel: 'Delete'
 			},
 			action: pause
+		},
+		{
+			label: 'Delete (from env)',
+			icon: 'delete',
+			separatorBefore: true,
+			disabled: 'Remove it from PROJECTS first.'
 		}
 	];
 

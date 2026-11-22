@@ -59,7 +59,7 @@ func (handler *handlers) management() []Endpoint {
 		}, handler.createProject),
 		Define(Endpoint{
 			Name:        "update_project",
-			Description: "Change a project's settings; fields not given keep their values, an empty string returns a setting to the default. Projects from PROJECTS keep their name.",
+			Description: "Change a project's settings; fields not given keep their values, an empty string returns a setting to the default.",
 			Idempotent:  true, Admin: true, Transports: ActsAsUser, Confirm: true,
 			Choices: projectChoices,
 		}, handler.updateProject),
@@ -393,7 +393,7 @@ func (handler *handlers) createProject(ctx context.Context, call Call, input cre
 
 type updateProjectInput struct {
 	Project string  `json:"project" jsonschema:"Project name or ID."`
-	Name    *string `json:"name,omitempty" jsonschema:"A new name (not for projects from PROJECTS)."`
+	Name    *string `json:"name,omitempty" jsonschema:"A new name."`
 	projectFields
 }
 

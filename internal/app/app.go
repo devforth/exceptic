@@ -47,7 +47,7 @@ type App struct {
 func New(ctx context.Context, options Options) (*App, error) {
 	settings, logger, db := options.Settings, options.Logger, options.Store
 
-	// Projects live in the database; the ones in PROJECTS are written there with the same values at every start.
+	// Projects live in the database; the ones in PROJECTS are created when missing and take their key from it at every start.
 	registry, err := projects.Open(ctx, logger, db, settings.Projects)
 
 	if err != nil {

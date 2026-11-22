@@ -10,28 +10,31 @@ import (
 )
 
 func TestProjectFormLevels(t *testing.T) {
-	recording := config.Recording{EventLevels: []string{"error", "fatal"}} // log levels nil: all
+	recording := config.Recording{LogLevels: []string{"warn", "error", "fatal"}}
 
 	var project store.Project
 
 	problems := readProjectForm(url.Values{
-		"name": {"api"}, "event_level": {"fatal", "error"}, "log_level": config.LogLevels,
-	}, &project, true, recording, "#2563eb")
+		"name": {"api"}, "log_level": {"fatal", "warn", "error"},
+	}, &project, recording, "#2563eb")
 
 	if len(problems) > 0 {
 		t.Fatalf("problems = %v", problems)
 	}
 
-	if project.EventLevels != nil || project.LogLevels != nil {
-		t.Errorf("defaults stored as %v / %v, want nil (follow the defaults)", project.EventLevels, project.LogLevels)
+	if project.LogLevels != nil {
+		t.Errorf("the default stored as %v, want nil (follow the default)", project.LogLevels)
 	}
 
-	// Nothing checked records nothing; levels the list does not know are dropped.
-	readProjectForm(url.Values{"name": {"api"}, "event_level": {"warning", "bogus"}}, &project, true, recording, "#2563eb")
+	// Levels the list does not know are dropped.
+	readProjectForm(url.Values{"name": {"api"}, "log_level": {"info", "bogus"}}, &project, recording, "#2563eb")
 
-	if project.EventLevels == nil || !slices.Equal(*project.EventLevels, []string{"warning"}) {
-		t.Errorf("event levels = %v, want [warning]", project.EventLevels)
+	if project.LogLevels == nil || !slices.Equal(*project.LogLevels, []string{"info"}) {
+		t.Errorf("log levels = %v, want [info]", project.LogLevels)
 	}
+
+	// Nothing checked records nothing.
+	readProjectForm(url.Values{"name": {"api"}}, &project, recording, "#2563eb")
 
 	if project.LogLevels == nil || len(*project.LogLevels) != 0 {
 		t.Errorf("log levels = %v, want an empty list (record none)", project.LogLevels)
@@ -41,11 +44,11 @@ func TestProjectFormLevels(t *testing.T) {
 func TestProjectFormValidation(t *testing.T) {
 	project := store.Project{Name: "backend", Color: "#123456"}
 	problems := readProjectForm(url.Values{
-		"name": {"Not Valid"}, "color": {"#2563EB"},
-	}, &project, false, config.Recording{}, "#2563eb")
+		"name": {"backend"}, "color": {"#2563EB"},
+	}, &project, config.Recording{}, "#2563eb")
 
-	if _, ok := problems["name"]; ok || project.Name != "backend" {
-		t.Errorf("name of a project from env read from the form: %q, %v", project.Name, problems)
+	if len(problems) > 0 {
+		t.Errorf("problems = %v", problems)
 	}
 
 	// The palette color is stored as "" so the project keeps following the palette.
@@ -55,13 +58,13 @@ func TestProjectFormValidation(t *testing.T) {
 
 	// Digits only would read as a project ID wherever a name or ID is taken.
 	for _, name := range []string{"Not Valid", "3", "-web"} {
-		if problems := readProjectForm(url.Values{"name": {name}}, &project, true, config.Recording{}, ""); problems["name"] == "" {
-			t.Errorf("invalid editable name %q accepted", name)
+		if problems := readProjectForm(url.Values{"name": {name}}, &project, config.Recording{}, ""); problems["name"] == "" {
+			t.Errorf("invalid name %q accepted", name)
 		}
 	}
 
 	for _, name := range []string{"web", "3d", "1_api", "v2-api"} {
-		if problems := readProjectForm(url.Values{"name": {name}}, &project, true, config.Recording{}, ""); problems["name"] != "" {
+		if problems := readProjectForm(url.Values{"name": {name}}, &project, config.Recording{}, ""); problems["name"] != "" {
 			t.Errorf("valid name %q refused: %s", name, problems["name"])
 		}
 	}

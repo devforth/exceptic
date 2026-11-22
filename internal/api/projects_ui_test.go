@@ -190,7 +190,7 @@ func TestUIProjectLifecycle(t *testing.T) {
 	}
 }
 
-// A project from PROJECTS keeps its name and cannot be deleted; its color changes.
+// A project from PROJECTS can be renamed and change its color, but not be deleted.
 func TestUIProjectFromEnv(t *testing.T) {
 	server := newRESTServer(t)
 	admin := server.webUser(store.RoleAdmin, false)
@@ -199,7 +199,7 @@ func TestUIProjectFromEnv(t *testing.T) {
 
 	admin.request(http.MethodPost, "update_project", `{"project":"1","name":"renamed","color":"#123456"}`, &project)
 
-	if project.Name != "backend" || project.Color != "#123456" {
+	if project.Name != "renamed" || project.Color != "#123456" || !project.FromEnv {
 		t.Errorf("%+v", project)
 	}
 
@@ -210,7 +210,7 @@ func TestUIProjectFromEnv(t *testing.T) {
 
 	admin.read("get_session", &session)
 
-	if project.Name != "backend" || project.Color != "#654321" || session.ProjectColors["backend"] != "#654321" {
+	if project.Name != "renamed" || project.Color != "#654321" || session.ProjectColors["renamed"] != "#654321" {
 		t.Errorf("color alone: %+v, session colors %v", project, session.ProjectColors)
 	}
 

@@ -79,7 +79,7 @@ type Store interface {
 	// DeleteProject deletes a project at once; PurgeProjects then deletes its data.
 	DeleteProject(ctx context.Context, id int) error
 	PurgeProjects(ctx context.Context) error
-	// SeedProject writes a project from PROJECTS: env sets its name and key.
+	// SeedProject writes a project from PROJECTS: env sets its key, and its name when it creates it.
 	SeedProject(ctx context.Context, project Project, now time.Time) error
 
 	// Reading issues, events and logs.

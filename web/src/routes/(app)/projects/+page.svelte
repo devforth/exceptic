@@ -137,6 +137,13 @@
 				confirm: deleteConfirmation(project.name),
 				action: () => remove(project)
 			});
+		} else if (canAdminister) {
+			items.push({
+				label: 'Delete',
+				icon: 'delete',
+				separatorBefore: true,
+				disabled: 'Remove it from PROJECTS first.'
+			});
 		}
 
 		return items;

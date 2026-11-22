@@ -9,20 +9,17 @@ import (
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
-// readProjectForm applies the project form (posted by the UI, or a tool's
-// input under the same names) to project and returns the field errors. The
-// name is read only when it can change (not for a project from PROJECTS).
+// readProjectForm applies the project form (built by the catalog from a
+// request's input, under the form's field names) to project and returns the field errors.
 // paletteColor is the color the project has without its own one; empty for
 // a new project, which keeps the color chosen.
-func readProjectForm(form url.Values, project *store.Project, nameEditable bool, recording config.Recording, paletteColor string) Problems {
+func readProjectForm(form url.Values, project *store.Project, recording config.Recording, paletteColor string) Problems {
 	problems := Problems{}
 
-	if nameEditable {
-		project.Name = strings.TrimSpace(form.Get("name"))
+	project.Name = strings.TrimSpace(form.Get("name"))
 
-		if !config.ValidProjectName(project.Name) {
-			problems["name"] = "Use lowercase letters, digits, '-' and '_', starting with a letter or digit, not digits only."
-		}
+	if !config.ValidProjectName(project.Name) {
+		problems["name"] = "Use lowercase letters, digits, '-' and '_', starting with a letter or digit, not digits only."
 	}
 
 	// The palette color is stored as "" so the project keeps following the

@@ -1,7 +1,6 @@
 <!--
 @component
-The form of a project, new or saved: its name (not for one from PROJECTS, which keeps its own),
-color, DSN and the levels it records. It sends the whole form through save; a refused field
+The form of a project, new or saved: its name, color, DSN and the levels it records. It sends the whole form through save; a refused field
 shows its problem beside it.
 -->
 <script lang="ts">
@@ -22,7 +21,7 @@ shows its problem beside it.
 	type Props = {
 		/** What the form starts with. */
 		initial: ProjectFormValues;
-		/** Set by PROJECTS: its name and key stay. */
+		/** Set by PROJECTS: its key comes from there and it cannot be deleted here. */
 		fromEnv?: boolean;
 		/** A saved project's DSN; none for a new one. */
 		dsn?: string;
@@ -48,10 +47,12 @@ shows its problem beside it.
 
 <form class="flex max-w-[720px] flex-col gap-5" onsubmit={submit}>
 	{#if fromEnv}
-		<Notice tone="info">Name and key are set in PROJECTS; change them there.</Notice>
-	{:else}
-		<ProjectNameField bind:value={values.name} error={form.fields.name} />
+		<Notice tone="info">
+			Added by PROJECTS: its DSN key comes from there, and it can be deleted only after it is
+			removed from there.
+		</Notice>
 	{/if}
+	<ProjectNameField bind:value={values.name} error={form.fields.name} />
 
 	<ColorField
 		bind:value={values.color}
