@@ -94,6 +94,23 @@ func TestScrubJSONKeepsLogAttributeShape(t *testing.T) {
 	}
 }
 
+// Everything under a key that names a secret goes; a log attribute keeps
+// only its {value, type} shape, so the log still parses.
+func TestScrubJSONFiltersWholeSecretValue(t *testing.T) {
+	testCases := map[string]string{
+		`{"extra":{"auth":{"value":{"user":7},"token":"sibling-token-value","password":"sibling-password"}}}`: `{"extra":{"auth":{"type":"string","value":"[Filtered]"}}}`,
+		`{"state":{"session":{"value":"x","refresh":"sibling-refresh"}}}`:                                     `{"state":{"session":{"type":"string","value":"[Filtered]"}}}`,
+		`{"headers":[["authorization",{"value":"a","raw":"Bearer sibling-bearer-0123456789"}]]}`:              `{"headers":[["authorization",{"type":"string","value":"[Filtered]"}]]}`,
+		`{"attributes":{"session.id":{"value":"s","type":"string","unit":"none"}}}`:                           `{"attributes":{"session.id":{"type":"string","value":"[Filtered]"}}}`,
+	}
+
+	for payload, want := range testCases {
+		if got := normalized(scrubJSON([]byte(payload))); got != want {
+			t.Errorf("scrubJSON(%s)\ngot  %s\nwant %s", payload, got, want)
+		}
+	}
+}
+
 func TestScrubJSONLeavesInvalidInput(t *testing.T) {
 	if got := string(scrubJSON([]byte("not json"))); got != "not json" {
 		t.Fatalf("got %q", got)
@@ -160,6 +177,36 @@ func TestScrubText(t *testing.T) {
 	for input, want := range testCases {
 		if got := scrubText(input); got != want {
 			t.Errorf("scrubText(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+// Request bodies, breadcrumb messages and log lines carry JSON as text.
+func TestScrubTextJSON(t *testing.T) {
+	testCases := map[string]string{
+		`{"username":"root","password":"pw1","api_key":"k1"}`:       `{"username":"root","password":"[Filtered]","api_key":"[Filtered]"}`,
+		`{"cookie":"sid=abc","token":"t1"}`:                         `{"cookie":"[Filtered]","token":"[Filtered]"}`,
+		` {"session":{"id":"s1"},"user":"root"} `:                   `{"session":"[Filtered]","user":"root"}`,
+		`[["authorization","Basic dXNlcjpwYXNz"],["accept","*/*"]]`: `[["authorization","[Filtered]"],["accept","*/*"]]`,
+		`{"body":"{\"password\":\"pw1\",\"page\":2}"}`:              `{"body":"{\"password\":\"[Filtered]\",\"page\":2}"}`,
+		// Inside longer text, or cut by the SDK's length limit.
+		`POST /login {"username":"root","password":"pw1"} 401`:      `POST /login {"username":"root","password":"[Filtered]"} 401`,
+		`{"username":"root","password":"p\"w1","card_number":"4111`: `{"username":"root","password":"[Filtered]","card_number":"[Filtered]"`,
+		`charge failed {"cvv": 123, "amount": 5`:                    `charge failed {"cvv": "[Filtered]", "amount": 5`,
+		// Form bodies are bare query strings.
+		"username=root&password=pw1": "username=root&password=%5BFiltered%5D",
+		// Unchanged: no secret, so the text stays byte for byte.
+		"{\n  \"user\": \"root\",\n  \"tokens\": 2\n}": "{\n  \"user\": \"root\",\n  \"tokens\": 2\n}",
+		`[1, 2] failed`:                       `[1, 2] failed`,
+		`{"a":1} and {"token":2} trailing`:    `{"a":1} and {"token":"[Filtered]"} trailing`,
+		`Cannot find module "auth": gone`:     `Cannot find module "auth": gone`,
+		`"token": else, "session": {"id": 1}`: `"token": else, "session": {"id": 1}`,
+		`{"token": "t1"`:                      `{"token": "[Filtered]"`,
+	}
+
+	for input, want := range testCases {
+		if got := scrubText(input); got != want {
+			t.Errorf("scrubText(%q)\ngot  %q\nwant %q", input, got, want)
 		}
 	}
 }

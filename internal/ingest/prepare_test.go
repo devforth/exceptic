@@ -57,6 +57,8 @@ func samplePayloads(t testing.TB) [][]byte {
 		[]byte(`{"dup":"Bearer abcdefghijkl","dup":"second","password":"a","password":"b"} trailing`),
 		[]byte(`{"exception":{"values":"not a list"},"threads":{"values":[1,"x",null]},"stacktrace":{"frames":"none"}}`),
 		[]byte(`{"items":[{"body":"request","attributes":{"http.request.header.authorization":{"value":"Bearer abcdefghijkl","type":"string"},"gen_ai.usage.input_tokens":{"value":42,"type":"integer"}}}]}`),
+		[]byte(`{"request":{"data":"{\"username\":\"root\",\"password\":\"p\",\"session\":{\"id\":1},\"next\":\"{\\\"token\\\":\\\"t\\\"}\"}"},"extra":{"auth":{"value":{"user":7},"token":"t","password":"p"}},"message":"POST /login {\"password\":\"p\",\"cvv\":123} cut \"token\":\"abc"}`),
+		[]byte(`{"attributes":{"body":{"value":"[[\"authorization\",\"Basic dXNlcjpwYXNz\"]]","type":"string"},"session":{"value":"s","raw":"Bearer abcdefghijkl0123"},"pairs":[["cookie",{"value":1,"x":2}]]},"pretty":"{\n \"a\": 1\n}","two":"{\"a\":1} {\"token\":2}","bad":"{\"token\":1,}","escaped":"{\"\\u0074oken\":\"t\"}"}`),
 		[]byte("not json"), []byte("null"), []byte(""), []byte(`["Bearer syntheticcredential"]`), []byte(`"just a string ?token=1"`), []byte("12.50"),
 		[]byte(`{"a":`), []byte(`{"a":1,}`), []byte(`[1,2`),
 	}
@@ -173,10 +175,7 @@ func referenceValue(node any) any {
 func referenceFiltered(node any) any {
 	if attribute, ok := node.(map[string]any); ok {
 		if _, hasValue := attribute["value"]; hasValue {
-			attribute["value"] = filteredText
-			attribute["type"] = "string"
-
-			return attribute
+			return map[string]any{"value": filteredText, "type": "string"}
 		}
 	}
 
@@ -281,6 +280,34 @@ func referenceIsAppFrame(frame map[string]any) bool {
 	return frame["in_app"] == true && !sentry.IsLibraryPath(filename) && !sentry.IsLibraryPath(absPath)
 }
 
+// A JSON document in a string is read as one once: documents nested in
+// strings, each level as large as the payload, cost what one document does.
+func TestNestedDocumentsInTextStayLinear(t *testing.T) {
+	filler := strings.Repeat("x", 1<<20)
+	nested := `{"a":"` + filler + `"}`
+
+	for range 16 {
+		encoded, _ := json.Marshal(nested)
+		nested = `{"a":` + string(encoded) + `}`
+	}
+
+	flat, _ := json.Marshal(`{"a":"` + strings.Repeat("x", len(nested)) + `"}`)
+	nestedPayload, _ := json.Marshal(nested)
+
+	started := time.Now()
+
+	prepareEvent([]byte(`{"message":` + string(flat) + `}`))
+
+	single := time.Since(started)
+	started = time.Now()
+
+	prepareEvent([]byte(`{"message":` + string(nestedPayload) + `}`))
+
+	if took := time.Since(started); took > 4*single+50*time.Millisecond {
+		t.Errorf("16 nested documents: %s, one document of the same size %s", took, single)
+	}
+}
+
 var prepared []byte
 
 func BenchmarkPrepareEvent(b *testing.B) {
@@ -317,6 +344,7 @@ func TestDeepNestingStaysLinear(t *testing.T) {
 		"pairs":   strings.Repeat(`["token",`, 9000) + "1" + strings.Repeat(`,2]`, 9000),
 		"objects": strings.Repeat(`{"session":{"a":`, 4500) + "1" + strings.Repeat(`}}`, 4500),
 		"lists":   `{"breadcrumbs":[` + strings.Repeat(`[`, 9000) + strings.Repeat(`]`, 9000) + `]}`,
+		"text":    `{"message":"` + strings.Repeat(`{\"session\":{\"a\":`, 4500) + "1" + strings.Repeat(`}}`, 4500) + `"}`,
 	} {
 		// Against the tree pass on the same input, so a slow machine slows both.
 		started := time.Now()
