@@ -641,7 +641,7 @@ Every component with its variants, on sample data. Served only by the dev server
 			<UsageBar
 				segments={[
 					{ label: 'backend: 250 MB', percent: 25, color: '#2563eb' },
-					{ label: 'frontend: 110 MB', percent: 11, color: '#db2777' },
+					{ label: 'frontend: 110 MB', percent: 11, color: '#be185d' },
 					{ label: 'Other: 40 MB', percent: 4 }
 				]}
 				label="backend 250 MB, frontend 110 MB, other 40 MB of 1.0 GB"

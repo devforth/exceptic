@@ -50,8 +50,8 @@ func (project Project) DSN(base *url.URL) string {
 // ProjectPalette gives projects distinct colors until one is chosen in the
 // UI, where its colors are the presets; all read well on light and dark backgrounds.
 var ProjectPalette = []PaletteColor{
-	{"Blue", "#2563eb"}, {"Pink", "#db2777"}, {"Green", "#16a34a"}, {"Orange", "#ea580c"}, {"Violet", "#7c3aed"},
-	{"Cyan", "#0891b2"}, {"Amber", "#ca8a04"}, {"Red", "#dc2626"}, {"Indigo", "#4f46e5"}, {"Teal", "#0d9488"},
+	{"Blue", "#2563eb"}, {"Pink", "#be185d"}, {"Green", "#15803d"}, {"Violet", "#7c3aed"}, {"Orange", "#c2410c"},
+	{"Teal", "#0f766e"}, {"Indigo", "#4338ca"}, {"Amber", "#a16207"}, {"Cyan", "#0e7490"}, {"Fuchsia", "#a21caf"},
 }
 
 // PaletteColor is a color of the palette with its name.

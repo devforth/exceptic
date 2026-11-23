@@ -1206,15 +1206,15 @@ export const personalTokenKind = 'token';
 /** The palette of project colors: a project follows it by its ID until it has its own color. */
 export const projectPalette = [
 	{ name: 'Blue', color: '#2563eb' },
-	{ name: 'Pink', color: '#db2777' },
-	{ name: 'Green', color: '#16a34a' },
-	{ name: 'Orange', color: '#ea580c' },
+	{ name: 'Pink', color: '#be185d' },
+	{ name: 'Green', color: '#15803d' },
 	{ name: 'Violet', color: '#7c3aed' },
-	{ name: 'Cyan', color: '#0891b2' },
-	{ name: 'Amber', color: '#ca8a04' },
-	{ name: 'Red', color: '#dc2626' },
-	{ name: 'Indigo', color: '#4f46e5' },
-	{ name: 'Teal', color: '#0d9488' },
+	{ name: 'Orange', color: '#c2410c' },
+	{ name: 'Teal', color: '#0f766e' },
+	{ name: 'Indigo', color: '#4338ca' },
+	{ name: 'Amber', color: '#a16207' },
+	{ name: 'Cyan', color: '#0e7490' },
+	{ name: 'Fuchsia', color: '#a21caf' },
 ] as const;
 
 /** What each role may do. */
