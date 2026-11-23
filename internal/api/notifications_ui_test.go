@@ -170,6 +170,8 @@ type webhook struct {
 	mutex  sync.Mutex
 	bodies []string
 	url    string
+	// rateLimited answers that many requests with 429 and a Retry-After of an hour.
+	rateLimited int
 }
 
 func newWebhook(t *testing.T) *webhook {
@@ -180,11 +182,19 @@ func newWebhook(t *testing.T) *webhook {
 		body, _ := io.ReadAll(r.Body)
 
 		hook.mutex.Lock()
+		defer hook.mutex.Unlock()
+
 		hook.bodies = append(hook.bodies, string(body))
-		hook.mutex.Unlock()
+
+		if hook.rateLimited > 0 {
+			hook.rateLimited--
+
+			w.Header().Set("Retry-After", "3600")
+			w.WriteHeader(http.StatusTooManyRequests)
+		}
 	}))
 	t.Cleanup(server.Close)
-	hook.url = server.URL + "/services/T0/B0/x"
+	hook.url = server.URL + "/services/T0/B0/webhooksecretsegment"
 
 	return hook
 }
@@ -857,4 +867,41 @@ func (server *notificationsServer) newest(connectionID string) int64 {
 	}
 
 	return messages[0].ID
+}
+
+// A rate limit pauses a connection only until it is fixed: a save or Retry
+// now sends its waiting messages at once, not after the Retry-After.
+func TestFixEndsRateLimitPause(t *testing.T) {
+	for _, fix := range []string{"retry_connection", "update_connection"} {
+		t.Run(fix, func(t *testing.T) {
+			server := newNotificationsServer(t)
+			hook := newWebhook(t)
+			hook.mutex.Lock()
+			hook.rateLimited = 1
+			hook.mutex.Unlock()
+
+			id := server.create(map[string]any{"type": "slack", "name": "Chat", "webhook_url": hook.url})
+
+			server.ingestFixtures()
+			waitUntil(t, "the rate-limited attempt", func() bool { return hook.count() == 1 })
+
+			server.must(fix, map[string]any{"connection_id": id}, nil)
+			waitUntil(t, "the waiting messages", func() bool { return hook.count() > 1 })
+		})
+	}
+}
+
+// waitUntil fails the test when condition does not hold within 5 seconds.
+func waitUntil(t *testing.T, what string, condition func() bool) {
+	t.Helper()
+
+	deadline := time.Now().Add(5 * time.Second)
+
+	for !condition() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
 }

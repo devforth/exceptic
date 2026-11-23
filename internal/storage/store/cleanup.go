@@ -27,7 +27,9 @@ const (
 type CleanupRun struct {
 	Sequence uint64 `json:"seq"`
 	// Project is the one project a run cleans down to its disk share; 0: all of them.
-	Project    int           `json:"project,omitempty"`
+	Project int `json:"project,omitempty"`
+	// Share is that project's disk share when the run started, in percent.
+	Share      int           `json:"share,omitempty"`
 	Status     string        `json:"status"`
 	StartedAt  time.Time     `json:"started_at"`
 	Duration   time.Duration `json:"duration"`

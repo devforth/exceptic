@@ -273,13 +273,25 @@ func NormalizeEventID(value string) string {
 // keep the zero value on an unexpected one, as Decode does for every other field:
 // losing one field is better than losing the error report.
 
-// Timestamp accepts Unix seconds (float) or an RFC 3339 string.
+// Timestamp accepts Unix seconds (float) or an RFC 3339 string; a time JSON
+// cannot encode (years outside 0–9999, such as milliseconds sent as seconds)
+// is left zero.
 type Timestamp struct{ time.Time }
+
+// Unix seconds of 0000-01-01 and 9999-12-31T23:59:59.
+const (
+	minTimestampSeconds = -62167219200
+	maxTimestampSeconds = 253402300799
+)
 
 func (timestamp *Timestamp) UnmarshalJSON(data []byte) error {
 	var seconds float64
 
 	if err := json.Unmarshal(data, &seconds); err == nil {
+		if seconds < minTimestampSeconds || seconds >= maxTimestampSeconds+1 {
+			return nil
+		}
+
 		whole := int64(seconds)
 		timestamp.Time = time.Unix(whole, int64((seconds-float64(whole))*1e9)).UTC()
 
@@ -291,7 +303,10 @@ func (timestamp *Timestamp) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &text); err == nil {
 		for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.999999999"} {
 			if parsed, err := time.Parse(layout, text); err == nil {
-				timestamp.Time = parsed.UTC()
+				if seconds := parsed.Unix(); seconds >= minTimestampSeconds && seconds <= maxTimestampSeconds {
+					timestamp.Time = parsed.UTC()
+				}
+
 				return nil
 			}
 		}

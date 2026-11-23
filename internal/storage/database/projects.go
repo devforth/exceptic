@@ -191,7 +191,7 @@ func (database *Store) PurgeProjects(ctx context.Context) error {
 		return nil
 	}
 
-	return errors.Join(database.db.CompactRange(database.logs.KeyRange()), database.db.CompactRange(database.events.KeyRange()))
+	return database.compact([]func() ([]byte, []byte){database.logs.KeyRange, database.events.KeyRange})
 }
 
 func (database *Store) purgeProject(ctx context.Context, id int) error {

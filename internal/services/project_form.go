@@ -51,8 +51,8 @@ func readProjectForm(form url.Values, project *store.Project, recording config.R
 	if form.Has("disk_share") {
 		share, err := strconv.Atoi(strings.TrimSpace(form.Get("disk_share")))
 
-		if err != nil || share < store.MinDiskShare || share > 100 || share%store.DiskShareStep != 0 {
-			problems["disk_share"] = fmt.Sprintf("Choose %d%% to 100%% in steps of %d%%.", store.MinDiskShare, store.DiskShareStep)
+		if err != nil || share < store.MinDiskShare || share > store.MaxDiskShare || share%store.DiskShareStep != 0 {
+			problems["disk_share"] = fmt.Sprintf("Choose %d%% to %d%% in steps of %d%%.", store.MinDiskShare, store.MaxDiskShare, store.DiskShareStep)
 		} else {
 			project.DiskShare = share
 		}

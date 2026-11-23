@@ -506,6 +506,23 @@ func TestRateLimitStopsTheBatch(t *testing.T) {
 	}
 }
 
+// A Retry-After past the retry window fails the message it came with and
+// does not pause the connection: the next message is sent at once.
+func TestRetryAfterBeyondRetryForDoesNotPause(t *testing.T) {
+	setup := newSetup(t)
+	channel := &fakeChannel{failFirst: 1, failWith: &RetryAfterError{Delay: 48 * time.Hour, Err: errors.New("429")}}
+	setup.connect(channel, nil)
+
+	notifier := setup.start(Options{RetryFor: 24 * time.Hour})
+
+	notifier.Notify(issue(1, "error"))
+	waitFor(t, "the first message to fail", func() bool { return setup.outboxCounts()["failed"] == 1 })
+
+	notifier.Notify(issue(2, "error"))
+	waitFor(t, "the second message", func() bool { return channel.sentCount() == 1 })
+	closeNotifier(t, notifier)
+}
+
 // Disabling a connection fails its queued messages instead of sending them later.
 func TestDisabledConnectionFailsQueuedMessages(t *testing.T) {
 	setup := newSetup(t)
@@ -733,5 +750,78 @@ func TestFloodKeepsOnlySummaryExamples(t *testing.T) {
 
 	if current.held != 1000 || len(current.examples) != maxSummaryItems || current.examples[0].IssueID != issue(0, "error").IssueID {
 		t.Fatalf("held %d, kept %d examples", current.held, len(current.examples))
+	}
+}
+
+// panickingChannel panics on the notification titled panicOn.
+type panickingChannel struct {
+	fakeChannel
+	panicOn string
+}
+
+func (channel *panickingChannel) Send(ctx context.Context, notification Notification) error {
+	if notification.Title == channel.panicOn {
+		panic("template failed")
+	}
+
+	return channel.fakeChannel.Send(ctx, notification)
+}
+
+// A message whose sending panics would panic at every retry and every start:
+// it fails at once, logged with the stack and the connection, and the
+// worker goes on with the next message.
+func TestPanickingSendFailsTheMessage(t *testing.T) {
+	setup := newSetup(t)
+
+	var logs lockedWriter
+
+	channel := &panickingChannel{panicOn: issue(1, "error").Title}
+	id := setup.connect(channel, nil)
+	notifier := setup.start(Options{Logger: slog.New(slog.NewTextHandler(&logs, nil))})
+
+	notifier.Notify(issue(1, "error"))
+	notifier.Notify(issue(2, "error"))
+	waitFor(t, "the next message", func() bool { return channel.sentCount() == 1 })
+	waitFor(t, "the message that panicked to fail", func() bool { return setup.outboxCounts()["failed"] == 1 })
+	closeNotifier(t, notifier)
+
+	if output := logs.String(); !strings.Contains(output, "template failed") || !strings.Contains(output, "connection="+id) || !strings.Contains(output, "notify_test.go") {
+		t.Fatalf("the panic was not logged with its stack and connection:\n%s", output)
+	}
+}
+
+// panickingStore panics once when the connections are read.
+type panickingStore struct {
+	store.Store
+	panicked atomic.Bool
+}
+
+func (database *panickingStore) ListConnections(ctx context.Context) ([]store.Connection, error) {
+	if database.panicked.CompareAndSwap(false, true) {
+		panic("damaged connection")
+	}
+
+	return database.Store.ListConnections(ctx)
+}
+
+// A panic while routing a notification loses only that notification: the
+// dispatcher goes on with the next.
+func TestPanickingRouteKeepsTheDispatcher(t *testing.T) {
+	setup := newSetup(t)
+
+	var logs lockedWriter
+
+	channel := &fakeChannel{}
+	setup.connect(channel, nil)
+
+	notifier := setup.start(Options{Store: &panickingStore{Store: setup.database}, Logger: slog.New(slog.NewTextHandler(&logs, nil))})
+
+	notifier.Notify(issue(1, "error"))
+	notifier.Notify(issue(2, "error"))
+	waitFor(t, "the next notification", func() bool { return channel.sentCount() == 1 })
+	closeNotifier(t, notifier)
+
+	if output := logs.String(); !strings.Contains(output, "damaged connection") || !strings.Contains(output, "notify_test.go") {
+		t.Fatalf("the panic was not logged with its stack:\n%s", output)
 	}
 }

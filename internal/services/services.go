@@ -19,7 +19,8 @@ type Dependencies struct {
 	Registry *projects.Registry
 	Settings *config.Config
 	Factory  notify.Factory
-	OAuth    *oauth.Server // the MCP server's sign-in
+	Notifier *notify.Notifier // sends the outbox; nil in tests that need none
+	OAuth    *oauth.Server    // the MCP server's sign-in
 }
 
 // All are the services the request catalog (package api) and the login
@@ -41,6 +42,7 @@ type All struct {
 func New(dependencies Dependencies) *All {
 	settings, database := dependencies.Settings, dependencies.Store
 	connections := newConnections(dependencies.Logger, database, dependencies.Factory, dependencies.Registry, settings)
+	connections.notifier = dependencies.Notifier
 
 	return &All{
 		AppName:      settings.AppName,

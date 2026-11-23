@@ -172,7 +172,7 @@ func Define[In, Out any](endpoint Endpoint, handler func(context.Context, Call, 
 
 	// Its step is the form's rule (services), refused at the field.
 	if share, ok := schema.Properties["disk_share"]; ok {
-		share.Minimum, share.Maximum = new(float64(store.MinDiskShare)), new(float64(100))
+		share.Minimum, share.Maximum = new(float64(store.MinDiskShare)), new(float64(store.MaxDiskShare))
 	}
 
 	resolved, err := schema.Resolve(nil)

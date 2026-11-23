@@ -45,12 +45,19 @@ func (database *Store) backfilled() bool {
 
 func (database *Store) ProjectUsage(context.Context) (store.ProjectUsage, error) {
 	usage := store.ProjectUsage{
-		Bytes: map[int]int64{}, LastReceived: map[int]time.Time{}, Oldest: map[int]store.OldestKept{}, Counting: !database.backfilled(),
-		Counted: database.logicalSize() + database.inboxBytes.Load(),
+		Bytes: map[int]int64{}, OnDisk: map[int]int64{}, LastReceived: map[int]time.Time{}, Oldest: map[int]store.OldestKept{},
+		Counting: !database.backfilled(),
+	}
+
+	ratio, err := database.diskRatio()
+
+	if err != nil {
+		return usage, err
 	}
 
 	for counter, size := range database.db.Groups() {
-		usage.Bytes[int(kv.Decode([]byte(counter), 0).U32())] = size
+		projectID := int(kv.Decode([]byte(counter), 0).U32())
+		usage.Bytes[projectID], usage.OnDisk[projectID] = size, int64(float64(size)*ratio)
 	}
 
 	database.issuesMutex.RLock()

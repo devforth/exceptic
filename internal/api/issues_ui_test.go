@@ -430,6 +430,34 @@ func TestUIClockDrift(t *testing.T) {
 	}
 }
 
+// Breadcrumb times JSON cannot encode (milliseconds sent as seconds, years
+// past 9999 or before 0) are left out; the page still opens.
+func TestUIBreadcrumbTimesOutOfRange(t *testing.T) {
+	server := newRESTServer(t)
+	user := server.webUser(store.RoleUser, false)
+
+	server.sendEnvelope(`{}` + "\n" + `{"type":"event"}` + "\n" + fmt.Sprintf(`{"message":"odd breadcrumbs","level":"error","timestamp":%d,"breadcrumbs":[`+
+		`{"timestamp":1731400000000,"message":"milliseconds"},{"timestamp":"10000-01-01T00:00:00Z","message":"year 10000"},`+
+		`{"timestamp":-1e18,"message":"before year 0"},{"timestamp":1731400000,"message":"in range"}]}`, time.Now().Unix()))
+
+	var details struct {
+		Event struct {
+			Breadcrumbs []struct {
+				Timestamp *time.Time `json:"timestamp"`
+				Message   string     `json:"message"`
+			} `json:"breadcrumbs"`
+		} `json:"event"`
+	}
+
+	user.read("get_issue_details?issue_id="+user.issueIDs("")[0], &details)
+
+	crumbs := details.Event.Breadcrumbs
+
+	if len(crumbs) != 4 || crumbs[0].Timestamp != nil || crumbs[2].Timestamp != nil || crumbs[3].Timestamp == nil || crumbs[3].Timestamp.Unix() != 1731400000 {
+		t.Errorf("breadcrumbs: %+v", crumbs)
+	}
+}
+
 // Actions of the list and the page: several issues at once, recorded as the
 // user; deleting needs an admin; issues deleted meanwhile are skipped.
 func TestUIApplyIssueAction(t *testing.T) {

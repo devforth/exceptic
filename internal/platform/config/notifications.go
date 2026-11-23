@@ -135,14 +135,15 @@ func parseNotifications(getenv func(string) string) (Notifications, error) {
 	}
 
 	if value := strings.TrimRight(strings.TrimSpace(getenv("PUBLIC_URL")), "/"); value != "" {
-		if err := checkHTTPURL(value); err != nil {
+		if err := checkPublicURL(value); err != nil {
 			return notifications, fmt.Errorf("PUBLIC_URL: %w", err)
 		}
 
 		notifications.PublicURL = value
 	}
 
-	if value := getenv("SECRET_KEY"); value != "" {
+	// Trimmed as secret.KeyFile reads the file, so its contents give the same key.
+	if value := strings.TrimSpace(getenv("SECRET_KEY")); value != "" {
 		if len(value) < secret.MinKeyLength {
 			return notifications, fmt.Errorf("SECRET_KEY: must be at least %d characters (e.g. openssl rand -hex 32)", secret.MinKeyLength)
 		}
@@ -196,6 +197,20 @@ func checkHTTPURL(value string) error {
 
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 		return fmt.Errorf("invalid URL %q (expected http:// or https://)", value)
+	}
+
+	return nil
+}
+
+// checkPublicURL: links are built by appending paths, and they go into
+// notifications, so a query, a fragment or credentials are refused.
+func checkPublicURL(value string) error {
+	if err := checkHTTPURL(value); err != nil {
+		return err
+	}
+
+	if parsed, _ := url.Parse(value); parsed.User != nil || strings.ContainsAny(value, "?#") {
+		return fmt.Errorf("invalid URL %q (only a scheme, a host and a path: no user, query or fragment)", value)
 	}
 
 	return nil

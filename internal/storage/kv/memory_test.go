@@ -119,6 +119,22 @@ func (engine *memoryEngine) Size() (int64, error) {
 	return size, nil
 }
 
+func (engine *memoryEngine) SizeOf(lower, upper []byte) (int64, error) {
+	engine.mutex.RLock()
+
+	defer engine.mutex.RUnlock()
+
+	var size int64
+
+	for key, value := range engine.data {
+		if key >= string(lower) && (upper == nil || key < string(upper)) {
+			size += int64(len(key) + len(value))
+		}
+	}
+
+	return size, nil
+}
+
 func (engine *memoryEngine) Close() error { return nil }
 
 type memoryIterator struct {

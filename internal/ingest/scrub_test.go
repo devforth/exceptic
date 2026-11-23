@@ -202,6 +202,17 @@ func TestScrubTextJSON(t *testing.T) {
 		`Cannot find module "auth": gone`:     `Cannot find module "auth": gone`,
 		`"token": else, "session": {"id": 1}`: `"token": else, "session": {"id": 1}`,
 		`{"token": "t1"`:                      `{"token": "[Filtered]"`,
+		// Python dict reprs (str(dict)) quote with ' and use " for a string holding one.
+		`login failed {'username': 'root', 'password': 'pw1', 'token': 'abc'}`: `login failed {'username': 'root', 'password': '[Filtered]', 'token': '[Filtered]'}`,
+		`{'cvv': 123, 'amount': 5}`:                         `{'cvv': '[Filtered]', 'amount': 5}`,
+		`{'password': "it's", 'user': 'root'}`:              `{'password': '[Filtered]', 'user': 'root'}`,
+		`{'password': 'p\'w', 'next': 1}`:                   `{'password': '[Filtered]', 'next': 1}`,
+		`{'note': 'say "hi', 'token': 'abc'}`:               `{'note': 'say "hi', 'token': '[Filtered]'}`,
+		`don't retry {'session': 'abc'}`:                    `don't retry {'session': '[Filtered]'}`,
+		`{"note": "it's", 'api_key': 'k1'}`:                 `{"note": "it's", 'api_key': '[Filtered]'}`,
+		`cut {'username': 'root', 'password': 'pw`:          `cut {'username': 'root', 'password': '[Filtered]'`,
+		`can't find 'auth': gone, it's 'token' time`:        `can't find 'auth': gone, it's 'token' time`,
+		`{'tokens': None, 'session': {'id': 1}, 'auth': 1}`: `{'tokens': None, 'session': {'id': 1}, 'auth': '[Filtered]'}`,
 	}
 
 	for input, want := range testCases {

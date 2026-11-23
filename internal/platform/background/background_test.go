@@ -98,8 +98,9 @@ func TestWakesWhileBusyAddOnePass(t *testing.T) {
 
 	<-busyStarted
 
-	// Wake has no buffer: the fourth send returns once the third is forwarded.
-	for range 4 {
+	// Wake has no buffer: each send returns once the one before it is handled,
+	// so all but the last come during the busy pass.
+	for range 10 {
 		checkWake <- struct{}{}
 	}
 
@@ -120,8 +121,9 @@ func TestWakesWhileBusyAddOnePass(t *testing.T) {
 		t.Fatal("the marker's wake ran no pass")
 	}
 
-	if count := checks.Load(); count != 1 {
-		t.Fatalf("%d passes for wakes that came during one busy pass, want 1", count)
+	// The last wake may be handled after the busy pass, when it is a wake of its own.
+	if count := checks.Load(); count > 2 {
+		t.Fatalf("%d passes for 9 wakes during one busy pass and one after it, want at most 2", count)
 	}
 }
 
@@ -269,5 +271,36 @@ func TestStopCollectsAPassLeftRunning(t *testing.T) {
 
 	if !strings.Contains(output.String(), `"background job failed"`) || !strings.Contains(output.String(), "disk full") {
 		t.Errorf("the error of the pass left running was not logged:\n%s", output.String())
+	}
+}
+
+// A pass that panics (on a damaged record, say) is logged with its stack as a
+// failed pass; the process and the lane go on, so a job that panics at every
+// start cannot keep the server down.
+func TestPanickingPassIsLogged(t *testing.T) {
+	var output bytes.Buffer
+
+	ran := make(chan struct{})
+	lane := Lane{Name: "database", Jobs: []Job{
+		{Name: "size check", AtStart: true, First: time.Hour, Every: time.Hour,
+			Run: func(context.Context) error { panic("index out of range") }},
+		{Name: "compact", AtStart: true, First: time.Hour, Every: time.Hour,
+			Run: func(context.Context) error { close(ran); return nil }},
+	}}
+	stop := Start(context.Background(), slog.New(slog.NewTextHandler(&output, nil)), lane)
+
+	select {
+	case <-ran:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the lane stopped after the panic")
+	}
+
+	stop()
+
+	logged := output.String()
+
+	if !strings.Contains(logged, `"background job failed"`) || !strings.Contains(logged, `job="size check"`) ||
+		!strings.Contains(logged, "index out of range") || !strings.Contains(logged, "background_test.go") {
+		t.Errorf("the panic was not logged with its stack:\n%s", logged)
 	}
 }

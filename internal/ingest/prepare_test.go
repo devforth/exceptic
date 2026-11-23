@@ -59,6 +59,8 @@ func samplePayloads(t testing.TB) [][]byte {
 		[]byte(`{"items":[{"body":"request","attributes":{"http.request.header.authorization":{"value":"Bearer abcdefghijkl","type":"string"},"gen_ai.usage.input_tokens":{"value":42,"type":"integer"}}}]}`),
 		[]byte(`{"request":{"data":"{\"username\":\"root\",\"password\":\"p\",\"session\":{\"id\":1},\"next\":\"{\\\"token\\\":\\\"t\\\"}\"}"},"extra":{"auth":{"value":{"user":7},"token":"t","password":"p"}},"message":"POST /login {\"password\":\"p\",\"cvv\":123} cut \"token\":\"abc"}`),
 		[]byte(`{"attributes":{"body":{"value":"[[\"authorization\",\"Basic dXNlcjpwYXNz\"]]","type":"string"},"session":{"value":"s","raw":"Bearer abcdefghijkl0123"},"pairs":[["cookie",{"value":1,"x":2}]]},"pretty":"{\n \"a\": 1\n}","two":"{\"a\":1} {\"token\":2}","bad":"{\"token\":1,}","escaped":"{\"\\u0074oken\":\"t\"}"}`),
+		[]byte(`{"message":"login failed {'username': 'root', 'password': 'pw1', 'token': 'abc'}","breadcrumbs":[{"message":"don't retry {'session': 'p\\'w', 'cvv': 123}"}],"logentry":{"message":"{'note': 'say \"hi', 'api_key': \"it's\"} cut {'secret': 'x"}}`),
+		[]byte(`{"items":[{"body":"{'password': 'pw1'} it's 'auth': gone","attributes":{"text":{"value":"\"x\" {'token': 'abc'","type":"string"}}}]}`),
 		[]byte("not json"), []byte("null"), []byte(""), []byte(`["Bearer syntheticcredential"]`), []byte(`"just a string ?token=1"`), []byte("12.50"),
 		[]byte(`{"a":`), []byte(`{"a":1,}`), []byte(`[1,2`),
 	}
@@ -332,6 +334,34 @@ func BenchmarkPrepareEvent(b *testing.B) {
 					prepared = method.run(payload)
 				}
 			})
+		}
+	}
+}
+
+// Quotes in free text cost time in proportion to the size: an apostrophe
+// opens no string, so it must not send the scan to the end of the text.
+func TestQuotesInTextStayLinear(t *testing.T) {
+	const size = 1 << 20
+
+	baseline := strings.Repeat(`"a": 1, `, size/8)
+
+	started := time.Now()
+
+	scrubFreeText(baseline)
+
+	linear := time.Since(started)
+
+	for name, text := range map[string]string{
+		"apostrophes":       strings.Repeat(`it's `, size/5),
+		"open string":       `"` + strings.Repeat(`\"'`, size/3),
+		"apostrophe values": strings.Repeat(`'a': '\'`, size/8),
+	} {
+		started := time.Now()
+
+		scrubFreeText(text)
+
+		if took := time.Since(started); took > 10*linear+50*time.Millisecond {
+			t.Errorf("%s: %s, %d bytes of pairs %s", name, took, len(baseline), linear)
 		}
 	}
 }

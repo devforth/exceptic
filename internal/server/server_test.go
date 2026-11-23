@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -77,5 +78,48 @@ func TestEnvelopeRoutes(t *testing.T) {
 
 	if response := request(t, handler, http.MethodPost, "/api/7/envelope/extra"); response.Code != http.StatusNotFound {
 		t.Fatalf("subpath: got %d, want 404", response.Code)
+	}
+}
+
+// routesFunc registers routes with a function.
+type routesFunc func(router *http.ServeMux, protect func(http.Handler) http.Handler)
+
+func (register routesFunc) Register(router *http.ServeMux, protect func(http.Handler) http.Handler) {
+	register(router, protect)
+}
+
+// A handler that panics answers a JSON 500 without the panic's text; the
+// panic is logged with its stack and the request.
+func TestPanickingHandlerAnswers500(t *testing.T) {
+	var output bytes.Buffer
+
+	logger := slog.New(slog.NewTextHandler(&output, nil))
+	routes := routesFunc(func(router *http.ServeMux, protect func(http.Handler) http.Handler) {
+		router.Handle("GET /api/ui/boom", protect(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			panic("secret detail")
+		})))
+	})
+	server := httptest.NewServer(New(Options{Logger: logger, Database: fakeDB{}, Ingest: http.NotFoundHandler(), Web: routes}).Handler())
+
+	defer server.Close()
+
+	response, err := http.Get(server.URL + "/api/ui/boom")
+
+	if err != nil {
+		t.Fatalf("no answer: %v", err)
+	}
+
+	defer func() { _ = response.Body.Close() }()
+
+	body, _ := io.ReadAll(response.Body)
+
+	if response.StatusCode != http.StatusInternalServerError || strings.TrimSpace(string(body)) != `{"error":"internal error"}` {
+		t.Fatalf("got %d %s", response.StatusCode, body)
+	}
+
+	logged := output.String()
+
+	if !strings.Contains(logged, "secret detail") || !strings.Contains(logged, "/api/ui/boom") || !strings.Contains(logged, "server_test.go") {
+		t.Errorf("the panic was not logged with its stack and path:\n%s", logged)
 	}
 }

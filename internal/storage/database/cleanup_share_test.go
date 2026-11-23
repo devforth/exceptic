@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
@@ -170,14 +172,19 @@ func TestDiskShareRunsInOrder(t *testing.T) {
 }
 
 // A project's run stopped by a restart goes on with its project, step and
-// position; one whose share changed meanwhile ends.
+// position; one whose share or MAX_DATABASE_SIZE changed meanwhile ends, saying which.
 func TestDiskShareRunGoesOn(t *testing.T) {
+	const twoGB = int64(2 << 30)
+
 	for name, test := range map[string]struct {
-		share  int
-		reason string
+		share    int
+		maxBytes int64
+		reason   string
 	}{
-		"same share":    {20, ""},
-		"share changed": {30, "stopped: the disk share of project-2 changed to 30%"},
+		"same share":    {20, twoGB, ""},
+		"share changed": {30, twoGB, "stopped: the disk share of project-2 changed to 30%"},
+		// 20% of 2 GB is 10% of 4 GB, another share: still the limit is what changed.
+		"limit changed": {20, 2 * twoGB, "stopped: MAX_DATABASE_SIZE changed to 4.0 GB"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
@@ -187,14 +194,13 @@ func TestDiskShareRunGoesOn(t *testing.T) {
 			writeProjectLogs(t, database, 1, 100)
 			writeProjectLogs(t, database, 2, 100)
 
-			maxBytes := int64(1 << 40)
-			run := CleanupRun{Status: cleanupRunning, Project: 2, Reached: 6, Goal: database.projectBytes(2) / 2, Limit: maxBytes * 20 / 100}
+			run := CleanupRun{Status: cleanupRunning, Project: 2, Reached: 6, Goal: database.projectBytes(2) / 2, Limit: twoGB * 20 / 100, Share: 20}
 
 			if err := database.saveCleanup(&run); err != nil {
 				t.Fatal(err)
 			}
 
-			runs := checkSize(t, database, maxBytes)
+			runs := checkSize(t, database, test.maxBytes)
 
 			if projectLogs(t, database, 1) != 100 {
 				t.Errorf("project 1 keeps %d logs, want 100", projectLogs(t, database, 1))
@@ -273,4 +279,153 @@ func TestDiskShareStepsKeepOtherProjects(t *testing.T) {
 	}
 
 	onlyProject(t, run, 1)
+}
+
+// openOnDisk opens a store in dir: only files hold deleted records until a compaction.
+func openOnDisk(t *testing.T, dir string) *Store {
+	t.Helper()
+
+	database, err := Open(dir)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = database.Close() })
+
+	return database
+}
+
+// Envelopes processed but not compacted away keep their bytes in the files;
+// they are no project's, so a project under its share is not cleaned for them.
+func TestDiskShareLeavesOutTheInbox(t *testing.T) {
+	database := openOnDisk(t, t.TempDir())
+	seedShares(t, database, 50)
+	clockAt(database, time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC))
+	writeProjectLogs(t, database, 1, 1000)
+
+	random := rand.New(rand.NewPCG(1, 2))
+
+	var (
+		envelopes []Envelope
+		inbox     int64
+	)
+
+	for range 40 {
+		body := make([]byte, 100_000)
+
+		for at := range body {
+			body[at] = byte(random.Uint32())
+		}
+
+		entry, err := database.Append(1, database.now(), body)
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		envelopes = append(envelopes, Envelope{Sequence: entry.Sequence, InboxSize: entry.Size})
+		inbox += int64(entry.Size)
+	}
+
+	// Into the tables, as a busy server's inbox gets before its envelopes are stored.
+	if err := database.compactInbox(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := database.Write(envelopes); err != nil {
+		t.Fatal(err)
+	}
+
+	size, _ := database.db.Size()
+	// The project's share is half way between its size with the envelopes and without.
+	maxBytes := 2*size - inbox
+
+	if runs := checkSize(t, database, maxBytes); len(runs) != 0 {
+		t.Fatalf("%s on disk, %s of it processed envelopes; runs %+v", config.FormatSize(size), config.FormatSize(inbox), runs)
+	}
+
+	if onDisk := usage(t, database).OnDisk[1]; onDisk <= 0 || onDisk > size-inbox/2 {
+		t.Errorf("project 1 takes %d bytes of %d, %d of them processed envelopes", onDisk, size, inbox)
+	}
+}
+
+// A project's run leaves what it deleted in the files until a compaction;
+// the next check, after a restart too, does not count those bytes as the
+// project's and clean it again.
+func TestDiskShareRunOnce(t *testing.T) {
+	for _, restart := range []bool{false, true} {
+		t.Run(fmt.Sprintf("restart %t", restart), func(t *testing.T) { testDiskShareRunOnce(t, restart) })
+	}
+}
+
+func testDiskShareRunOnce(t *testing.T, restart bool) {
+	dir := t.TempDir()
+	database := openOnDisk(t, dir)
+	seedShares(t, database, 100, 50)
+	clockAt(database, time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC))
+
+	random := rand.New(rand.NewPCG(1, 2))
+
+	// Bodies that do not compress, so the data outweighs what the deletes add to the journal.
+	for project, count := range map[int]int{1: 50, 2: 1000} {
+		logs := make([]store.NewLog, 0, count)
+
+		for range count {
+			body := make([]byte, 2000)
+
+			for at := range body {
+				body[at] = 'a' + byte(random.IntN(26))
+			}
+
+			logs = append(logs, store.NewLog{ProjectID: project, Timestamp: database.now(), Level: "error", Body: string(body)})
+		}
+
+		if err := database.SaveLogs(context.Background(), logs, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := database.db.CompactRange(nil, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	size, _ := database.db.Size()
+	maxBytes := size * 3 / 2
+	first := checkSize(t, database, maxBytes)
+
+	if len(first) != 1 || first[0].Project != 2 || len(first[0].Steps) == 0 {
+		t.Fatalf("first check: %+v", first)
+	}
+
+	left := projectLogs(t, database, 2)
+
+	if restart {
+		if err := database.Close(); err != nil {
+			t.Fatal(err)
+		}
+
+		database = openOnDisk(t, dir)
+		clockAt(database, time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC))
+	}
+
+	if again := checkSize(t, database, maxBytes); len(again) != 0 || projectLogs(t, database, 2) != left {
+		t.Fatalf("second check: %+v; project 2 keeps %d logs of %d", again, projectLogs(t, database, 2), left)
+	}
+}
+
+// Cleanup starts no run beside one still running: the size check goes on only with the newest.
+func TestCleanupRefusesBesideARunningRun(t *testing.T) {
+	database := openTest(t)
+	writeLogs(t, database, "info", 100, "line")
+
+	running := CleanupRun{Status: cleanupRunning, Reached: 1, Limit: 1}
+
+	if err := database.saveCleanup(&running); err != nil {
+		t.Fatal(err)
+	}
+
+	if run, err := database.Cleanup(context.Background(), AllProjects, 1); err == nil || run.Status != "" {
+		t.Fatalf("run %+v, %v", run, err)
+	}
 }

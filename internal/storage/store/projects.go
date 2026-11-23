@@ -19,16 +19,17 @@ type Project struct {
 	CreatedAt time.Time
 }
 
-// A disk share goes from MinDiskShare to 100 percent in steps of DiskShareStep.
+// A disk share goes from MinDiskShare to MaxDiskShare percent in steps of DiskShareStep.
 const (
 	MinDiskShare  = 5
+	MaxDiskShare  = 100
 	DiskShareStep = 5
 )
 
 // Share is the project's disk share in percent; 100 sets no limit of its own.
 func (project Project) Share() int {
-	if project.DiskShare <= 0 || project.DiskShare > 100 {
-		return 100
+	if project.DiskShare <= 0 || project.DiskShare > MaxDiskShare {
+		return MaxDiskShare
 	}
 
 	return project.DiskShare
@@ -57,9 +58,10 @@ var ErrProjectConflict = errors.New("project name or key already used")
 type ProjectUsage struct {
 	// Bytes of its issues, events and logs, before compression.
 	Bytes map[int]int64
-	// Counted is what Bytes are part of: the bytes of every issue, event and
-	// log, of deleted projects too, and of the ingest queue, counted the same way.
-	Counted int64
+	// OnDisk is its part of the size on disk, as the cleanup by size measures
+	// it: Bytes times the files' size per byte counted, the ingest queue's
+	// files left out.
+	OnDisk map[int]int64
 	// LastReceived is when its newest issue or log came; missing when it has none.
 	LastReceived map[int]time.Time
 	// Oldest is what each project still keeps, by the kinds the cleanup deletes.

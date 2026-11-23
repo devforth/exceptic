@@ -464,12 +464,13 @@ func (scrub scrubber) writeText(encoder *jsontext.Encoder, raw jsontext.Value, t
 }
 
 // mayHoldCredential reports whether scrubText could change a raw JSON string: it
-// has "=" (a query), "@" (a URL's userinfo), "bearer" or "basic" in any
-// case, or an escape or a byte beyond ASCII, which are checked the slow way.
+// has "=" (a query), "@" (a URL's userinfo), "'" (a Python dict repr),
+// "bearer" or "basic" in any case, or an escape (a quote among them) or a
+// byte beyond ASCII, which are checked the slow way.
 func mayHoldCredential(raw []byte) bool {
 	for index, char := range raw {
 		switch {
-		case char == '=' || char == '@' || char == '\\' || char >= 0x80:
+		case char == '=' || char == '@' || char == '\'' || char == '\\' || char >= 0x80:
 			return true
 		case char|0x20 == 'b':
 			rest := raw[index:]
@@ -569,7 +570,7 @@ func scrubFreeText(text string) string {
 		return text
 	}
 
-	if strings.Contains(text, `"`) {
+	if strings.ContainsAny(text, `"'`) {
 		text = scrubQuotedPairs(text)
 	}
 
@@ -636,33 +637,58 @@ func scrubJSONText(text string) (string, bool) {
 	return string(bytes.TrimRight(scrubbed.Bytes(), "\n")), true
 }
 
-// scrubQuotedPairs replaces the value of every "key": value pair of JSON in
-// text that is not a JSON document (a log line with a body, a message cut by
-// the SDK) whose key names a secret: a string, ended or cut at the end of the
-// text, or a number. One pass: each string is skipped whole.
+// scrubQuotedPairs replaces the value of every "key": value pair of JSON,
+// and 'key': value of a Python dict repr, in text that is not a JSON
+// document (a log line with a body, a message cut by the SDK) whose key names
+// a secret: a quoted string, ended or cut at the end of the text, or a
+// number. One pass: a "string" is skipped whole; a 'string' only when it is
+// a key, since an apostrophe opens none, so a key is looked for in at most
+// maxQuotedKey bytes.
 func scrubQuotedPairs(text string) string {
 	var output strings.Builder
 
-	copied := 0
+	copied, quotes := 0, `"'`
 
 	for position := 0; ; {
-		open := strings.IndexByte(text[position:], '"')
+		open := strings.IndexAny(text[position:], quotes)
 
 		if open < 0 {
 			break
 		}
 
 		open += position
-		keyEnd := quotedEnd(text, open)
+		quote := text[open]
+		searched := len(text)
 
-		if keyEnd < 0 {
-			break
+		if quote == '\'' {
+			searched = min(searched, open+maxQuotedKey)
+		}
+
+		keyEnd := quotedEnd(text[:searched], open)
+
+		colon := len(text)
+
+		if keyEnd > 0 {
+			colon = skipJSONSpace(text, keyEnd)
+		}
+
+		isPair := colon < len(text) && text[colon] == ':'
+
+		switch {
+		case keyEnd < 0 && quote == '"':
+			quotes = "'" // no "string" ends any more, but a 'key' may
+			position = open + 1
+
+			continue
+		case quote == '\'' && !isPair:
+			position = open + 1 // an apostrophe, or a 'string' that is no key
+
+			continue
 		}
 
 		position = keyEnd
-		colon := skipJSONSpace(text, keyEnd)
 
-		if colon == len(text) || text[colon] != ':' || !isSensitiveKey(quotedKey(text[open:keyEnd])) {
+		if !isPair || !isSensitiveKey(quotedKey(text[open:keyEnd])) {
 			continue
 		}
 
@@ -671,7 +697,7 @@ func scrubQuotedPairs(text string) string {
 
 		switch {
 		case valueStart == len(text):
-		case text[valueStart] == '"':
+		case text[valueStart] == '"' || text[valueStart] == '\'':
 			if valueEnd = quotedEnd(text, valueStart); valueEnd < 0 {
 				valueEnd = len(text) // cut short
 			}
@@ -684,7 +710,9 @@ func scrubQuotedPairs(text string) string {
 		}
 
 		output.WriteString(text[copied:valueStart])
-		output.WriteString(`"` + filteredText + `"`)
+		output.WriteByte(quote)
+		output.WriteString(filteredText)
+		output.WriteByte(quote)
 
 		copied, position = valueEnd, valueEnd
 	}
@@ -696,14 +724,17 @@ func scrubQuotedPairs(text string) string {
 	return output.String() + text[copied:]
 }
 
-// quotedEnd returns the index after the JSON string that starts at open, or
-// -1 when the text ends inside it.
+// maxQuotedKey bounds the search for the end of a 'key'.
+const maxQuotedKey = 64
+
+// quotedEnd returns the index after the string that starts at open, quoted
+// by the character there, or -1 when the text ends inside it.
 func quotedEnd(text string, open int) int {
 	for index := open + 1; index < len(text); index++ {
 		switch text[index] {
 		case '\\':
 			index++
-		case '"':
+		case text[open]:
 			return index + 1
 		}
 	}

@@ -178,6 +178,38 @@ func Run(t *testing.T, open Open, persistent bool) {
 		expect(t, engine, nil, "key-00000", "key-01999")
 	})
 
+	t.Run("size of a range", func(t *testing.T) {
+		engine := start(t)
+		random := rand.New(rand.NewPCG(3, 4))
+		values := map[string]string{}
+
+		for index := range 5000 {
+			value := make([]byte, 200)
+
+			for at := range value {
+				value[at] = byte(random.Uint32())
+			}
+
+			values[fmt.Sprintf("a/%05d", index)] = string(value)
+		}
+
+		values["b/one"] = "small"
+		write(t, engine, values)
+
+		if err := engine.CompactRange(nil, nil); err != nil {
+			t.Fatal(err)
+		}
+
+		size, _ := engine.Size()
+		ranged, err := engine.SizeOf([]byte("a/"), []byte("a0"))
+		small, _ := engine.SizeOf([]byte("b/"), []byte("b0"))
+		none, _ := engine.SizeOf([]byte("c/"), []byte("c0"))
+
+		if err != nil || ranged < 5000*200*9/10 || ranged > size || small >= ranged/20 || none != 0 {
+			t.Errorf("a/ %d, b/ %d, c/ %d of %d bytes, %v", ranged, small, none, size, err)
+		}
+	})
+
 	// One call must give the space back, however the engine spreads the keys over its files.
 	t.Run("compacting a range frees its deleted keys", func(t *testing.T) {
 		engine := start(t)

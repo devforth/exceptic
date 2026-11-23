@@ -458,3 +458,148 @@ func TestUnencodableEnvelopeIsDropped(t *testing.T) {
 		t.Errorf("stored logs: %v", bodies)
 	}
 }
+
+// panickingProjects panics in List while panicking is set.
+type panickingProjects struct {
+	projects  config.Projects
+	panicking atomic.Bool
+}
+
+func (list *panickingProjects) List() config.Projects {
+	if list.panicking.Load() {
+		panic("damaged project list")
+	}
+
+	return list.projects
+}
+
+// panickingNotifier panics on every notification.
+type panickingNotifier struct{}
+
+func (panickingNotifier) Notify(notify.Notification) { panic("broken notifier") }
+
+// lockedBuffer collects log output written from several goroutines.
+type lockedBuffer struct {
+	mutex  sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (locked *lockedBuffer) Write(data []byte) (int, error) {
+	locked.mutex.Lock()
+	defer locked.mutex.Unlock()
+
+	return locked.buffer.Write(data)
+}
+
+func (locked *lockedBuffer) String() string {
+	locked.mutex.Lock()
+	defer locked.mutex.Unlock()
+
+	return locked.buffer.String()
+}
+
+// panicPipeline builds a pipeline of one project: accept posts an envelope,
+// run starts storing, settle waits until the pipeline has stored what it took.
+func panicPipeline(t *testing.T, projects config.ProjectList, sink StoreSink) (pipeline *Pipeline, accept func(body []byte), run, settle func()) {
+	t.Helper()
+
+	db, err := database.Open(t.TempDir())
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = db.Close() })
+
+	settings := &config.Config{Projects: projects.List()}
+	pipeline = NewPipeline(sink.Logger, settings, projects, db, sink)
+
+	accept = func(body []byte) {
+		t.Helper()
+
+		request := httptest.NewRequest(http.MethodPost, "/api/1/envelope/?sentry_key="+settings.Projects[0].PublicKey, bytes.NewReader(body))
+		request.SetPathValue("projectID", "1")
+
+		response := httptest.NewRecorder()
+		pipeline.Handler().ServeHTTP(response, request)
+
+		if response.Code != http.StatusOK {
+			t.Fatalf("%d %s", response.Code, response.Body)
+		}
+	}
+
+	run = func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+
+		go func() { defer close(done); pipeline.Run(ctx) }()
+
+		t.Cleanup(func() { cancel(); <-done })
+	}
+
+	settle = func() {
+		t.Helper()
+
+		waitCtx, cancelWait := context.WithTimeout(context.Background(), 5*time.Second)
+
+		defer cancelWait()
+
+		if err := pipeline.WaitStored(waitCtx); err != nil {
+			t.Fatalf("the pipeline did not settle: %v", err)
+		}
+	}
+
+	return pipeline, accept, run, settle
+}
+
+// An envelope whose processing panics would panic again at every scan and
+// every start: it is logged with the stack and dropped, and the pipeline goes on.
+func TestPanickingEnvelopeIsDropped(t *testing.T) {
+	var logs lockedBuffer
+
+	projects := &panickingProjects{projects: benchProjects(1)}
+	sink := StoreSink{Logger: slog.New(slog.NewTextHandler(&logs, nil))}
+	pipeline, accept, run, settle := panicPipeline(t, projects, sink)
+	event := fixtures.Envelope(t, "node-event-unhandled")
+
+	// Accepted with a good list, processed with a damaged one.
+	accept(varied(event, 0))
+	projects.panicking.Store(true)
+	run()
+	settle()
+	projects.panicking.Store(false)
+	accept(varied(event, 1))
+	settle()
+
+	if stored := pipeline.stored.Load(); stored != 2 {
+		t.Errorf("stored %d envelopes, want the dropped one and the next", stored)
+	}
+
+	if output := logs.String(); !strings.Contains(output, "damaged project list") || !strings.Contains(output, "pipeline_test.go") {
+		t.Errorf("the panic was not logged with its stack:\n%s", output)
+	}
+}
+
+// A panic while reporting a stored event loses only that report: the
+// writer goes on with the next batches.
+func TestPanickingReportKeepsTheWriter(t *testing.T) {
+	var logs lockedBuffer
+
+	sink := StoreSink{Logger: slog.New(slog.NewTextHandler(&logs, nil)), Notifier: panickingNotifier{}}
+	pipeline, accept, run, settle := panicPipeline(t, benchProjects(1), sink)
+	event := fixtures.Envelope(t, "node-event-unhandled")
+
+	run()
+	accept(varied(event, 0))
+	settle()
+	accept(varied(event, 1))
+	settle()
+
+	if stored := pipeline.stored.Load(); stored != 2 {
+		t.Errorf("stored %d envelopes, want 2", stored)
+	}
+
+	if output := logs.String(); !strings.Contains(output, "broken notifier") || !strings.Contains(output, "pipeline_test.go") {
+		t.Errorf("the panic was not logged with its stack:\n%s", output)
+	}
+}

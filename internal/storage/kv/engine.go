@@ -14,6 +14,9 @@ type Engine interface {
 	// CompactRange frees the space of deleted keys in [lower, upper); nil bounds are open.
 	CompactRange(lower, upper []byte) error
 	Size() (int64, error)
+	// SizeOf is about how many bytes of Size hold the keys in [lower, upper),
+	// deleted ones included until a compaction frees them.
+	SizeOf(lower, upper []byte) (int64, error)
 	Close() error
 }
 

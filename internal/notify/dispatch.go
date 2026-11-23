@@ -3,6 +3,8 @@ package notify
 import (
 	"encoding/json"
 	"time"
+
+	"github.com/devforth/exceptic/internal/platform/logging"
 )
 
 // dispatch routes notifications to connections, applies the flood limit per
@@ -40,11 +42,22 @@ func (notifier *Notifier) dispatch() {
 				return
 			}
 
-			notifier.route(notification, windows)
+			notifier.routeOrDrop(notification, windows)
 		case <-windowEnds:
 			flush()
 		}
 	}
+}
+
+// routeOrDrop routes a notification; a panic loses only that one, not the dispatcher.
+func (notifier *Notifier) routeOrDrop(notification Notification, windows map[string]*window) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			notifier.options.Logger.Error("notification dropped: routing it panicked", "issue_id", notification.IssueID, "err", logging.PanicError(recovered))
+		}
+	}()
+
+	notifier.route(notification, windows)
 }
 
 func (notifier *Notifier) route(notification Notification, windows map[string]*window) {

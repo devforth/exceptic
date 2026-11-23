@@ -11,7 +11,7 @@ Everything is set with environment variables (in Docker: `-e`, `env_file` or `en
 | `APP_NAME` | `Exceptic` | Shown in the UI, emails and notifications, and to coding agents, who register the MCP server under it in lowercase with dashes (`Acme Errors` → `acme-errors`). Up to 60 characters. |
 | `PORT` | `8000` | Port to listen on. |
 | `DATA_DIR` | `./data` (`/data` in the image) | Where the database (`leveldb`) lives, and `secret.key` when `SECRET_KEY` is not set. Keep it on a volume. |
-| `PUBLIC_URL` | | The address users and SDKs reach the server at, e.g. `https://errors.example.com` (a path prefix is kept). Used for links in notifications, the DSNs on the Projects page and the MCP address. Without it, DSNs use the address the UI was opened with and notifications have no links. |
+| `PUBLIC_URL` | | The address users and SDKs reach the server at, e.g. `https://errors.example.com` (a path prefix is kept; a user, query or fragment is refused at start). Used for links in notifications, the DSNs on the Projects page and the MCP address. Without it, DSNs use the address the UI was opened with and notifications have no links. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`. `debug` also logs every request and every rejected envelope. |
 | `GOMEMLIMIT` | `200MiB` | The memory the server aims to stay under: the Go runtime collects garbage harder as it nears it. A soft limit, not a cap. Takes `MiB`, `GiB`. |
 | `LOG_FORMAT` | `auto` | `auto`: readable colored lines in a terminal, logfmt otherwise (e.g. `docker logs`). Or `pretty`, `text`, `json`. `NO_COLOR` turns colors off. |
@@ -49,12 +49,12 @@ Where messages go (email addresses, Telegram chats, Slack channels) is set up on
 
 | Variable | Default | |
 |---|---|---|
-| `SECRET_KEY` | generated | At least 32 characters (`openssl rand -hex 32`). Encrypts Telegram tokens and Slack webhooks and tokens in the database. Without it a key is generated at the first start into `DATA_DIR/secret.key`; that protects a leaked copy of the database (`DATA_DIR/leveldb`) but not a copy of the whole data directory, so on a server set it and keep it outside. Do not lose or change it: stored chats stop working (enter their tokens again). To move a generated key out, set `SECRET_KEY` to the contents of `secret.key`, then delete the file. |
+| `SECRET_KEY` | generated | At least 32 characters (`openssl rand -hex 32`). Encrypts Telegram tokens and Slack webhooks and tokens in the database. Without it a key is generated at the first start into `DATA_DIR/secret.key`; that protects a leaked copy of the database (`DATA_DIR/leveldb`) but not a copy of the whole data directory, so on a server set it and keep it outside. Do not lose or change it: stored chats stop working (enter their tokens again). To move a generated key out, set `SECRET_KEY` to the contents of `secret.key`, then delete the file (spaces and line breaks around the value are ignored, as in the file). |
 | `SMTP_HOST` | | Mail server, without the port (that is `SMTP_PORT`); required for email. |
 | `SMTP_PORT` | `587` | Port 465 uses TLS from the start, others STARTTLS when the server offers it; without it mail goes unencrypted, and a login (`SMTP_USERNAME`) is refused unless the server is `localhost`. |
 | `SMTP_USERNAME`, `SMTP_PASSWORD` | | SMTP login. |
 | `EMAIL_FROM` | | Sender address; required with `SMTP_HOST`. |
-| `NOTIFY_RETRY_FOR` | `1d` | A message that cannot be delivered is retried (2s, 10s, 30s, … then hourly) this long, then marked failed. |
+| `NOTIFY_RETRY_FOR` | `1d` | A message that cannot be delivered is retried (2s, 10s, 30s, … then hourly) this long, then marked failed. A chat's rate limit (`Retry-After`) pauses its connection for the time the chat asks, never past this time (a message it would delay longer is marked failed); saving the connection or Retry now ends the pause. |
 | `NOTIFY_KEEP_SENT` | `1d` | Delivered messages are deleted from the delivery log after this. |
 | `NOTIFY_KEEP_FAILED` | `30d` | Failed messages are deleted after this. |
 
@@ -68,7 +68,7 @@ While the limit is on, events lose their details as they turn a month old, every
 |---|---|---|
 | `MAX_DATABASE_SIZE` | `2GB` | Once the database reaches it, the least useful data is deleted until the database is at 80%. Takes `KB`, `MB`, `GB`, at least `500MB`; `0` turns the limit off, and nothing is deleted or thinned. Envelopes waiting to be stored may take 20% of it (of `2GB` when it is off); beyond that new ones get `429` until the queue drains. |
 
-The size is checked at startup, every 10 minutes and after every 50 MB written. Every 10 minutes, halfway between the checks and limit or not, the ingest queue is compacted, so envelopes that waited there as the SDKs sent them, credentials included, leave the files; the pass is skipped while envelopes arrive (one came in the last 2 seconds, or the server has just started). Only the database files in use count (`DATA_DIR/leveldb`). At the limit the parts that collect deleted data as the server works (the ingest queue, issues) are first compacted when ingest is quiet, since deleted data keeps its space until then; if the database is still at the limit, the cleanup runs and always deletes:
+The size is checked at startup, every 10 minutes and after every 50 MB written. Every 10 minutes, halfway between the checks and limit or not, the ingest queue is compacted, so envelopes that waited there as the SDKs sent them, credentials included, leave the files; the pass is skipped while envelopes arrive (one came in the last 2 seconds, or the server has just started). Only the database files in use count (`DATA_DIR/leveldb`). At the limit the parts that collect deleted data as the server works (the ingest queue, issues, and the logs and events a project's cleanup deleted from) are first compacted when ingest is quiet, since deleted data keeps its space until then; if the database is still at the limit, the cleanup runs and always deletes:
 
 1. Logs older than a month.
 2. Events older than a month beyond the newest 20 of their issue.
@@ -87,7 +87,9 @@ Then, only while the database is still above 80%, each step after the one before
 
 It deletes in batches of up to 2000 records and stops as soon as enough is freed. Each batch looks at the data as it is then, so an issue that gets a new event or is reopened meanwhile is judged by that.
 
-A project may have a disk share below 100% (its settings page): a part of `MAX_DATABASE_SIZE` it may take, a ceiling rather than a reservation. Each size check first cleans every project that reached its share, the smallest share first, one after another: the same steps in the same order, each deleting only that project's data, down to 80% of its share. The project's size is its part of the database as the Projects page shows it. Only then, if the database is still at its limit, the cleanup over all projects runs. So a project that floods loses its own data before it can push out the others.
+A project may have a disk share below 100% (its settings page): a part of `MAX_DATABASE_SIZE` it may take, a ceiling rather than a reservation. Each size check first cleans every project that reached its share, the smallest share first, one after another: the same steps in the same order, each deleting only that project's data, down to 80% of its share. Only then, if the database is still at its limit, the cleanup over all projects runs. So a project that floods loses its own data before it can push out the others.
+
+A project's size is its part of the database as the Projects page shows it: its data in the proportion of the files to all the data stored, an estimate measured without compacting first. The ingest queue's files are no project's and are left out. A project's run compacts nothing, since that would rewrite every project's logs or events: what it deleted keeps its space until the database compacts those files on its own, or the cleanup over all projects compacts them (first, when ingest is quiet), and until then it still counts as stored, so it does not raise the other projects' sizes. Until a database from an earlier version is counted ("counting…"), only the cleanup over all projects runs.
 
 A cleanup stopped by a restart goes on where it stopped, for the same project, unless `MAX_DATABASE_SIZE` or that project's share changed meanwhile: then it ends as failed ("stopped: MAX_DATABASE_SIZE changed to …", "… turned off", "stopped: the disk share of … changed to …") and the next one starts from the new limit. Each run is logged with what every step deleted per project, and the last 100 runs with their steps and project are on the Projects page (Cleanup history).
 

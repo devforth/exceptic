@@ -14,6 +14,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"github.com/devforth/exceptic/internal/platform/config"
+	"github.com/devforth/exceptic/internal/platform/logging"
 	"github.com/devforth/exceptic/internal/sentry"
 	"github.com/devforth/exceptic/internal/storage/database"
 	"github.com/devforth/exceptic/internal/storage/store"
@@ -262,7 +263,7 @@ func (pipeline *Pipeline) processEntries(entries <-chan database.InboxEntry, res
 		weight := pipeline.weight(entry.Size)
 		_ = budget.Acquire(context.Background(), weight) // never fails: weight <= ParseBytes, no deadline
 
-		if result, ok := pipeline.process(entry); ok {
+		if result, ok := pipeline.processOrDrop(entry); ok {
 			results <- result
 		} else {
 			budget.Release(weight)
@@ -274,6 +275,20 @@ func (pipeline *Pipeline) processEntries(entries <-chan database.InboxEntry, res
 // weight is an envelope's share of ParseBytes; a larger one takes all of it.
 func (pipeline *Pipeline) weight(size int) int64 {
 	return min(int64(size), pipeline.ParseBytes)
+}
+
+// processOrDrop processes an entry; one that panics would panic again at
+// every scan and start, so it is logged and only leaves the inbox.
+func (pipeline *Pipeline) processOrDrop(entry database.InboxEntry) (result processed, ok bool) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			pipeline.logger.Error("envelope dropped: processing it panicked", "project_id", entry.ProjectID, "err", logging.PanicError(recovered))
+
+			result, ok = processed{Envelope: database.Envelope{Sequence: entry.Sequence, InboxSize: entry.Size}}, true
+		}
+	}()
+
+	return pipeline.process(entry)
 }
 
 // process reads an entry's body and parses it; a malformed one only leaves the inbox.
@@ -375,9 +390,20 @@ func (pipeline *Pipeline) commit(ctx context.Context, batch []processed, budget 
 
 	for index, envelope := range batch {
 		for position, result := range saved[index] {
-			pipeline.sink.report(envelope.project, envelope.events[position], result, envelope.Events[position].ReceivedAt)
+			pipeline.report(envelope, position, result)
 		}
 	}
+}
+
+// report reports one stored event; a panic loses only that report, not the writer.
+func (pipeline *Pipeline) report(envelope processed, position int, result store.SaveResult) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			pipeline.logger.Error("reporting a stored event panicked", "project", envelope.project.Name, "issue_id", result.IssueID, "err", logging.PanicError(recovered))
+		}
+	}()
+
+	pipeline.sink.report(envelope.project, envelope.events[position], result, envelope.Events[position].ReceivedAt)
 }
 
 // storeBatch retries every second; on shutdown the batch stays in the inbox.

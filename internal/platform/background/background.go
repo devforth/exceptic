@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/devforth/exceptic/internal/platform/logging"
 )
 
 // Job is one periodic pass.
@@ -62,7 +64,7 @@ type pass struct {
 	overran bool // ran past its time limit, so its error is reported when collected
 }
 
-// Run runs the lane's passes until ctx ends; a failed pass is logged.
+// Run runs the lane's passes until ctx ends; a failed pass, or one that panicked, is logged.
 func (lane Lane) Run(ctx context.Context, logger *slog.Logger) {
 	next := make([]time.Time, len(lane.Jobs))
 	running := make([]*pass, len(lane.Jobs)) // a pass the lane went on without
@@ -123,6 +125,13 @@ func (lane Lane) Run(ctx context.Context, logger *slog.Logger) {
 		go func() {
 			defer close(current.done)
 			defer cancel()
+			// A panic fails the pass: one on stored data would otherwise end
+			// the process at every start.
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					current.err = logging.PanicError(recovered)
+				}
+			}()
 
 			current.err = job.Run(passCtx)
 		}()

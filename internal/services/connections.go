@@ -19,6 +19,7 @@ type Connections struct {
 	logger        *slog.Logger
 	store         store.Store
 	factory       notify.Factory
+	notifier      *notify.Notifier // nil: no outbox worker to wake
 	projects      config.ProjectList
 	notifications config.Notifications
 	now           func() time.Time
@@ -94,7 +95,16 @@ func (service *Connections) SetActive(ctx context.Context, connection store.Conn
 
 // RetryNow makes the waiting messages of a connection due now.
 func (service *Connections) RetryNow(ctx context.Context, id string) error {
-	return service.store.RetryOutboxNow(ctx, id, service.now())
+	if err := service.store.RetryOutboxNow(ctx, id, service.now()); err != nil {
+		return err
+	}
+
+	// A rate limit's pause ends too: the fix may have been a new URL.
+	if service.notifier != nil {
+		service.notifier.RetryNow(id)
+	}
+
+	return nil
 }
 
 // saved stores a changed connection and retries its waiting messages now:
@@ -108,7 +118,7 @@ func (service *Connections) saved(ctx context.Context, connection store.Connecti
 		return nil
 	}
 
-	return service.store.RetryOutboxNow(ctx, connection.ID, service.now())
+	return service.RetryNow(ctx, connection.ID)
 }
 
 // Delete removes a connection; one already gone (deleted from another tab)

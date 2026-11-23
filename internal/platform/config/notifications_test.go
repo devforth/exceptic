@@ -1,9 +1,13 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/devforth/exceptic/internal/platform/secret"
 )
 
 const secretKey = "0123456789abcdef0123456789abcdef"
@@ -105,6 +109,10 @@ func TestNotificationsErrors(t *testing.T) {
 		wantErr string
 	}{
 		{"public url without scheme", map[string]string{"PUBLIC_URL": "errors.example.com"}, "PUBLIC_URL"},
+		{"public url with a user", map[string]string{"PUBLIC_URL": "https://user:password@errors.example.com"}, "PUBLIC_URL"},
+		{"public url with a query", map[string]string{"PUBLIC_URL": "https://errors.example.com/?x=1"}, "PUBLIC_URL"},
+		{"public url with a fragment", map[string]string{"PUBLIC_URL": "https://errors.example.com/#/"}, "PUBLIC_URL"},
+		{"public url with an empty query", map[string]string{"PUBLIC_URL": "https://errors.example.com/?"}, "PUBLIC_URL"},
 		{"short secret key", map[string]string{"SECRET_KEY": "short"}, "SECRET_KEY"},
 		{"smtp without sender", with(smtp, "EMAIL_FROM", ""), "EMAIL_FROM"},
 		{"smtp bad port", with(smtp, "SMTP_PORT", "smtp"), "SMTP_PORT"},
@@ -123,5 +131,32 @@ func TestNotificationsErrors(t *testing.T) {
 				t.Fatalf("got error %v, want it to contain %q", err, testCase.wantErr)
 			}
 		})
+	}
+}
+
+// SECRET_KEY set to the contents of secret.key, as the docs say to move a
+// generated key out, is the same key: the file's trailing newline does not count.
+func TestSecretKeyFromKeyFile(t *testing.T) {
+	dir := t.TempDir()
+	key, _, err := secret.KeyFile(dir)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(dir, secret.KeyFileName))
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	config, err := loadFrom(env(map[string]string{"SECRET_KEY": string(content)}))
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if config.Notifications.SecretKey != key {
+		t.Fatalf("SECRET_KEY %q, key file %q", config.Notifications.SecretKey, key)
 	}
 }

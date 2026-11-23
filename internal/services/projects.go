@@ -154,8 +154,8 @@ type Storage struct {
 	Counting bool
 }
 
-// ProjectStorage is a project's part of the database on disk: its issues,
-// events and logs, in the proportion of their bytes before compression.
+// ProjectStorage is a project's part of the database on disk, as the
+// cleanup by size measures it (store.ProjectUsage.OnDisk).
 type ProjectStorage struct {
 	ID    int
 	Name  string
@@ -200,8 +200,8 @@ func (service *Projects) Storage(ctx context.Context) (Storage, error) {
 			part.LastReceived = &last
 		}
 
-		if !usage.Counting && usage.Counted > 0 {
-			part.Bytes = min(storage.OtherBytes, int64(float64(used)*float64(usage.Bytes[project.ID])/float64(usage.Counted)))
+		if !usage.Counting {
+			part.Bytes = min(storage.OtherBytes, usage.OnDisk[project.ID])
 			part.Size = config.FormatSize(part.Bytes)
 			storage.OtherBytes -= part.Bytes
 		}

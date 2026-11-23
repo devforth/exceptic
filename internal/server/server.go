@@ -8,6 +8,8 @@ import (
 	"net/netip"
 	"strings"
 	"time"
+
+	"github.com/devforth/exceptic/internal/platform/logging"
 )
 
 // Pinger reports whether the storage is reachable.
@@ -93,7 +95,7 @@ func (server *Server) Handler() http.Handler {
 
 	router.Handle("/api/", server.unknownAPI())
 
-	return server.logRequests(router)
+	return server.logRequests(server.recoverPanics(router))
 }
 
 // unknownAPI answers any other /api/ address with JSON, not the web app:
@@ -160,6 +162,62 @@ func (recorder *statusRecorder) WriteHeader(status int) {
 	recorder.status = status
 	recorder.ResponseWriter.WriteHeader(status)
 }
+
+// Unwrap lets http.ResponseController reach the connection (the read
+// deadline of ingest bodies).
+func (recorder *statusRecorder) Unwrap() http.ResponseWriter {
+	return recorder.ResponseWriter
+}
+
+// recoverPanics logs a handler's panic with its stack and answers a JSON 500
+// without its text, where net/http would only drop the connection. Once the
+// answer has begun, the connection is dropped all the same.
+func (server *Server) recoverPanics(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tracker := &startTracker{ResponseWriter: w}
+
+		defer func() {
+			recovered := recover()
+
+			if recovered == nil {
+				return
+			}
+
+			if recovered == http.ErrAbortHandler { //nolint:errorlint // the value given to panic, never wrapped
+				panic(recovered)
+			}
+
+			server.Logger.Error("http handler panicked", "method", r.Method, "path", r.URL.Path, "route", r.Pattern, "err", logging.PanicError(recovered))
+
+			if tracker.started {
+				panic(http.ErrAbortHandler)
+			}
+
+			JSONError(w, http.StatusInternalServerError, "internal error")
+		}()
+
+		next.ServeHTTP(tracker, r)
+	})
+}
+
+// startTracker notes whether the answer has begun.
+type startTracker struct {
+	http.ResponseWriter
+	started bool
+}
+
+func (tracker *startTracker) WriteHeader(status int) {
+	tracker.started = true
+	tracker.ResponseWriter.WriteHeader(status)
+}
+
+func (tracker *startTracker) Write(data []byte) (int, error) {
+	tracker.started = true
+
+	return tracker.ResponseWriter.Write(data)
+}
+
+func (tracker *startTracker) Unwrap() http.ResponseWriter { return tracker.ResponseWriter }
 
 func (server *Server) logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

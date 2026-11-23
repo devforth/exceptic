@@ -1,6 +1,7 @@
 package sentry
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 	"testing"
@@ -439,6 +440,29 @@ func TestFrameIsInApp(t *testing.T) {
 	for _, test := range cases {
 		if got := test.frame.IsInApp(); got != test.want {
 			t.Errorf("IsInApp(%q, %q) = %v, want %v", test.frame.Filename, test.frame.AbsPath, got, test.want)
+		}
+	}
+}
+
+// Times JSON cannot encode are left zero, so no output fails on them.
+func TestTimestampOutOfRange(t *testing.T) {
+	for input, want := range map[string]time.Time{
+		`1731400000.5`:                time.Unix(1731400000, 5e8).UTC(),
+		`"2026-11-10T16:27:00Z"`:      time.Date(2026, 11, 10, 16, 27, 0, 0, time.UTC),
+		`1731400000000`:               {},
+		`-1e18`:                       {},
+		`1e300`:                       {},
+		`"10000-01-01T00:00:00Z"`:     {},
+		`"0000-01-01T00:00:00+01:00"`: {},
+	} {
+		var timestamp Timestamp
+
+		if err := json.Unmarshal([]byte(input), &timestamp); err != nil || !timestamp.Equal(want) {
+			t.Errorf("%s: %v %v, want %v", input, timestamp, err, want)
+		}
+
+		if _, err := json.Marshal(timestamp.Time); err != nil {
+			t.Errorf("%s: %v", input, err)
 		}
 	}
 }

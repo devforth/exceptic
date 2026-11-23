@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/devforth/exceptic/internal/platform/logging"
 	"github.com/devforth/exceptic/internal/sentry"
 	"github.com/devforth/exceptic/internal/storage/store"
 )
@@ -26,6 +27,27 @@ func (notifier *Notifier) wakeWorker(channel string) {
 
 		notifier.running.Go(func() { notifier.runWorker(channel, current) })
 	}
+
+	select {
+	case current.wake <- struct{}{}:
+	default: // already woken
+	}
+}
+
+// RetryNow ends the rate-limit pause of a connection and sends its due
+// messages: called after its waiting messages were made due (a save or
+// Retry now), since that is usually the fix.
+func (notifier *Notifier) RetryNow(channel string) {
+	notifier.workersMutex.Lock()
+	defer notifier.workersMutex.Unlock()
+
+	current := notifier.workers[channel]
+
+	if current == nil {
+		return
+	}
+
+	current.retryNow.Store(true)
 
 	select {
 	case current.wake <- struct{}{}:
@@ -62,6 +84,10 @@ func (notifier *Notifier) runWorker(channel string, current *worker) {
 // worker for the delay the channel asked for.
 func (notifier *Notifier) sendDue(channel string, current *worker) {
 	notifier.markSent(current)
+
+	if current.retryNow.Swap(false) {
+		current.pausedUntil = time.Time{}
+	}
 
 	for notifier.ctx.Err() == nil && !notifier.options.Now().Before(current.pausedUntil) {
 		messages, err := notifier.options.Store.DueOutbox(notifier.ctx, channel, notifier.options.Now(), dueBatch)
@@ -114,7 +140,7 @@ func (notifier *Notifier) attempt(current *worker, message store.OutboxMessage, 
 
 	if err == nil {
 		ctx, cancel := context.WithTimeout(notifier.ctx, sendTimeout)
-		err = notifier.send(ctx, channel, message)
+		err = notifier.sendOrFail(ctx, channel, message)
 
 		cancel()
 
@@ -141,9 +167,10 @@ func (notifier *Notifier) attempt(current *worker, message store.OutboxMessage, 
 
 	var retryAfter *RetryAfterError
 
-	if errors.As(err, &retryAfter) && retryAfter.Delay > 0 {
+	rateLimited := errors.As(err, &retryAfter) && retryAfter.Delay > 0
+
+	if rateLimited {
 		delay = retryAfter.Delay
-		current.pausedUntil = now.Add(delay)
 	}
 
 	next := now.Add(delay)
@@ -156,6 +183,11 @@ func (notifier *Notifier) attempt(current *worker, message store.OutboxMessage, 
 		}
 
 		return true
+	}
+
+	// Within RetryFor only, so a pause never outlasts the retry window.
+	if rateLimited {
+		current.pausedUntil = next
 	}
 
 	notifier.options.Logger.Warn("notification attempt failed, retrying", append(about, "retry_in", delay, "err", err)...)
@@ -182,6 +214,20 @@ func (notifier *Notifier) channel(outboxChannel string) (Channel, error) {
 	}
 
 	return notifier.options.Channels.Channel(connection)
+}
+
+// sendOrFail sends a message; one that panics would panic again at every
+// retry and start, so it fails at once, its stack in the log, not the outbox.
+func (notifier *Notifier) sendOrFail(ctx context.Context, channel Channel, message store.OutboxMessage) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			notifier.options.Logger.Error("sending a notification panicked", "connection", message.Channel, "outbox_id", message.ID, "err", logging.PanicError(recovered))
+
+			err = fmt.Errorf("%w: sending it panicked: %v", errGone, recovered)
+		}
+	}()
+
+	return notifier.send(ctx, channel, message)
 }
 
 func (notifier *Notifier) send(ctx context.Context, channel Channel, message store.OutboxMessage) error {

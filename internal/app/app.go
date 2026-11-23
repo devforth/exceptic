@@ -58,13 +58,19 @@ func New(ctx context.Context, options Options) (*App, error) {
 		Name: settings.AppName, Store: db, PublicURL: settings.Notifications.PublicURL, TrustedProxies: settings.TrustedProxies, ResourcePath: api.MCPPath,
 		Logger: logger,
 	}
+	notifier := notify.New(notify.Options{
+		Store: db, Channels: options.Factory, Logger: logger,
+		RetryFor: settings.Notifications.RetryFor, KeepSent: settings.Notifications.KeepSent, KeepFailed: settings.Notifications.KeepFailed,
+	})
 	all := services.New(services.Dependencies{
-		Logger: logger, Store: db, Registry: registry, Settings: settings, Factory: options.Factory, OAuth: authorization,
+		Logger: logger, Store: db, Registry: registry, Settings: settings, Factory: options.Factory, Notifier: notifier, OAuth: authorization,
 	})
 
 	// The first start creates the superadmin from env; later starts do not
 	// use ADMIN_USERNAME/ADMIN_PASSWORD.
 	if err := all.Users.EnsureSuperadmin(ctx, settings.AdminUsername, settings.AdminPassword); err != nil {
+		_ = notifier.Close(ctx)
+
 		return nil, err
 	}
 
@@ -78,11 +84,7 @@ func New(ctx context.Context, options Options) (*App, error) {
 		spa = options.Web
 	}
 
-	app := &App{Registry: registry, OAuth: authorization, Services: all, options: options}
-	app.notifier = notify.New(notify.Options{
-		Store: db, Channels: options.Factory, Logger: logger,
-		RetryFor: settings.Notifications.RetryFor, KeepSent: settings.Notifications.KeepSent, KeepFailed: settings.Notifications.KeepFailed,
-	})
+	app := &App{Registry: registry, OAuth: authorization, Services: all, options: options, notifier: notifier}
 	sink := ingest.StoreSink{Logger: logger, Notifier: app.notifier, PublicURL: settings.Notifications.PublicURL, Recording: settings.Recording}
 	app.pipeline = ingest.NewPipeline(logger, settings, registry, db, sink)
 	app.pipeline.MaxInboxBytes = config.MaxInboxBytes(settings.Retention.MaxDatabaseBytes)

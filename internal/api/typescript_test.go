@@ -284,6 +284,8 @@ func writeRules(file *strings.Builder) error {
 	fmt.Fprintf(file, "] as const;\n\n/** The numbers of the cleanup by size. */\nexport const cleanupRules = {\n"+
 		"\tstartPercent: %d,\n\tstopPercent: %d,\n\tageDays: %d,\n\trecentAgeDays: %d,\n\toldEventsPerIssue: %d,\n} as const;\n\n",
 		config.CleanupStartPercent, config.CleanupStopPercent, config.CleanupAge/(24*time.Hour), config.CleanupRecentAge/(24*time.Hour), config.OldEventsPerIssue)
+	fmt.Fprintf(file, "/** A project's disk share of MAX_DATABASE_SIZE, in percent. */\nexport const diskShare = { min: %d, max: %d, step: %d } as const;\n\n",
+		store.MinDiskShare, store.MaxDiskShare, store.DiskShareStep)
 	file.WriteString("/** What each role may do. */\nexport const roleSummaries = {\n")
 
 	for _, role := range slices.Sorted(maps.Keys(store.RoleSummaries)) {

@@ -160,6 +160,31 @@ func (engine *levelEngine) CompactRange(lower, upper []byte) error {
 	return engine.db.CompactRange(util.Range{Start: lower, Limit: upper})
 }
 
+// SizeOf reads the tables' offsets; in memory it adds up the keys and values, as Size does.
+func (engine *levelEngine) SizeOf(lower, upper []byte) (int64, error) {
+	if engine.dir == "" {
+		return liveBytes(engine.Iterate(lower, upper))
+	}
+
+	sizes, err := engine.db.SizeOf([]util.Range{{Start: lower, Limit: upper}})
+
+	if err != nil {
+		return 0, err
+	}
+
+	return sizes.Sum(), nil
+}
+
+func liveBytes(iterator kv.Iterator) (int64, error) {
+	var total int64
+
+	for valid := iterator.First(); valid; valid = iterator.Next() {
+		total += int64(len(iterator.Key()) + len(iterator.Value()))
+	}
+
+	return total, iterator.Close()
+}
+
 // infoLogs are goleveldb's text logs of its own work (compactions); they are
 // not data, and their size rises and falls as they rotate.
 var infoLogs = []string{"LOG", "LOG.old"}
@@ -168,15 +193,7 @@ var infoLogs = []string{"LOG", "LOG.old"}
 // in memory, the keys and values.
 func (engine *levelEngine) Size() (int64, error) {
 	if engine.dir == "" {
-		var total int64
-
-		iterator := engine.Iterate(nil, nil)
-
-		for valid := iterator.First(); valid; valid = iterator.Next() {
-			total += int64(len(iterator.Key()) + len(iterator.Value()))
-		}
-
-		return total, iterator.Close()
+		return liveBytes(engine.Iterate(nil, nil))
 	}
 
 	live, err := engine.liveTables()

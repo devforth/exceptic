@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/devforth/exceptic/internal/platform/config"
@@ -192,7 +193,8 @@ type worker struct {
 	wake chan struct{} // new messages in the outbox
 	// unmarked are sent messages the store failed to record as sent, by id.
 	unmarked    map[int64]time.Time
-	pausedUntil time.Time // set by a channel's rate limit
+	pausedUntil time.Time   // set by a channel's rate limit
+	retryNow    atomic.Bool // RetryNow ends the pause
 }
 
 // window is the flood limit state of one connection.

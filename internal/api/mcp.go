@@ -3,16 +3,15 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
-	"runtime/debug"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/devforth/exceptic/internal/oauth"
 	"github.com/devforth/exceptic/internal/platform/config"
+	"github.com/devforth/exceptic/internal/platform/logging"
 	"github.com/devforth/exceptic/internal/server"
 	"github.com/devforth/exceptic/internal/storage/store"
 )
@@ -103,7 +102,7 @@ func (handler *MCP) run(endpoint Endpoint) mcp.ToolHandler {
 		// The SDK runs tools in goroutines without a recover: a panic would stop the server.
 		defer func() {
 			if recovered := recover(); recovered != nil {
-				result, err = handler.failed(endpoint, fmt.Errorf("panic: %v\n%s", recovered, debug.Stack()))
+				result, err = handler.failed(endpoint, logging.PanicError(recovered))
 			}
 		}()
 
