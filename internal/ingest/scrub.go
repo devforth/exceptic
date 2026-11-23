@@ -170,17 +170,34 @@ func scrubJSON(payload []byte) []byte {
 	return bytes.TrimRight(output.Bytes(), "\n")
 }
 
-// scrubValue copies the next value from decoder to encoder with credentials
-// removed: values of keys that name a secret, the second of a [name, value]
-// pair whose name does, and credentials in strings (scrubText).
+// scrubber removes credentials from JSON, its strings through text: scrubText
+// in a payload, scrubFreeText in a JSON document carried in a string.
+type scrubber struct {
+	text func(string) string
+}
+
+// scrubValue copies the next value of a payload from decoder to encoder with
+// credentials removed: values of keys that name a secret, the second of a
+// [name, value] pair whose name does, and credentials in strings (scrubText).
 func scrubValue(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
+	return scrubber{scrubText}.value(decoder, encoder)
+}
+
+// scrubObject is scrubber.object in a payload.
+func scrubObject(decoder *jsontext.Decoder, encoder *jsontext.Encoder,
+	member func(name string, decoder *jsontext.Decoder, encoder *jsontext.Encoder) (bool, error),
+) error {
+	return scrubber{scrubText}.object(decoder, encoder, member)
+}
+
+func (scrub scrubber) value(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 	switch decoder.PeekKind() {
 	case '{':
-		return scrubObject(decoder, encoder, nil)
+		return scrub.object(decoder, encoder, nil)
 	case '[':
-		return scrubArray(decoder, encoder)
+		return scrub.array(decoder, encoder)
 	case '"':
-		return stringValue(decoder, encoder)
+		return scrub.stringValue(decoder, encoder)
 	}
 
 	value, err := decoder.ReadValue()
@@ -192,10 +209,10 @@ func scrubValue(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 	return encoder.WriteValue(value)
 }
 
-// scrubObject copies the next object member by member. member, when set, may take
+// object copies the next object member by member. member, when set, may take
 // one over (write it, or drop it by writing nothing) and says whether it did;
 // a member whose key names a secret is filtered before member sees it.
-func scrubObject(decoder *jsontext.Decoder, encoder *jsontext.Encoder,
+func (scrub scrubber) object(decoder *jsontext.Decoder, encoder *jsontext.Encoder,
 	member func(name string, decoder *jsontext.Decoder, encoder *jsontext.Encoder) (bool, error),
 ) error {
 	if err := copyToken(decoder, encoder); err != nil {
@@ -237,7 +254,7 @@ func scrubObject(decoder *jsontext.Decoder, encoder *jsontext.Encoder,
 			return err
 		}
 
-		if err := scrubValue(decoder, encoder); err != nil {
+		if err := scrub.value(decoder, encoder); err != nil {
 			return err
 		}
 	}
@@ -260,12 +277,12 @@ func scrubValues(decoder *jsontext.Decoder, encoder *jsontext.Encoder, each func
 	return copyToken(decoder, encoder)
 }
 
-// scrubArray copies an array. One led by a secret's name may be a [name, value]
+// array copies an array. One led by a secret's name may be a [name, value]
 // pair (headers and query strings may come this way), whose value is
 // filtered; that takes its length, so such an array (a small one in
 // practice) is read whole and scrubbed as a tree: rereading each element
 // as a stream would take time growing with the square of its nesting.
-func scrubArray(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
+func (scrub scrubber) array(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 	if err := copyToken(decoder, encoder); err != nil {
 		return err
 	}
@@ -286,16 +303,16 @@ func scrubArray(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 		}
 
 		if !isSensitiveKey(name) {
-			if err := writeText(encoder, first, name); err != nil {
+			if err := scrub.writeText(encoder, first, name); err != nil {
 				return err
 			}
 		} else {
-			return ledBySecret(decoder, encoder, first, name)
+			return scrub.ledBySecret(decoder, encoder, first, name)
 		}
 	}
 
 	for decoder.PeekKind() != ']' {
-		if err := scrubValue(decoder, encoder); err != nil {
+		if err := scrub.value(decoder, encoder); err != nil {
 			return err
 		}
 	}
@@ -306,7 +323,7 @@ func scrubArray(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 // ledBySecret writes the rest of an array whose first element, a secret's
 // name, is read: a pair's value is filtered, the elements of a longer array
 // are scrubbed as trees.
-func ledBySecret(decoder *jsontext.Decoder, encoder *jsontext.Encoder, first jsontext.Value, name string) error {
+func (scrub scrubber) ledBySecret(decoder *jsontext.Decoder, encoder *jsontext.Encoder, first jsontext.Value, name string) error {
 	var rest []jsontext.Value
 
 	for decoder.PeekKind() != ']' {
@@ -332,7 +349,7 @@ func ledBySecret(decoder *jsontext.Decoder, encoder *jsontext.Encoder, first jso
 			return err
 		}
 	} else {
-		if err := writeText(encoder, first, name); err != nil {
+		if err := scrub.writeText(encoder, first, name); err != nil {
 			return err
 		}
 
@@ -346,7 +363,7 @@ func ledBySecret(decoder *jsontext.Decoder, encoder *jsontext.Encoder, first jso
 				return err
 			}
 
-			if err := writeJSON(encoder, scrubTree(node)); err != nil {
+			if err := writeJSON(encoder, scrubTree(node, scrub.text)); err != nil {
 				return err
 			}
 		}
@@ -355,15 +372,16 @@ func ledBySecret(decoder *jsontext.Decoder, encoder *jsontext.Encoder, first jso
 	return encoder.WriteToken(jsontext.EndArray)
 }
 
-// scrubTree removes credentials from a decoded value in place, by the rules of scrubValue.
-func scrubTree(node any) any {
+// scrubTree removes credentials from a decoded value in place, by the rules
+// of scrubber.value, its strings through text.
+func scrubTree(node any, text func(string) string) any {
 	switch typed := node.(type) {
 	case map[string]any:
 		for key, child := range typed {
 			if isSensitiveKey(key) {
 				typed[key] = filteredNode(child)
 			} else {
-				typed[key] = scrubTree(child)
+				typed[key] = scrubTree(child, text)
 			}
 		}
 
@@ -378,12 +396,12 @@ func scrubTree(node any) any {
 		}
 
 		for index, child := range typed {
-			typed[index] = scrubTree(child)
+			typed[index] = scrubTree(child, text)
 		}
 
 		return typed
 	case string:
-		return scrubText(typed)
+		return text(typed)
 	default:
 		return node
 	}
@@ -393,9 +411,7 @@ func scrubTree(node any) any {
 func filteredNode(node any) any {
 	if attribute, ok := node.(map[string]any); ok {
 		if _, hasValue := attribute["value"]; hasValue {
-			attribute["value"], attribute["type"] = filteredText, "string"
-
-			return attribute
+			return map[string]any{"value": filteredText, "type": "string"}
 		}
 	}
 
@@ -416,9 +432,9 @@ func copyToken(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 	return encoder.WriteToken(token)
 }
 
-// stringValue copies a string, through scrubText only when it may hold a
+// stringValue copies a string, through text only when it may hold a
 // credential; most strings are copied as they came.
-func stringValue(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
+func (scrub scrubber) stringValue(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 	raw, err := decoder.ReadValue()
 
 	if err != nil {
@@ -435,12 +451,12 @@ func stringValue(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 		return err
 	}
 
-	return writeText(encoder, raw, text)
+	return scrub.writeText(encoder, raw, text)
 }
 
-// writeText writes text through scrubText; unchanged, the raw value as it came.
-func writeText(encoder *jsontext.Encoder, raw jsontext.Value, text string) error {
-	if scrubbed := scrubText(text); scrubbed != text {
+// writeText writes text scrubbed; unchanged, the raw value as it came.
+func (scrub scrubber) writeText(encoder *jsontext.Encoder, raw jsontext.Value, text string) error {
+	if scrubbed := scrub.text(text); scrubbed != text {
 		return encoder.WriteToken(jsontext.String(scrubbed))
 	}
 
@@ -467,9 +483,13 @@ func mayHoldCredential(raw []byte) bool {
 	return false
 }
 
-// writeFiltered replaces the next value: null stays null, a log attribute
-// keeps its {"value", "type"} shape so the log still parses, anything else
-// becomes filteredText.
+// filteredAttribute replaces an object with a "value" member: a log
+// attribute keeps its {"value", "type"} shape, so the log still parses, and
+// nothing else of the object stays.
+var filteredAttribute = jsontext.Value(`{"type":"string","value":"` + filteredText + `"}`)
+
+// writeFiltered replaces the next value: null stays null, an object with a
+// "value" member becomes filteredAttribute, anything else filteredText.
 func writeFiltered(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 	raw, err := decoder.ReadValue()
 
@@ -481,18 +501,39 @@ func writeFiltered(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 	case 'n':
 		return encoder.WriteValue(raw)
 	case '{':
-		attribute := map[string]any{}
-		reader := json.NewDecoder(bytes.NewReader(raw))
-		reader.UseNumber()
-
-		if reader.Decode(&attribute) == nil {
-			if _, hasValue := attribute["value"]; hasValue {
-				return writeJSON(encoder, filteredNode(attribute))
-			}
+		if hasValueMember(raw) {
+			return encoder.WriteValue(filteredAttribute)
 		}
 	}
 
 	return encoder.WriteToken(jsontext.String(filteredText))
+}
+
+// hasValueMember reports whether a raw object has a "value" member.
+func hasValueMember(object jsontext.Value) bool {
+	decoder := newTokenDecoder(object)
+
+	if _, err := decoder.ReadToken(); err != nil {
+		return false
+	}
+
+	for decoder.PeekKind() == '"' {
+		name, err := decoder.ReadToken()
+
+		if err != nil {
+			return false
+		}
+
+		if name.String() == "value" {
+			return true
+		}
+
+		if decoder.SkipValue() != nil {
+			return false
+		}
+	}
+
+	return false
 }
 
 func writeJSON(encoder *jsontext.Encoder, value any) error {
@@ -508,12 +549,28 @@ func writeJSON(encoder *jsontext.Encoder, value any) error {
 	return encoder.WriteValue(bytes.TrimRight(output.Bytes(), "\n"))
 }
 
-// scrubText removes credentials from free text: Bearer/Basic tokens, and in URLs
-// (absolute or relative, whole or inside text) and bare query strings the
-// sensitive parameters of the query and fragment and the userinfo password.
+// scrubText removes credentials from a string of a payload: a JSON document
+// (a request body sent as text) by the rules of the payload, anything else
+// as free text.
 func scrubText(text string) string {
+	if scrubbed, isJSON := scrubJSONText(text); isJSON {
+		return scrubbed
+	}
+
+	return scrubFreeText(text)
+}
+
+// scrubFreeText removes credentials from free text: "key": value pairs of
+// JSON inside it or cut short, Bearer/Basic tokens, and in URLs (absolute or
+// relative, whole or inside text) and bare query strings the sensitive
+// parameters of the query and fragment and the userinfo password.
+func scrubFreeText(text string) string {
 	if text == "" {
 		return text
+	}
+
+	if strings.Contains(text, `"`) {
+		text = scrubQuotedPairs(text)
 	}
 
 	// The regexps run only when their words are there: most strings have none
@@ -539,6 +596,142 @@ func scrubText(text string) string {
 	}
 
 	return linkInText.ReplaceAllStringFunc(text, scrubLink)
+}
+
+// scrubJSONText scrubs text that is one JSON object or array, such as a
+// request body. Its strings are free text: a document in one of them is not
+// read as a document again (only its "key": value pairs are scrubbed), so
+// every byte is read a fixed number of times however deep documents nest.
+// Text with nothing to remove is returned as it came.
+func scrubJSONText(text string) (string, bool) {
+	trimmed := strings.TrimSpace(text)
+
+	if trimmed == "" || trimmed[0] != '{' && trimmed[0] != '[' {
+		return "", false
+	}
+
+	decoder := newTokenDecoder([]byte(trimmed))
+
+	var scrubbed bytes.Buffer
+
+	if (scrubber{scrubFreeText}).value(decoder, newTokenEncoder(&scrubbed)) != nil {
+		return "", false
+	}
+
+	if _, err := decoder.ReadToken(); err != io.EOF {
+		return "", false // more than one value: text with JSON in it
+	}
+
+	// Both are written the same way, so they differ only where a value was replaced.
+	var compact bytes.Buffer
+
+	if value, err := newTokenDecoder([]byte(trimmed)).ReadValue(); err != nil || newTokenEncoder(&compact).WriteValue(value) != nil {
+		return "", false
+	}
+
+	if bytes.Equal(scrubbed.Bytes(), compact.Bytes()) {
+		return text, true
+	}
+
+	return string(bytes.TrimRight(scrubbed.Bytes(), "\n")), true
+}
+
+// scrubQuotedPairs replaces the value of every "key": value pair of JSON in
+// text that is not a JSON document (a log line with a body, a message cut by
+// the SDK) whose key names a secret: a string, ended or cut at the end of the
+// text, or a number. One pass: each string is skipped whole.
+func scrubQuotedPairs(text string) string {
+	var output strings.Builder
+
+	copied := 0
+
+	for position := 0; ; {
+		open := strings.IndexByte(text[position:], '"')
+
+		if open < 0 {
+			break
+		}
+
+		open += position
+		keyEnd := quotedEnd(text, open)
+
+		if keyEnd < 0 {
+			break
+		}
+
+		position = keyEnd
+		colon := skipJSONSpace(text, keyEnd)
+
+		if colon == len(text) || text[colon] != ':' || !isSensitiveKey(quotedKey(text[open:keyEnd])) {
+			continue
+		}
+
+		valueStart := skipJSONSpace(text, colon+1)
+		valueEnd := valueStart
+
+		switch {
+		case valueStart == len(text):
+		case text[valueStart] == '"':
+			if valueEnd = quotedEnd(text, valueStart); valueEnd < 0 {
+				valueEnd = len(text) // cut short
+			}
+		case text[valueStart] == '-' || text[valueStart] >= '0' && text[valueStart] <= '9':
+			valueEnd += len(text[valueStart:]) - len(strings.TrimLeft(text[valueStart:], "-0123456789.eE+"))
+		}
+
+		if valueEnd == valueStart {
+			continue // an object, an array or a literal
+		}
+
+		output.WriteString(text[copied:valueStart])
+		output.WriteString(`"` + filteredText + `"`)
+
+		copied, position = valueEnd, valueEnd
+	}
+
+	if copied == 0 {
+		return text
+	}
+
+	return output.String() + text[copied:]
+}
+
+// quotedEnd returns the index after the JSON string that starts at open, or
+// -1 when the text ends inside it.
+func quotedEnd(text string, open int) int {
+	for index := open + 1; index < len(text); index++ {
+		switch text[index] {
+		case '\\':
+			index++
+		case '"':
+			return index + 1
+		}
+	}
+
+	return -1
+}
+
+// quotedKey is a quoted JSON string's text; one that does not decode, as it is.
+func quotedKey(quoted string) string {
+	if !strings.Contains(quoted, `\`) {
+		return quoted[1 : len(quoted)-1]
+	}
+
+	var key string
+
+	if json.Unmarshal([]byte(quoted), &key) != nil {
+		return quoted[1 : len(quoted)-1]
+	}
+
+	return key
+}
+
+func skipJSONSpace(text string, index int) int {
+	for index < len(text) && strings.IndexByte(" \t\r\n", text[index]) >= 0 {
+		index++
+	}
+
+	return index
 }
 
 // linkInText finds absolute URLs, and relative ones with a query or fragment

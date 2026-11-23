@@ -573,6 +573,50 @@ func TestCredentialsAreScrubbed(t *testing.T) {
 	}
 }
 
+// SDKs send request bodies as text: a JSON body inside a string gets the
+// key rules of the payload, and so does everything under a secret's key.
+func TestCredentialsInJSONTextAreScrubbed(t *testing.T) {
+	server := newTestServer(t, testSettings())
+	body := "{}\n" +
+		`{"type":"event"}` + "\n" +
+		`{"message":"hello","request":{"method":"POST","url":"https://app.example.com/login","data":"{\"username\":\"root\",\"password\":\"string-body-password\",\"api_key\":\"string-body-key\"}"},` +
+		`"breadcrumbs":[{"message":"{\"cookie\":\"sid=breadcrumb-cookie\",\"token\":\"breadcrumb-token\"}"}],` +
+		`"extra":{"body":"{\"cookie\":\"sid=extra-cookie\",\"token\":\"extra-token\"}","auth":{"value":{"user":7},"token":"sibling-token-value","password":"sibling-password"}}}` + "\n" +
+		`{"type":"log"}` + "\n" +
+		`{"items":[{"timestamp":1731400000,"level":"info","body":"{\"cookie\":\"sid=log-body-cookie\",\"token\":\"log-body-token\"}","attributes":{"request.body":{"value":"{\"cookie\":\"sid=attribute-cookie\",\"token\":\"attribute-token\"}","type":"string"}}}]}` + "\n"
+
+	if response := server.send(newRequest(http.MethodPost, envelopeURL("1", fixtures.BackendKey), []byte(body))); response.Code != http.StatusOK {
+		t.Fatalf("got %d %s", response.Code, response.Body)
+	}
+
+	events, logs := server.stored()
+
+	if len(events) != 1 || len(logs) != 1 {
+		t.Fatalf("stored %d events, %d logs", len(events), len(logs))
+	}
+
+	event, err := server.db.GetEvent(context.Background(), events[0].ProjectID, events[0].EventID)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stored := string(event.Payload) + logs[0].Body + string(logs[0].Attributes)
+
+	for _, secret := range []string{
+		"string-body-password", "string-body-key", "breadcrumb-cookie", "breadcrumb-token", "extra-cookie", "extra-token",
+		"sibling-token-value", "sibling-password", "log-body-cookie", "log-body-token", "attribute-cookie", "attribute-token",
+	} {
+		if strings.Contains(stored, secret) {
+			t.Errorf("%q reached the database:\n%s", secret, stored)
+		}
+	}
+
+	if !strings.Contains(stored, `\"username\":\"root\"`) {
+		t.Errorf("the username was removed:\n%s", stored)
+	}
+}
+
 // Without a key in the request only the envelope header is read before the
 // key is checked: a small gzip body that expands to 20 MB costs no more.
 func TestKeylessBodyIsNotReadBeforeAuth(t *testing.T) {
