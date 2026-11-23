@@ -86,7 +86,6 @@ const (
 	detailsLength    = 500
 	fieldLength      = 200  // environment, release and the short fields of an email
 	exceptionLength  = 2000 // an exception value or a message in an email
-	promptLength     = 100_000
 	breadcrumbLength = 300
 )
 

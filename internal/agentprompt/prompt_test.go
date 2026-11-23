@@ -1,6 +1,7 @@
 package agentprompt
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -259,5 +260,98 @@ func TestRedactCutsLongText(t *testing.T) {
 
 	if huge := Redact(strings.Repeat("ä", 100_000)); utf8.RuneCountInString(huge) != maxTextLength || !strings.HasSuffix(huge, "ä…") {
 		t.Errorf("huge text cut to %d characters", utf8.RuneCountInString(huge))
+	}
+}
+
+// Names and versions are chosen by whoever holds the DSN, like the values:
+// tag names, platform, SDK and frame modules and files are redacted too.
+func TestBuildRedactsNamesChosenBySender(t *testing.T) {
+	event, err := sentry.ParseEvent([]byte(`{
+  "platform": "node admin@example.com",
+  "sdk": {"name": "sentry.javascript bob@example.com", "version": "203.0.113.9"},
+  "tags": {"alice@example.com": "x", "10.0.0.7": "y", "region": "eu"},
+  "exception": {"values": [{"type": "Error", "value": "failed", "stacktrace": {"frames": [
+    {"module": "payments.carol@example.com", "function": "charge"},
+    {"filename": "/srv/app/bot123456:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-x4/x.js", "function": "send"},
+    {"filename": "/srv/2001:db8::42/y.js", "function": "listen"}
+  ]}}]}
+}`), "", time.Now())
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	prompt := Build(Input{Project: "backend", Title: "Error: failed", Level: "error", Event: event})
+
+	for _, secret := range []string{
+		"admin@example.com", "bob@example.com", "203.0.113.9", "alice@example.com", "10.0.0.7", "carol@example.com",
+		"AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-x4", "2001:db8::42",
+	} {
+		if strings.Contains(prompt, secret) {
+			t.Errorf("prompt leaks %q", secret)
+		}
+	}
+
+	for _, want := range []string{"region: eu", "Platform: node <email>", "at charge (<email>)", "at send (/srv/app/bot<token>/x.js)"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt is missing %q", want)
+		}
+	}
+}
+
+// Anyone with the DSN writes every field, so a hostile event must not make a
+// prompt of megabytes: get_issue and the issue page call Build without a length.
+func TestBuildIsBounded(t *testing.T) {
+	var payload strings.Builder
+
+	payload.WriteString(`{"exception": {"values": [`)
+
+	// About 10 MB, half the ingest limit.
+	for index := range 500 {
+		if index > 0 {
+			payload.WriteString(",")
+		}
+
+		payload.WriteString(`{"type": "Error", "value": "` + strings.Repeat("v", 1000) + `", "stacktrace": {"frames": [`)
+
+		for frame := range 40 {
+			if frame > 0 {
+				payload.WriteString(",")
+			}
+
+			payload.WriteString(`{"filename": "/app/` + strings.Repeat("f", 100) + `.js", "function": "run", "lineno": 300, "in_app": true, ` +
+				`"context_line": "throw error", "pre_context": [` + strings.Repeat(`"line",`, 50) + `"line"]}`)
+		}
+
+		payload.WriteString(`]}}`)
+	}
+
+	payload.WriteString(`]}, "tags": {`)
+
+	for index := range 5000 {
+		if index > 0 {
+			payload.WriteString(",")
+		}
+
+		fmt.Fprintf(&payload, `"%s%06d": "value"`, strings.Repeat("t", 1000), index)
+	}
+
+	payload.WriteString(`}}`)
+
+	event, err := sentry.ParseEvent([]byte(payload.String()), "", time.Now())
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	started := time.Now()
+	prompt := Build(Input{Project: "backend", Title: "Error", Level: "error", Event: event})
+
+	if length := utf8.RuneCountInString(prompt); length > MaxLength {
+		t.Errorf("prompt of %d characters, want at most %d (built in %s)", length, MaxLength, time.Since(started))
+	}
+
+	if !strings.HasSuffix(prompt, reminder) {
+		t.Error("the reminder must stay last")
 	}
 }

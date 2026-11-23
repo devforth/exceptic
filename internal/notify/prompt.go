@@ -11,7 +11,7 @@ import (
 // agentPrompt is the prompt for a coding agent that Telegram and email attach
 // to an error; the Slack bot builds its own from the same input (slackPrompt).
 func agentPrompt(notification Notification) string {
-	return agentprompt.BuildWithin(promptInput(notification), promptLength, func(text string) string { return text })
+	return agentprompt.Build(promptInput(notification))
 }
 
 func promptInput(notification Notification) agentprompt.Input {
