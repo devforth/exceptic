@@ -22,9 +22,16 @@ type MethodOf<N extends Name> = (typeof endpoints)[N]['method'];
 export type GetName = { [N in Name]: MethodOf<N> extends 'GET' ? N : never }[Name];
 /** Changes, made only by an action of the user. */
 export type PostName = { [N in Name]: MethodOf<N> extends 'POST' ? N : never }[Name];
-/** Paged lists: items and next_cursor. */
+/** Paged lists: items and next_cursor, read with limit and cursor (list_users and
+ * list_connections give every row at once and take neither: read them with get). */
 export type ListName = {
-	[N in GetName]: Out<N> extends { items: unknown; next_cursor?: string } ? N : never;
+	[N in GetName]: Out<N> extends { items: unknown; next_cursor?: string }
+		? string extends keyof In<N>
+			? never
+			: 'limit' extends keyof In<N>
+				? N
+				: never
+		: never;
 }[GetName];
 
 /** Logins and credentials, which no endpoint handles. */

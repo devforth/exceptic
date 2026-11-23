@@ -153,6 +153,8 @@ describe('types', () => {
 			void get('apply_issue_action', { issue_ids: ['k3x9q2mf'], action: 'resolve' });
 			// @ts-expect-error a read is not a change
 			void post('list_projects');
+			// @ts-expect-error list_users gives every row at once: it takes no limit
+			void listAll('list_users');
 		};
 
 		expect(unused).toBeTypeOf('function');
