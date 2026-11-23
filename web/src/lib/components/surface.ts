@@ -3,3 +3,4 @@ export const popupClasses = 'rounded-popup border border-border bg-surface p-1 s
 
 // The raised surface of a card (Card, a Details section, a ChoiceGroup card): one source.
 export const cardClasses = 'rounded-card bg-surface shadow-card forced-colors:border';
+export const cardPadding = 'px-[22px] py-5';

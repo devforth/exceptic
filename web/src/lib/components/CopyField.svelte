@@ -4,6 +4,7 @@ A value to copy (a DSN, a command): read-only, selected on focus, with its copy 
 `masked` hides a secret behind dots until Show; the button copies it either way.
 -->
 <script lang="ts">
+	import type { CopyVariant } from './button.ts';
 	import Button from './Button.svelte';
 	import CopyButton from './CopyButton.svelte';
 	import { fieldClasses } from './field.ts';
@@ -16,9 +17,10 @@ A value to copy (a DSN, a command): read-only, selected on focus, with its copy 
 		copyTitle: string;
 		copied?: string;
 		masked?: boolean;
+		copyVariant?: CopyVariant;
 	};
 
-	let { value, label, copyTitle, copied, masked = false }: Props = $props();
+	let { value, label, copyTitle, copied, masked = false, copyVariant }: Props = $props();
 
 	let shown = $state(false);
 
@@ -41,5 +43,5 @@ A value to copy (a DSN, a command): read-only, selected on focus, with its copy 
 			onclick={() => (shown = !shown)}
 		/>
 	{/if}
-	<CopyButton text={value} title={copyTitle} {copied} />
+	<CopyButton text={value} title={copyTitle} {copied} variant={copyVariant} />
 </div>

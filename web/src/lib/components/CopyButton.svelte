@@ -1,8 +1,10 @@
 <!--
 @component
 Copies text and says so in the toast. Without a label it is an icon; title names it.
+`neutral` is grey, for the commands of the MCP page; `info` (blue) elsewhere.
 -->
 <script lang="ts">
+	import type { CopyVariant } from './button.ts';
 	import { copyText } from '#lib/clipboard.ts';
 	import { toast } from '#lib/toast.svelte.ts';
 	import Button from './Button.svelte';
@@ -14,9 +16,10 @@ Copies text and says so in the toast. Without a label it is an icon; title names
 		label?: string;
 		/** The toast after a copy. */
 		copied?: string;
+		variant?: CopyVariant;
 	};
 
-	let { text, title, label, copied = 'Copied to clipboard.' }: Props = $props();
+	let { text, title, label, copied = 'Copied to clipboard.', variant = 'info' }: Props = $props();
 
 	let busy = false;
 	let done = $state(false);
@@ -44,7 +47,7 @@ Copies text and says so in the toast. Without a label it is an icon; title names
 {#snippet labelText()}{label}{/snippet}
 
 <Button
-	variant="info"
+	{variant}
 	icon={done ? 'check' : 'copy'}
 	title={done ? 'Copied!' : title}
 	onclick={copy}

@@ -55,6 +55,10 @@ Every component with its variants, on sample data. Served only by the dev server
 	import SearchField from '#lib/components/SearchField.svelte';
 	import SecretReveal from '#lib/components/SecretReveal.svelte';
 	import Slider from '#lib/components/Slider.svelte';
+	import StatusCard from '#lib/components/StatusCard.svelte';
+	import Step from '#lib/components/Step.svelte';
+	import Steps from '#lib/components/Steps.svelte';
+	import PulseDot from '#lib/components/PulseDot.svelte';
 	import Select from '#lib/components/Select.svelte';
 	import StatusBadge from '#lib/components/StatusBadge.svelte';
 	import type { StatusTone } from '#lib/components/status.ts';
@@ -62,6 +66,8 @@ Every component with its variants, on sample data. Served only by the dev server
 	import Table from '#lib/components/Table.svelte';
 	import Tabs from '#lib/components/Tabs.svelte';
 	import TextField from '#lib/components/TextField.svelte';
+	import Switch from '#lib/components/Switch.svelte';
+	import ThemeSwitch from '#lib/components/ThemeSwitch.svelte';
 	import Time from '#lib/components/Time.svelte';
 	import UsageBar from '#lib/components/UsageBar.svelte';
 	import type { RowTone, TableColumn } from '#lib/components/table.ts';
@@ -123,6 +129,7 @@ Every component with its variants, on sample data. Served only by the dev server
 		'primary',
 		'danger',
 		'info',
+		'neutral',
 		'accent',
 		'menu',
 		'link',
@@ -247,6 +254,7 @@ Every component with its variants, on sample data. Served only by the dev server
 	let sampleColor: string = $state(projectPalette[3].color);
 	let sampleShare = $state(40);
 	let sampleTitle = $state('backend');
+	let sampleSwitch = $state(true);
 	let sampleTitleValue = $state('backend');
 	let sampleTitleError = $state('');
 	let sampleStatus = $state('');
@@ -489,8 +497,9 @@ Every component with its variants, on sample data. Served only by the dev server
 				</Row>
 			</Card>
 			<Card>
-				<Row caption="CopyButton with a label / AgentCopyButton">
+				<Row caption="CopyButton with a label, info / neutral (MCP commands) / AgentCopyButton">
 					<CopyButton text="Copied text" title="Copy the sample" label="Copy" />
+					<CopyButton text="Copied text" title="Copy the command" label="Copy" variant="neutral" />
 					<AgentCopyButton request={'Exceptic MCP: get_issue {"issue_id":"k3x9q2mf"}'} />
 				</Row>
 			</Card>
@@ -585,6 +594,11 @@ Every component with its variants, on sample data. Served only by the dev server
 						placeholder="Project name, e.g. backend"
 						variant="hero"
 					/>
+				</Row>
+				<Row caption="Switch: on, off and disabled (role switch)">
+					<Switch label="Send notifications" bind:checked={sampleSwitch} />
+					<Switch label="Off" checked={false} />
+					<Switch label="Disabled" checked disabled />
 				</Row>
 				<Row caption="Checkbox and radio: one look everywhere" wide>
 					<LevelChoices
@@ -744,6 +758,9 @@ Every component with its variants, on sample data. Served only by the dev server
 				<StatusBadge {status} />
 			{/each}
 			<StatusBadge status="resolved" href="#badges" />
+		</Row>
+		<Row caption="project tone, size heading: beside a page's title">
+			<Badge tone="project" label="backend" size="heading" />
 		</Row>
 		<Row caption="project tone with color: a color not saved yet (the project form's preview)">
 			<Badge tone="project" label="mobile" color="#0d9488" />
@@ -1044,6 +1061,18 @@ Every component with its variants, on sample data. Served only by the dev server
 				copied="Command copied to clipboard."
 			/>
 		</Row>
+		<Row
+			caption="CodeBlock command, copyVariant neutral: the grey copy button of the MCP page"
+			wide
+		>
+			<CodeBlock
+				variant="command"
+				code="codex mcp add exceptic --url http://localhost:8000/mcp"
+				label="Codex command"
+				copyTitle="Copy the command"
+				copyVariant="neutral"
+			/>
+		</Row>
 		<Row caption="CodeBlock snippet: several lines to paste, with its copy button" wide>
 			<CodeBlock
 				variant="snippet"
@@ -1052,6 +1081,29 @@ Every component with its variants, on sample data. Served only by the dev server
 				copyTitle="Copy the code"
 			/>
 		</Row>
+		<Row caption="Steps and Step: numbered steps, the content indented to the text" wide>
+			<Steps>
+				<Step title="Install the SDK">
+					<CodeBlock
+						variant="snippet"
+						code="npm install @sentry/node"
+						label="Install command"
+						copyTitle="Copy the install command"
+					/>
+				</Step>
+				<Step title="Start it with your app" note="As early as possible, before the rest loads.">
+					<CodeBlock variant="snippet" code={sampleSnippet} label="Setup code" copyTitle="Copy" />
+				</Step>
+				<Step title="Send a test error" optional>
+					<CodeBlock
+						variant="snippet"
+						code="Sentry.captureException(new Error('Test error'));"
+						label="Test line"
+						copyTitle="Copy the test line"
+					/>
+				</Step>
+			</Steps>
+		</Row>
 		<Row caption="CopyField masked: dots until Show; the button copies the value" wide>
 			<CopyField
 				value="exc_0123456789abcdef0123456789abcdef"
@@ -1059,6 +1111,24 @@ Every component with its variants, on sample data. Served only by the dev server
 				copyTitle="Copy the token"
 				masked
 			/>
+		</Row>
+	</Section>
+
+	<Section title="Watched states" id="status-cards">
+		<Row caption="PulseDot: still waiting (no pulse under reduced motion)">
+			<PulseDot />
+		</Row>
+		<Row caption="StatusCard waiting: a PulseDot, the state, a line and actions" wide>
+			<StatusCard state="waiting" title="Waiting for backend to connect…">
+				Most SDKs check in as soon as the app starts. This page updates by itself.
+				{#snippet actions()}<Button href="#status-cards">Do it later</Button>{/snippet}
+			</StatusCard>
+		</Row>
+		<Row caption="StatusCard done: a check in a soft green circle" wide>
+			<StatusCard state="done" title="backend is connected">
+				Its errors appear on Issues and its logs on Logs as they arrive.
+				{#snippet actions()}<Button href="#status-cards">Open issues</Button>{/snippet}
+			</StatusCard>
 		</Row>
 	</Section>
 
@@ -1203,6 +1273,18 @@ Every component with its variants, on sample data. Served only by the dev server
 				<NavLink label="Logs" icon="logs" href="#menu" collapsed />
 			</div>
 		</Row>
+		<Row
+			caption="ThemeSwitch: Dark mode, the system's theme until toggled, then light or dark kept in this browser (it changes this page too)"
+		>
+			<div
+				class="flex w-[236px] flex-col gap-0.5 rounded-popup border border-border bg-surface p-2"
+			>
+				<ThemeSwitch />
+			</div>
+			<div class="flex w-[62px] flex-col gap-0.5 rounded-popup border border-border bg-surface p-2">
+				<ThemeSwitch collapsed />
+			</div>
+		</Row>
 	</Section>
 
 	<Section title="Tables" id="tables">
@@ -1315,6 +1397,19 @@ Every component with its variants, on sample data. Served only by the dev server
 				{#snippet cell(row: Breadcrumb, column: BreadcrumbColumn)}{row[column.key]}{/snippet}
 			</Table>
 		</Row>
+		<Row caption="flat, inside a Card: no box of its own (the MCP page's connected apps)" wide>
+			<Card>
+				<Table
+					columns={contextColumns}
+					rows={contexts}
+					rowKey={(row: Context) => row.name}
+					label="Contexts in a card"
+					flat
+				>
+					{#snippet cell(row: Context, column: ContextColumn)}{row[column.key]}{/snippet}
+				</Table>
+			</Card>
+		</Row>
 		<Row caption="no rows: the empty snippet" wide>
 			<Table columns={projectColumns} rows={[] as SampleProject[]} label="Projects">
 				{#snippet cell()}{/snippet}
@@ -1356,6 +1451,10 @@ Every component with its variants, on sample data. Served only by the dev server
 			{/snippet}
 		</PageHeading>
 		<EmptyState>No issues match the filters.</EmptyState>
+		<EmptyState variant="card">
+			<p>No apps connected yet.</p>
+			<p class="text-xs text-muted">EmptyState variant card: a card, the text on the left.</p>
+		</EmptyState>
 	</Section>
 
 	<Section title="Not found">

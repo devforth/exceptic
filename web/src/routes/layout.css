@@ -1,5 +1,19 @@
 @import 'tailwindcss';
 
+/* Dark: chosen in this browser (#lib/theme.ts sets data-theme on <html>), or the system's
+   unless light was chosen. Only the tokens below use it. */
+@custom-variant dark {
+	&[data-theme='dark'] {
+		@slot;
+	}
+
+	@media (prefers-color-scheme: dark) {
+		&:not([data-theme='light']) {
+			@slot;
+		}
+	}
+}
+
 /* The design tokens: only these exist, Tailwind's defaults are reset. Dark values are
    below; components use the tokens and never need dark: variants. */
 @theme static {
@@ -40,6 +54,9 @@
 	--color-link-hover: color-mix(in srgb, var(--color-accent) 75%, var(--color-text));
 	/* The empty part of a bar (UsageBar). */
 	--color-track: color-mix(in srgb, var(--color-muted) 20%, var(--color-surface));
+	/* A Switch turned off, and its knob (white in both themes). */
+	--color-switch-off: color-mix(in srgb, var(--color-muted) 45%, var(--color-surface));
+	--color-knob: #ffffff;
 	/* Behind a modal dialog, in both themes. */
 	--color-backdrop: rgb(0 0 0 / 0.4);
 	/* A shade deeper than error-bg, so an error badge shows on red rows. */
@@ -95,7 +112,23 @@
 		}
 	}
 
+	/* A PulseDot's ring: grows from the dot and fades out. */
+	--animate-pulse-ring: pulse-ring 1.6s ease-out infinite;
+
+	@keyframes pulse-ring {
+		from {
+			opacity: 0.6;
+			scale: 1;
+		}
+		to {
+			opacity: 0;
+			scale: 2.6;
+		}
+	}
+
 	--container-page: 1200px;
+	/* Numbered steps and what goes with them (the setup page). */
+	--container-guide: 860px;
 
 	--breakpoint-*: initial;
 	/* Under it, wide-only table columns are hidden (max-table:hidden). */
@@ -122,10 +155,8 @@
 		--toast-shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 4px 20px rgb(0 0 0 / 0.15);
 		--project-text-share: 100%;
 		color-scheme: light;
-	}
 
-	@media (prefers-color-scheme: dark) {
-		:root {
+		@variant dark {
 			--color-bg: #141418;
 			--color-surface: #1c1c22;
 			--color-text: #e8e8ee;

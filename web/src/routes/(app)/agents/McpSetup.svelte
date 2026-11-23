@@ -11,7 +11,6 @@ component: gone after a reload or leaving the page, never in the address or stor
 	import CodeBlock from '#lib/components/CodeBlock.svelte';
 	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
 	import CopyButton from '#lib/components/CopyButton.svelte';
-	import CopyField from '#lib/components/CopyField.svelte';
 	import Details from '#lib/components/Details.svelte';
 	import Notice from '#lib/components/Notice.svelte';
 	import SecretReveal from '#lib/components/SecretReveal.svelte';
@@ -55,13 +54,17 @@ component: gone after a reload or leaving the page, never in the address or stor
 		}
 	}
 
-	const copyCommand = { copyTitle: 'Copy the command', copied: 'Command copied to clipboard.' };
+	const copyCommand = {
+		copyTitle: 'Copy the command',
+		copied: 'Command copied to clipboard.',
+		copyVariant: 'neutral'
+	} as const;
 </script>
 
-<p>Connect an MCP client to {appName}.</p>
+<p class="mb-1">Connect an MCP client to {appName}.</p>
 
 {#if setup.unencrypted}
-	<div role="alert">
+	<div role="alert" class="mb-1.5">
 		<Notice tone="error">
 			This server is reached over plain HTTP, so sign-in codes and tokens cross the network
 			unencrypted. Serve it over HTTPS and set <code>PUBLIC_URL</code> to the https address.
@@ -71,7 +74,7 @@ component: gone after a reload or leaving the page, never in the address or stor
 
 <Tabs label="MCP client" tabs={clients} param="client" variant="underline">
 	{#snippet panel(client: string)}
-		<div class="flex flex-col gap-2 pt-1">
+		<div class="flex flex-col gap-3.5 pt-3.5">
 			{#if client === 'claude'}
 				<p class="text-muted">
 					Run this command in your project's folder. Then use <code>/mcp</code> in Claude Code to sign
@@ -87,7 +90,7 @@ component: gone after a reload or leaving the page, never in the address or stor
 					Add <code>--scope user</code> to make this server available in every project.
 				</p>
 				<Details variant="inline" title="Share the setup with your team">
-					<div class="flex flex-col gap-2 pt-2">
+					<div class="flex flex-col gap-2 pt-3.5">
 						<p class="text-xs text-muted">
 							Save this as <code>.mcp.json</code> in your repository. Each developer authorizes access
 							separately.
@@ -98,6 +101,7 @@ component: gone after a reload or leaving the page, never in the address or stor
 							label=".mcp.json"
 							copyTitle="Copy .mcp.json"
 							copied="Configuration copied to clipboard."
+							copyVariant="neutral"
 						/>
 					</div>
 				</Details>
@@ -116,13 +120,15 @@ component: gone after a reload or leaving the page, never in the address or stor
 					Add this URL to your MCP client. With OAuth, sign in and allow access in your browser.
 					Otherwise, use a personal token in the header below.
 				</p>
-				<CopyField
-					value={setup.url}
+				<CodeBlock
+					variant="command"
+					code={setup.url}
 					label="MCP endpoint"
 					copyTitle="Copy the endpoint"
 					copied="Endpoint copied to clipboard."
+					copyVariant="neutral"
 				/>
-				<p class="mt-4 text-muted">
+				<p class="mt-2.5 text-muted">
 					A personal token grants access on your behalf. Keep it secret.
 				</p>
 				{#if token}
@@ -132,6 +138,7 @@ component: gone after a reload or leaving the page, never in the address or stor
 						label="Authorization header value"
 						copyTitle="Copy the authorization header value"
 						copied="Header value copied to clipboard."
+						copyVariant="neutral"
 						masked
 					>
 						Copy and save this token now. After you reload or leave this page, it will no longer be
@@ -166,6 +173,7 @@ component: gone after a reload or leaving the page, never in the address or stor
 							label="Copy setup prompt"
 							title="Copy a prompt that has a coding agent add this server with the token"
 							copied="Setup prompt copied: paste it to your agent."
+							variant="neutral"
 						/>
 					{/if}
 				</div>

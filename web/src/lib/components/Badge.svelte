@@ -2,7 +2,7 @@
 @component
 A short label: a level or role filled in its tone, or a project outlined in its color (from
 the session, or `color` for one not saved yet; set through the style: directive, which the CSP
-allows). With an href it is a link. A state (on, off) is a StatusText.
+allows), with `size="heading"` beside a page's title. With an href it is a link. A state (on, off) is a StatusText.
 -->
 <script lang="ts">
 	import { page } from '$app/state';
@@ -16,9 +16,11 @@ allows). With an href it is a link. A state (on, off) is a StatusText.
 		title?: string;
 		/** project: this color instead of the saved one (a preview), #rrggbb. */
 		color?: string;
+		/** heading: a project beside a page's title (Connect backend). */
+		size?: 'default' | 'heading';
 	};
 
-	let { tone, label, href, title, color: chosen }: Props = $props();
+	let { tone, label, href, title, color: chosen, size = 'default' }: Props = $props();
 
 	const filled = 'px-[7px] py-px align-[2px] lowercase';
 
@@ -33,7 +35,8 @@ allows). With an href it is a link. A state (on, off) is a StatusText.
 	};
 
 	const classes = $derived([
-		'inline-block rounded-full text-2xs font-semibold whitespace-nowrap forced-colors:border',
+		'inline-block rounded-full font-semibold whitespace-nowrap forced-colors:border',
+		size === 'heading' ? 'text-h2' : 'text-2xs',
 		tones[tone],
 		href && 'no-underline hover:no-underline hover:brightness-92'
 	]);

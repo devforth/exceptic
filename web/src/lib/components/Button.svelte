@@ -76,6 +76,8 @@ only its icon, and title names it (tooltip and aria-label).
 		primary: `${boxed} [--tone:var(--color-accent)] border-accent bg-accent text-accent-text not-disabled:hover:bg-accent-hover`,
 		danger: `${boxed} [--tone:var(--color-error)] border-border bg-surface text-error not-disabled:hover:bg-error-bg`,
 		info: `${boxed} [--tone:var(--color-info)] border-info bg-info-bg text-info not-disabled:hover:bg-info-hover`,
+		// Grey on the code background: the copy buttons of the MCP page's commands.
+		neutral: `${boxed} [--tone:var(--color-muted)] border-border bg-code-bg text-text not-disabled:hover:bg-border`,
 		// Opens a record beside the info buttons of a row (the issue list's Open).
 		accent: `${boxed} [--tone:var(--color-accent)] border-accent bg-accent-soft text-accent not-disabled:hover:bg-accent not-disabled:hover:text-accent-text`,
 		// The ⋯ of a row menu: no box until hovered or open.
@@ -106,7 +108,7 @@ only its icon, and title names it (tooltip and aria-label).
 			return `rounded-control p-0 ${side}`;
 		}
 
-		if (variant === 'info') return 'h-9 rounded-control px-3';
+		if (variant === 'info' || variant === 'neutral') return 'h-9 rounded-control px-3';
 
 		// A link is a little wider than a button, as in the design.
 		return href ? 'rounded-control px-3 py-1.5' : 'rounded-control px-2.5 py-1.5';

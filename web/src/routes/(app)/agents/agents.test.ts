@@ -74,6 +74,18 @@ describe('McpSetup', () => {
 		expect(location.href).not.toContain(secret);
 	});
 
+	it('gives the endpoint as a command with a grey copy button, as every command here', () => {
+		render(McpSetup, { setup, appName: 'Exceptic' });
+
+		expect(screen.queryByRole('textbox', { name: 'MCP endpoint' })).toBeNull();
+		expect(screen.getByLabelText('MCP endpoint').textContent).toContain(setup.url);
+
+		const copy = screen.getByTitle('Copy the endpoint');
+
+		expect(copy.className).toContain('bg-code-bg');
+		expect(copy.className).not.toContain('bg-info-bg');
+	});
+
 	it('asks before replacing a token', async () => {
 		render(McpSetup, { setup: { ...setup, token_set: true }, appName: 'Exceptic' });
 
@@ -135,6 +147,16 @@ describe('ConnectedApps', () => {
 		await userEvent.click(owner());
 		await userEvent.click(screen.getByRole('option', { name: 'Admin (you)' }));
 		expect(app.goto).toHaveBeenLastCalledWith('/agents?client=codex');
+	});
+
+	it('says when no app is connected, without an empty table', () => {
+		render(ConnectedApps, {
+			agents: { ...agents, agents: [agents.agents![1]] },
+			viewerId: 'viewer01'
+		});
+
+		expect(screen.getByText('No apps connected yet.')).toBeTruthy();
+		expect(screen.queryByRole('table')).toBeNull();
 	});
 
 	it('shows no choice to a user', () => {

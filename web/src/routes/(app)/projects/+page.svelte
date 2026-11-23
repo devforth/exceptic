@@ -168,7 +168,12 @@
 			{#each storage.projects ?? [] as part (part.id)}
 				{#if part.bytes > 0}
 					<span class="flex items-center gap-1">
-						<Badge tone="project" label={part.name} />{part.size}
+						<Badge
+							tone="project"
+							label={part.name}
+							href={withQuery(resolve('/(app)/logs'), { project: part.name })}
+							title="Logs of {part.name}"
+						/>{part.size}
 					</span>
 				{/if}
 			{/each}

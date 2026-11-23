@@ -5,6 +5,7 @@ tone: what to do with it, then the value to copy, plain or masked until Show. Th
 copies the full value.
 -->
 <script lang="ts">
+	import type { CopyVariant } from './button.ts';
 	import type { Snippet } from 'svelte';
 	import CopyField from './CopyField.svelte';
 
@@ -15,16 +16,17 @@ copies the full value.
 		copyTitle: string;
 		copied?: string;
 		masked?: boolean;
+		copyVariant?: CopyVariant;
 		/** What to do with it, e.g. "Give it to the user. It is shown only now." */
 		children: Snippet;
 	};
 
-	let { value, label, copyTitle, copied, masked = false, children }: Props = $props();
+	let { value, label, copyTitle, copied, masked = false, copyVariant, children }: Props = $props();
 </script>
 
 <div role="status" class="flex flex-col gap-2 rounded-note border border-warning bg-warning-bg p-3">
 	<div>{@render children()}</div>
 	<div class="max-w-130">
-		<CopyField {value} {label} {copyTitle} {copied} {masked} />
+		<CopyField {value} {label} {copyTitle} {copied} {masked} {copyVariant} />
 	</div>
 </div>

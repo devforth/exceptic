@@ -129,8 +129,19 @@ func TestEmbeddedBuild(t *testing.T) {
 		t.Error("the page does not load the app from /" + immutableDir)
 	}
 
-	if count := len(inlineScript.FindAllStringSubmatch(page, -1)); count != 1 {
-		t.Errorf("%d scripts in the page, want SvelteKit's one", count)
+	// The theme's (app.html, before the first paint) and SvelteKit's, each allowed by its hash.
+	scripts := inlineScript.FindAllStringSubmatch(page, -1)
+
+	if len(scripts) != 2 {
+		t.Errorf("%d scripts in the page, want the theme's and SvelteKit's", len(scripts))
+	}
+
+	for _, script := range scripts {
+		sum := sha256.Sum256([]byte(script[2]))
+
+		if hash := "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"; !strings.Contains(app.policy, hash) {
+			t.Errorf("the policy %q lacks the hash of the script %q", app.policy, script[2])
+		}
 	}
 
 	if strings.Contains(page, "style=") || strings.Contains(page, "<style") {

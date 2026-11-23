@@ -153,8 +153,8 @@ outside, scrolling or resizing close it.
 		return closeWhenLeft(() => [box], close);
 	});
 
-	// Where a day sits in the chosen range: its cell carries the band, so the band runs on under
-	// the round first and last day and leaves no gap between them.
+	// Where a day sits in the chosen range: the range is one band, its first day rounded on the
+	// left, its last on the right, the days between square (a range of one day is a circle).
 	function bandOf(day: string): 'start' | 'between' | 'end' | undefined {
 		if (!shown.first || shown.first === shown.end) return undefined;
 		if (day === shown.first) return 'start';
@@ -164,24 +164,29 @@ outside, scrolling or resizing close it.
 	}
 
 	// Literal class names, so Tailwind builds them.
-	const bands = {
-		start: 'bg-[linear-gradient(to_right,transparent_50%,var(--color-selected)_50%)]',
+	const shapes = {
+		start: 'rounded-l-full bg-accent font-semibold text-accent-text',
 		between: 'bg-selected',
-		end: 'bg-[linear-gradient(to_left,transparent_50%,var(--color-selected)_50%)]'
+		end: 'rounded-r-full bg-accent font-semibold text-accent-text'
 	};
 
 	function dayClasses(day: string) {
-		const edge = day === shown.first || day === shown.end;
-		const between = shown.first && day > shown.first && day < shown.end;
+		const band = bandOf(day);
+		const single = shown.first !== undefined && day === shown.first && day === shown.end;
 
 		return [
-			'size-9 rounded-full text-sm tabular-nums focus-ring [--focus-offset:-2px] disabled:cursor-not-allowed disabled:opacity-30',
-			edge
-				? 'bg-accent font-semibold text-accent-text'
-				: day === last
-					? 'font-bold text-accent ring-2 ring-accent ring-inset'
-					: day.slice(0, 7) !== month.slice(0, 7) && 'text-muted',
-			!edge && !between && 'cursor-pointer enabled:hover:bg-hover'
+			'h-9 w-full min-w-9 cursor-pointer text-sm tabular-nums focus-ring [--focus-offset:-2px] disabled:cursor-not-allowed disabled:opacity-30',
+			band
+				? shapes[band]
+				: single
+					? 'rounded-full bg-accent font-semibold text-accent-text'
+					: [
+							'rounded-full enabled:hover:bg-hover',
+							day === last
+								? 'font-bold text-accent ring-2 ring-accent ring-inset'
+								: day.slice(0, 7) !== month.slice(0, 7) && 'text-muted'
+						],
+			band === 'between' && day === last && 'font-bold text-accent'
 		];
 	}
 
@@ -279,7 +284,7 @@ outside, scrolling or resizing close it.
 								<td
 									role="gridcell"
 									data-band={band}
-									class={['p-0 text-center', band && bands[band]]}
+									class="p-0 text-center"
 									aria-selected={Boolean(shown.first) && day >= shown.first && day <= shown.end}
 								>
 									<button

@@ -1,39 +1,50 @@
 <!--
 @component
-An item of the menu: a link, or the submit button of a form (Log out). In a collapsed menu
-or under 800px wide it shows its icon only, its count in a corner.
+An item of the menu: a link, a button (with onclick), a switch (onclick and checked: Dark mode,
+a Switch at its end) or the submit button of a form (Log out, `danger`: in the error color). In a collapsed menu or under
+800px wide it shows its icon only, its count in a corner, a switch's icon in the accent when on.
 -->
 <script lang="ts">
 	import type { IconName } from '#lib/icons.ts';
 	import Icon from './Icon.svelte';
+	import Switch from './Switch.svelte';
 
 	type Props = {
 		label: string;
 		icon: IconName;
-		/** A link; without it, a submit button. */
+		/** A link; without it and onclick, a submit button. */
 		href?: string;
+		onclick?: () => void;
 		title?: string;
 		active?: boolean;
 		count?: number;
 		/** What the count is, for screen readers: "7 unresolved". */
 		countLabel?: string;
 		collapsed?: boolean;
+		/** With onclick: a switch, on or off. */
+		checked?: boolean;
+		/** In the error color: Log out. */
+		danger?: boolean;
 	};
 
 	let {
 		label,
 		icon,
 		href,
+		onclick,
 		title,
 		active = false,
 		count,
 		countLabel,
-		collapsed = false
+		collapsed = false,
+		checked,
+		danger = false
 	}: Props = $props();
 
 	const classes = $derived([
-		'relative flex w-full items-center gap-2.5 rounded-control px-2.5 py-2 text-left text-sm text-muted no-underline',
-		'cursor-pointer hover:bg-bg hover:text-text hover:no-underline',
+		'relative flex w-full items-center gap-2.5 rounded-control px-2.5 py-2 text-left text-sm no-underline',
+		'cursor-pointer hover:no-underline',
+		danger ? 'text-error hover:bg-error-bg' : 'text-muted hover:bg-bg hover:text-text',
 		'focus-ring [--focus-offset:-2px]',
 		'max-sidebar:w-auto max-sidebar:px-3 max-sidebar:py-[9px]',
 		collapsed && 'sidebar:justify-center sidebar:p-2',
@@ -53,8 +64,20 @@ or under 800px wide it shows its icon only, its count in a corner.
 </script>
 
 {#snippet content()}
-	<Icon name={icon} />
+	{#if checked}
+		<!-- On, while only the icon shows: the icon in the accent. -->
+		<span class={['flex max-sidebar:text-accent', collapsed && 'sidebar:text-accent']}>
+			<Icon name={icon} />
+		</span>
+	{:else}
+		<Icon name={icon} />
+	{/if}
 	<span class={['max-sidebar:sr-only', collapsed && 'sidebar:sr-only']}>{label}</span>
+	{#if checked !== undefined}
+		<span class={['ml-auto flex max-sidebar:hidden', collapsed && 'sidebar:hidden']}>
+			<Switch {checked} decorative />
+		</span>
+	{/if}
 	{#if count}
 		<b class={countClasses} aria-hidden="true">{shownCount}</b>
 		{#if countLabel}<span class="sr-only">{countLabel}</span>{/if}
@@ -66,6 +89,17 @@ or under 800px wide it shows its icon only, its count in a corner.
 	<a {href} class={classes} title={title ?? label} aria-current={active ? 'page' : undefined}>
 		{@render content()}
 	</a>
+{:else if onclick}
+	<button
+		type="button"
+		class={classes}
+		title={title ?? label}
+		role={checked === undefined ? undefined : 'switch'}
+		aria-checked={checked}
+		{onclick}
+	>
+		{@render content()}
+	</button>
 {:else}
 	<button type="submit" class={classes} title={title ?? label}>{@render content()}</button>
 {/if}

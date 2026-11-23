@@ -1,7 +1,7 @@
 <!--
 @component
 The menu: the app name, the Monitoring and Settings groups (admin items for admins), the
-account and Log out. It collapses to icons (the choice is kept in this browser); under
+theme (Dark mode), the account and Log out below a line. It collapses to icons (the choice is kept in this browser); under
 800px wide it is a bar at the top.
 -->
 <script lang="ts">
@@ -12,6 +12,7 @@ account and Log out. It collapses to icons (the choice is kept in this browser);
 	import { toast } from '#lib/toast.svelte.ts';
 	import Button from './Button.svelte';
 	import NavLink from './NavLink.svelte';
+	import ThemeSwitch from './ThemeSwitch.svelte';
 
 	let { session }: { session: Out<'get_session'> } = $props();
 
@@ -143,17 +144,27 @@ account and Log out. It collapses to icons (the choice is kept in this browser);
 		{/each}
 	</nav>
 
-	<nav aria-label="Account" class="max-sidebar:flex-none">
-		<NavLink
-			label={session.user.display_name}
-			icon="account"
-			href={account}
-			title="Your account: {session.user.display_name} ({session.user.role})"
-			active={page.url.pathname === account}
-			{collapsed}
-		/>
-	</nav>
-	<form onsubmit={logOut} class="max-sidebar:flex-none">
-		<NavLink label="Log out" icon="logout" {collapsed} />
+	<!-- The theme right above the account, as two items of one list. -->
+	<div class="flex flex-col gap-0.5 max-sidebar:contents">
+		<div class="max-sidebar:flex-none">
+			<ThemeSwitch {collapsed} />
+		</div>
+		<nav aria-label="Account" class="max-sidebar:flex-none">
+			<NavLink
+				label={session.user.display_name}
+				icon="account"
+				href={account}
+				title="Your account: {session.user.display_name} ({session.user.role})"
+				active={page.url.pathname === account}
+				{collapsed}
+			/>
+		</nav>
+	</div>
+	<!-- Set apart by a line in the full menu. -->
+	<form
+		onsubmit={logOut}
+		class="max-sidebar:flex-none sidebar:-mt-2.5 sidebar:border-t sidebar:border-border sidebar:pt-2.5"
+	>
+		<NavLink label="Log out" icon="logout" danger {collapsed} />
 	</form>
 </aside>

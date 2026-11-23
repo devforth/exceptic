@@ -58,6 +58,28 @@ describe('DateRange', () => {
 		expect(band('Thursday, 19 November 2026')).toBe('between');
 		expect(band('Friday, 20 November 2026')).toBe('end');
 		expect(band('Saturday, 21 November 2026')).toBeUndefined();
+
+		// One shape: the first day rounded on its left, the last on its right, square between.
+		expect(day('Wednesday, 18 November 2026').classList.contains('rounded-l-full')).toBe(true);
+		expect(day('Wednesday, 18 November 2026').classList.contains('rounded-r-full')).toBe(false);
+		expect(day('Friday, 20 November 2026').classList.contains('rounded-r-full')).toBe(true);
+		expect(day('Friday, 20 November 2026').classList.contains('rounded-l-full')).toBe(false);
+		expect(day('Thursday, 19 November 2026').classList.contains('rounded-full')).toBe(false);
+	});
+
+	it('keeps the pointer on every day that can be picked, the chosen ones too', async () => {
+		const { field } = renderRange('2026-11-18', '2026-11-20');
+
+		await userEvent.click(field);
+
+		for (const name of [
+			'Wednesday, 18 November 2026',
+			'Thursday, 19 November 2026',
+			'Friday, 20 November 2026',
+			'Saturday, 21 November 2026'
+		]) {
+			expect(day(name).classList.contains('cursor-pointer')).toBe(true);
+		}
 	});
 
 	it('offers no day after today', async () => {

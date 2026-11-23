@@ -4,9 +4,11 @@ Code or data on the code background.
 - `plain`: text as given, long lines wrapped (indented JSON, a payload).
 - `command`: one line to run, after an accent "›", on the page's background, with its copy button.
 - `snippet`: several lines to paste (a config file), on the code background, with its copy button.
-Commands and snippets keep their lines and scroll sideways, so they paste as shown.
+Commands and snippets keep their lines and scroll sideways, so they paste as shown;
+`copyVariant` is their copy button's look (CopyButton).
 -->
 <script lang="ts">
+	import type { CopyVariant } from './button.ts';
 	import CopyButton from './CopyButton.svelte';
 
 	type Props = {
@@ -17,9 +19,10 @@ Commands and snippets keep their lines and scroll sideways, so they paste as sho
 		/** command and snippet: what the button does, e.g. "Copy the command". */
 		copyTitle?: string;
 		copied?: string;
+		copyVariant?: CopyVariant;
 	};
 
-	let { code, variant = 'plain', label, copyTitle = 'Copy', copied }: Props = $props();
+	let { code, variant = 'plain', label, copyTitle = 'Copy', copied, copyVariant }: Props = $props();
 
 	const box = 'rounded-control bg-code-bg p-2.5 font-mono text-code';
 </script>
@@ -36,13 +39,13 @@ Commands and snippets keep their lines and scroll sideways, so they paste as sho
 				class="inline-block w-4 font-bold text-accent select-none"
 				aria-hidden="true">›</span
 			>{code}</pre>
-		<CopyButton text={code} title={copyTitle} label="Copy" {copied} />
+		<CopyButton text={code} title={copyTitle} label="Copy" {copied} variant={copyVariant} />
 	</div>
 {:else}
 	<div class="flex min-w-0 items-start gap-2">
 		<pre
-			class={[box, 'min-w-0 flex-1 overflow-x-auto whitespace-pre']}
+			class={[box, 'min-w-0 flex-1 overflow-x-auto whitespace-pre [tab-size:4]']}
 			aria-label={label}>{code}</pre>
-		<CopyButton text={code} title={copyTitle} label="Copy" {copied} />
+		<CopyButton text={code} title={copyTitle} label="Copy" {copied} variant={copyVariant} />
 	</div>
 {/if}

@@ -2,7 +2,8 @@
 @component
 A table of rows: the columns name what each shows, the cell snippet draws a row's cell.
 Every second row is shaded. Without rows it shows the empty snippet in an EmptyState.
-- `scroll` keeps it in a box of its own height with the header in view; `compact` is denser.
+- `scroll` keeps it in a box of its own height with the header in view; `flat` has no box of
+  its own (inside a Card), only scrolls sideways; `compact` is denser.
 - `sort`: columns with a `sort` link their heading to the list sorted by them (aria-sort).
 - `selected` (bindable, needs rowKey): a checkbox per row and one for all (mixed when some are
   checked); it empties when the rows change.
@@ -35,6 +36,7 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 		rowKey?: (row: Row) => RowKey;
 		compact?: boolean;
 		scroll?: boolean;
+		flat?: boolean;
 		headerless?: boolean;
 		sort?: TableSort;
 		selected?: ReadonlySet<RowKey>;
@@ -54,6 +56,7 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 		rowKey,
 		compact = false,
 		scroll = false,
+		flat = false,
 		headerless = false,
 		sort,
 		selected = $bindable(),
@@ -66,7 +69,9 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 	const box = $derived(
 		scroll
 			? 'max-h-[420px] overflow-auto rounded-box border border-border bg-surface focus-ring'
-			: 'overflow-x-auto rounded-card border border-transparent bg-surface shadow-card'
+			: flat
+				? 'overflow-x-auto'
+				: 'overflow-x-auto rounded-card border border-transparent bg-surface shadow-card'
 	);
 
 	const padding = $derived(compact ? 'px-2.5 py-1.5' : 'px-3 py-2.5');

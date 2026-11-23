@@ -27,6 +27,8 @@ import KeyRound from '@lucide/svelte/icons/key-round';
 import LogOut from '@lucide/svelte/icons/log-out';
 import LetterI from '@lucide/svelte/icons/letter-i';
 import Logs from '@lucide/svelte/icons/logs';
+import Monitor from '@lucide/svelte/icons/monitor';
+import Moon from '@lucide/svelte/icons/moon';
 import PanelLeftClose from '@lucide/svelte/icons/panel-left-close';
 import PanelLeftOpen from '@lucide/svelte/icons/panel-left-open';
 import Pause from '@lucide/svelte/icons/pause';
@@ -37,6 +39,7 @@ import Plus from '@lucide/svelte/icons/plus';
 import RotateCw from '@lucide/svelte/icons/rotate-cw';
 import Send from '@lucide/svelte/icons/send';
 import Settings from '@lucide/svelte/icons/settings';
+import Sun from '@lucide/svelte/icons/sun';
 import Trash from '@lucide/svelte/icons/trash';
 import TriangleExclamationPoint from '@lucide/svelte/icons/triangle-exclamation-point';
 import Users from '@lucide/svelte/icons/users';
@@ -51,6 +54,9 @@ export const icons = {
 	mcp: Plug,
 	account: CircleUserRound,
 	logout: LogOut,
+	themeSystem: Monitor,
+	themeLight: Sun,
+	themeDark: Moon,
 	sidebarCollapse: PanelLeftClose,
 	sidebarExpand: PanelLeftOpen,
 	add: Plus,
