@@ -62,13 +62,15 @@ func createWebUser(t *testing.T, admin *browser, username, role string) (string,
 	return created.User.ID, user
 }
 
-// Admins manage admins and users, never the superadmin or themselves here;
-// the rows and the user page say whom they may change.
+// The hierarchy: the superadmin manages everyone; an admin only users of the
+// role user (never other admins, the superadmin or himself here); the rows and
+// the user page say whom they may change.
 func TestUIUsers(t *testing.T) {
 	server := newLoginServer(t)
 	root := server.browser().loggedIn("admin", adminPassword)
 	otherID, _ := createWebUser(t, root, "ops2", store.RoleAdmin)
 	adminID, admin := createWebUser(t, root, "ops", store.RoleAdmin)
+	devID, _ := createWebUser(t, root, "dev", store.RoleUser)
 	rootID := superadmin(t, server)
 
 	var list struct {
@@ -88,11 +90,11 @@ func TestUIUsers(t *testing.T) {
 		}
 	}
 
-	if len(manage) != 3 || manage[rootID] || manage[adminID] || !manage[otherID] {
+	if len(manage) != 4 || manage[rootID] || manage[adminID] || manage[otherID] || !manage[devID] {
 		t.Errorf("can_manage: %v", manage)
 	}
 
-	// The superadmin's page is read-only for an admin, and changes to it look as if it did not exist.
+	// The superadmin's page is read-only for an admin: changes to it are forbidden.
 	var page managedUser
 
 	response = admin.call(http.MethodGet, "get_user?user_id="+rootID, nil)
@@ -107,7 +109,7 @@ func TestUIUsers(t *testing.T) {
 		"reset_user_password": {"user_id": rootID},
 		"delete_user":         {"user_id": rootID},
 	} {
-		if response := admin.call(http.MethodPost, name, input); response.Code != http.StatusNotFound {
+		if response := admin.call(http.MethodPost, name, input); response.Code != http.StatusForbidden {
 			t.Errorf("%s of the superadmin: %d %s", name, response.Code, response.Body)
 		}
 	}
@@ -125,15 +127,45 @@ func TestUIUsers(t *testing.T) {
 
 	response = root.call(http.MethodPost, "create_user", map[string]string{"username": "OPS", "role": store.RoleUser})
 
-	if body := errorOf(t, response); response.Code != http.StatusBadRequest || body.Fields["username"] != "This username is taken." {
+	if body := errorOf(t, response); response.Code != http.StatusConflict || body.Fields["username"] != "This username is taken." {
 		t.Errorf("a username in another case: %d %s", response.Code, response.Body)
 	}
 
-	if response := admin.call(http.MethodPost, "update_user", map[string]string{"user_id": otherID, "name": "Second admin", "role": store.RoleUser}); response.Code != http.StatusOK {
-		t.Fatalf("admin edits an admin: %d %s", response.Code, response.Body)
+	// Another admin is read-only for an admin: no change, reset, delete or new admin.
+	for name, input := range map[string]map[string]string{
+		"update_user":         {"user_id": otherID, "name": "Second admin"},
+		"reset_user_password": {"user_id": otherID},
+		"delete_user":         {"user_id": otherID},
+	} {
+		response := admin.call(http.MethodPost, name, input)
+
+		if body := errorOf(t, response); response.Code != http.StatusForbidden || body.Error != "your role may not change this user" {
+			t.Errorf("%s of another admin: %d %s", name, response.Code, response.Body)
+		}
 	}
 
-	response = admin.call(http.MethodGet, "get_user?user_id="+otherID, nil)
+	response = admin.call(http.MethodPost, "create_user", map[string]string{"username": "ops3", "role": store.RoleAdmin})
+
+	if body := errorOf(t, response); response.Code != http.StatusForbidden || body.Fields["role"] != "Your role may not give this role." {
+		t.Errorf("an admin creates an admin: %d %s", response.Code, response.Body)
+	}
+
+	response = admin.call(http.MethodPost, "update_user", map[string]string{"user_id": devID, "role": store.RoleAdmin})
+
+	if body := errorOf(t, response); response.Code != http.StatusForbidden || body.Fields["role"] != "Your role may not give this role." {
+		t.Errorf("an admin makes a user an admin: %d %s", response.Code, response.Body)
+	}
+
+	if response := admin.call(http.MethodPost, "update_user", map[string]string{"user_id": devID, "name": "Developer"}); response.Code != http.StatusOK {
+		t.Fatalf("admin edits a user: %d %s", response.Code, response.Body)
+	}
+
+	// The superadmin manages admins.
+	if response := root.call(http.MethodPost, "update_user", map[string]string{"user_id": otherID, "name": "Second admin", "role": store.RoleUser}); response.Code != http.StatusOK {
+		t.Fatalf("the superadmin edits an admin: %d %s", response.Code, response.Body)
+	}
+
+	response = root.call(http.MethodGet, "get_user?user_id="+otherID, nil)
 	decodeOK(t, "get_user", response, &page)
 
 	if !page.CanManage || page.User.DisplayName != "Second admin" || page.User.Role != store.RoleUser {

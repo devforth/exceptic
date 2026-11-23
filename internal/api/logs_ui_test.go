@@ -87,7 +87,14 @@ func TestUIDeleteLogs(t *testing.T) {
 
 	ids := list()
 
-	if code, _ := remove(user, map[string]any{"log_ids": []int64{ids["backend chosen"]}}); code != http.StatusNotFound {
+	// An admin limited to backend deletes nothing of frontend, as if it were missing.
+	backendAdmin := server.webUserWith(store.RoleAdmin, store.OnlyProjects(1))
+
+	if code, deleted := remove(backendAdmin, map[string]any{"log_ids": []int64{ids["frontend retry 1"]}}); code != http.StatusOK || deleted != 0 {
+		t.Errorf("a backend admin deletes a frontend log: %d, deleted %d", code, deleted)
+	}
+
+	if code, _ := remove(user, map[string]any{"log_ids": []int64{ids["backend chosen"]}}); code != http.StatusForbidden {
 		t.Errorf("a user deletes logs: %d", code)
 	}
 

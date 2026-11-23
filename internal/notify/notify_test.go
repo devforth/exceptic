@@ -491,7 +491,7 @@ func TestRateLimitStopsTheBatch(t *testing.T) {
 	for index := range 3 {
 		payload, _ := json.Marshal(issue(index, "error"))
 
-		if err := setup.database.EnqueueOutbox(context.Background(), []string{id}, kindNotification, payload, time.Now()); err != nil {
+		if err := setup.database.EnqueueOutbox(context.Background(), []string{id}, []int{1}, kindNotification, payload, time.Now()); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -607,7 +607,7 @@ func TestOldMessagesAreCleaned(t *testing.T) {
 		status string
 		age    time.Duration
 	}{{"sent", 2 * time.Hour}, {"sent", time.Minute}, {"failed", 48 * time.Hour}, {"failed", time.Hour}} {
-		if err := setup.database.EnqueueOutbox(ctx, []string{"old"}, kindNotification, []byte(`{}`), now.Add(-row.age)); err != nil {
+		if err := setup.database.EnqueueOutbox(ctx, []string{"old"}, []int{1}, kindNotification, []byte(`{}`), now.Add(-row.age)); err != nil {
 			t.Fatal(err)
 		}
 

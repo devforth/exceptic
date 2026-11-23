@@ -80,8 +80,9 @@ func (agents *Agents) Setup(ctx context.Context, viewer store.User, address *url
 	}, err
 }
 
-// Page lists the agents of ownerID when the viewer may see them, otherwise
-// the viewer's own.
+// Page lists the agents of ownerID (the viewer's own when empty): a user
+// the viewer may not see the agents of is ErrForbidden, a missing one
+// store.ErrNotFound.
 func (agents *Agents) Page(ctx context.Context, viewer store.User, ownerID string) (AgentsPage, error) {
 	page := AgentsPage{Owner: viewer, Owners: []store.User{viewer}}
 
@@ -97,6 +98,20 @@ func (agents *Agents) Page(ctx context.Context, viewer store.User, ownerID strin
 		if index := slices.IndexFunc(page.Owners, func(user store.User) bool { return user.ID == ownerID }); index >= 0 {
 			page.Owner = page.Owners[index]
 		}
+	}
+
+	if ownerID != "" && page.Owner.ID != ownerID {
+		if !store.ValidID(ownerID) {
+			return page, store.ErrNotFound
+		}
+
+		owner, err := agents.store.GetUser(ctx, ownerID)
+
+		if err != nil {
+			return page, err
+		}
+
+		return page, agentsRefusal(viewer, owner)
 	}
 
 	var err error
@@ -124,6 +139,15 @@ func (agents *Agents) NewPersonalToken(ctx context.Context, viewer store.User, a
 	return PersonalToken{Token: token, SetupPrompt: setupPrompt(agents.serverName, agents.authorization.ResourceAt(address), token)}, nil
 }
 
+// agentsRefusal: why viewer may not see or disconnect the agents of owner.
+func agentsRefusal(viewer, owner store.User) error {
+	if viewer.CanManage(owner) {
+		return Forbidden(TakeOverProblem)
+	}
+
+	return Forbidden("your role may not access the agents of this user")
+}
+
 // Disconnect revokes an agent the viewer may access.
 func (agents *Agents) Disconnect(ctx context.Context, viewer store.User, grantID string) error {
 	grant, err := agents.authorization.Grant(ctx, grantID)
@@ -139,7 +163,7 @@ func (agents *Agents) Disconnect(ctx context.Context, viewer store.User, grantID
 	}
 
 	if !viewer.CanAccessAgentsOf(owner) {
-		return ErrForbidden
+		return agentsRefusal(viewer, owner)
 	}
 
 	return agents.authorization.Disconnect(ctx, grantID)

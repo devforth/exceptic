@@ -31,7 +31,7 @@ type uiProject struct {
 }
 
 // An unknown project is not found for the project page (the web app shows
-// its 404 page); an agent still reads which project it did not know.
+// its 404 page); an agent reads which project it did not know.
 func TestUIGetProjectUnknown(t *testing.T) {
 	server := newRESTServer(t)
 	admin := server.webUser(store.RoleAdmin, false)
@@ -48,7 +48,7 @@ func TestUIGetProjectUnknown(t *testing.T) {
 
 	agent := newTestServer(t)
 
-	if text, isError := agent.try("get_project", map[string]any{"project": "nope"}); !isError || !strings.Contains(text, `unknown project "nope" (see list_projects)`) {
+	if text, isError := agent.try("get_project", map[string]any{"project": "nope"}); !isError || text != `not found: project "nope" (see list_projects)` {
 		t.Errorf("agent: %s", text)
 	}
 }
@@ -101,7 +101,7 @@ func TestGetProjectDefaults(t *testing.T) {
 		t.Errorf("%+v, want color %s", defaults, next)
 	}
 
-	if response := server.webUser(store.RoleUser, false).call(http.MethodGet, "get_project_defaults", ""); response.Code != http.StatusNotFound {
+	if response := server.webUser(store.RoleUser, false).call(http.MethodGet, "get_project_defaults", ""); response.Code != http.StatusForbidden {
 		t.Errorf("a user: %d", response.Code)
 	}
 }
@@ -111,16 +111,19 @@ func TestUIProjectFormErrors(t *testing.T) {
 	server := newRESTServer(t)
 	admin := server.webUser(store.RoleAdmin, false)
 
-	for _, test := range []struct{ name, body, field, want string }{
-		{"create_project", `{"name":"Not Valid"}`, "name", "lowercase letters"},
-		{"create_project", `{"name":"backend"}`, "name", "Another project already has this name."},
-		{"update_project", `{"project":"1","color":"red"}`, "color", "Choose a color."},
+	for _, test := range []struct {
+		name, body, field, want string
+		status                  int
+	}{
+		{"create_project", `{"name":"Not Valid"}`, "name", "lowercase letters", http.StatusBadRequest},
+		{"create_project", `{"name":"backend"}`, "name", "Another project already has this name.", http.StatusConflict},
+		{"update_project", `{"project":"1","color":"red"}`, "color", "Choose a color.", http.StatusBadRequest},
 	} {
 		response := admin.call(http.MethodPost, test.name, test.body)
 
 		var body api.ErrorBody
 
-		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil || response.Code != http.StatusBadRequest || !strings.Contains(body.Fields[test.field], test.want) {
+		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil || response.Code != test.status || !strings.Contains(body.Fields[test.field], test.want) {
 			t.Errorf("%s %s: %d %s", test.name, test.body, response.Code, response.Body)
 		}
 	}
@@ -215,7 +218,7 @@ func TestUIProjectFromEnv(t *testing.T) {
 		t.Errorf("color alone: %+v, session colors %v", project, session.ProjectColors)
 	}
 
-	if response := admin.call(http.MethodPost, "delete_project", `{"project":"1"}`); response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "PROJECTS") {
+	if response := admin.call(http.MethodPost, "delete_project", `{"project":"1"}`); response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "PROJECTS") {
 		t.Errorf("delete: %d %s", response.Code, response.Body)
 	}
 }

@@ -171,8 +171,8 @@ func TestOriginProtection(t *testing.T) {
 
 	response = oauthRequest(handler, http.MethodPost, "/mcp", "", "Sec-Fetch-Site", "cross-site", "Authorization", "Bearer "+token)
 
-	if response.Code != http.StatusForbidden {
-		t.Fatal("cross-site fetch without Origin accepted")
+	if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), `"error":"access_denied"`) {
+		t.Fatalf("cross-site fetch without Origin: %d %s", response.Code, response.Body)
 	}
 
 	response = oauthRequest(handler, http.MethodPost, "/mcp", "", "Authorization", "Bearer "+token, "Authorization", "Bearer "+token)

@@ -56,7 +56,7 @@ func TestReloadKeepsTheNewestList(t *testing.T) {
 	created := make(chan error, 1)
 
 	go func() {
-		_, err := registry.Create(ctx, store.Project{Name: "worker"})
+		_, err := registry.Create(ctx, store.Project{Name: "worker"}, "")
 
 		created <- err
 	}()
@@ -91,7 +91,7 @@ func TestDeleteOutlivesTheRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	id, err := registry.Create(ctx, store.Project{Name: "worker"})
+	id, err := registry.Create(ctx, store.Project{Name: "worker"}, "")
 
 	if err != nil {
 		t.Fatal(err)

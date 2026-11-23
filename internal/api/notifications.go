@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"net/http"
 	"net/url"
 	"strconv"
 	"time"
@@ -154,13 +155,13 @@ func (handler *handlers) connectionView(call Call, connection store.Connection, 
 
 func (handler *handlers) listConnections(ctx context.Context, call Call, _ noInput) (Page[connectionOutput], error) {
 	output := Page[connectionOutput]{Items: []connectionOutput{}}
-	connections, err := handler.services.Connections.List(ctx)
+	connections, err := handler.services.Connections.List(ctx, call.Access())
 
 	if err != nil {
 		return output, err
 	}
 
-	health, err := handler.services.Connections.DeliveryHealth(ctx)
+	health, err := handler.services.Connections.DeliveryHealth(ctx, connections...)
 
 	if err != nil {
 		return output, err
@@ -199,8 +200,8 @@ type connectionDetailsOutput struct {
 	Retrying int `json:"retrying"`
 }
 
-func (handler *handlers) getConnection(ctx context.Context, _ Call, input connectionInput) (connectionDetailsOutput, error) {
-	connection, err := handler.services.Connections.Get(ctx, input.ConnectionID)
+func (handler *handlers) getConnection(ctx context.Context, call Call, input connectionInput) (connectionDetailsOutput, error) {
+	connection, err := handler.services.Connections.Get(ctx, call.Access(), input.ConnectionID)
 
 	if err != nil {
 		return connectionDetailsOutput{}, err
@@ -229,7 +230,7 @@ func (handler *handlers) getConnection(ctx context.Context, _ Call, input connec
 		}
 	}
 
-	health, err := handler.services.Connections.DeliveryHealth(ctx)
+	health, err := handler.services.Connections.DeliveryHealth(ctx, connection)
 
 	if err != nil {
 		return output, err
@@ -254,11 +255,15 @@ type connectionDefaultsOutput struct {
 	// DefaultType is the first available type; empty when none is.
 	DefaultType string   `json:"default_type"`
 	Levels      []string `json:"levels"`
+	// AllProjects and ProjectIDs are the projects a new connection starts
+	// with: every one, or the viewer's when they have some.
+	AllProjects bool  `json:"all_projects"`
+	ProjectIDs  []int `json:"project_ids"`
 	// IssueLinksAvailable: PUBLIC_URL is set, so messages can link to the issue.
 	IssueLinksAvailable bool `json:"issue_links_available"`
 }
 
-func (handler *handlers) getConnectionDefaults(_ context.Context, _ Call, _ noInput) (connectionDefaultsOutput, error) {
+func (handler *handlers) getConnectionDefaults(_ context.Context, call Call, _ noInput) (connectionDefaultsOutput, error) {
 	connections := handler.services.Connections
 	output := connectionDefaultsOutput{IssueLinksAvailable: connections.IssueLinksAvailable()}
 
@@ -273,7 +278,8 @@ func (handler *handlers) getConnectionDefaults(_ context.Context, _ Call, _ noIn
 		}
 	}
 
-	output.Levels = connections.New(output.DefaultType).Levels
+	defaults := connections.New(output.DefaultType, call.Access())
+	output.Levels, output.AllProjects, output.ProjectIDs = defaults.Levels, defaults.AllProjects, append([]int{}, defaults.ProjectIDs...)
 
 	return output, nil
 }
@@ -303,8 +309,13 @@ func emailStep(step services.EmailStep, field string) (emailStepOutput, error) {
 	}
 
 	switch {
+	case step.Duplicate != nil && step.Duplicate.ID == "":
+		return output, InputError{status: http.StatusConflict, message: hiddenDuplicate, fields: map[string]string{field: hiddenDuplicate}}
 	case step.Duplicate != nil:
 		return output, duplicateError(*step.Duplicate, "sends to this address")
+	case step.Unsent:
+		// The mail server's failure, not the input's.
+		return output, InputError{status: http.StatusBadGateway, message: step.Error, fields: map[string]string{field: step.Error}}
 	case step.Error != "":
 		return output, InputError{message: step.Error, fields: map[string]string{field: step.Error}}
 	case output.Confirmed:
@@ -320,8 +331,8 @@ func emailStep(step services.EmailStep, field string) (emailStepOutput, error) {
 	return output, nil
 }
 
-func (handler *handlers) startEmailVerification(ctx context.Context, _ Call, input emailInput) (emailStepOutput, error) {
-	step, err := handler.services.Verification.StartEmail(ctx, input.Email)
+func (handler *handlers) startEmailVerification(ctx context.Context, call Call, input emailInput) (emailStepOutput, error) {
+	step, err := handler.services.Verification.StartEmail(ctx, call.Access(), input.Email)
 
 	if err != nil {
 		return emailStepOutput{}, err
@@ -343,7 +354,7 @@ func (handler *handlers) confirmEmail(ctx context.Context, _ Call, input confirm
 	}
 
 	if !ok {
-		return emailStepOutput{}, Invalid("no code was sent to %s: call start_email_verification first", input.Email)
+		return emailStepOutput{}, notFound("no code was sent to %s: call start_email_verification first", input.Email)
 	}
 
 	step, err := handler.services.Verification.ConfirmCode(ctx, destination.ID, input.Code)
@@ -400,23 +411,24 @@ func setCheckbox(form url.Values, name string, value *bool) {
 	}
 }
 
-// applyConnection writes the given fields over the form.
-func (handler *handlers) applyConnection(form url.Values, fields connectionFields, chat chatFields) error {
+// applyConnection writes the given fields over the form (projects:
+// projectsField's refusals).
+func (handler *handlers) applyConnection(call Call, form url.Values, fields connectionFields, chat chatFields) error {
 	if fields.Name != nil {
 		form.Set("name", *fields.Name)
 	}
 
 	if fields.Projects != nil {
+		ids, err := handler.projectsField(call, "projects", *fields.Projects)
+
+		if err != nil {
+			return err
+		}
+
 		form.Del("project")
 
-		for _, nameOrID := range *fields.Projects {
-			project, ok := handler.projects.List().Find(nameOrID)
-
-			if !ok {
-				return problemsError(map[string]string{"projects": "unknown project " + strconv.Quote(nameOrID) + " (see list_projects)"}, nil)
-			}
-
-			form.Add("project", strconv.Itoa(project.ID))
+		for _, id := range ids {
+			form.Add("project", strconv.Itoa(id))
 		}
 	}
 
@@ -443,10 +455,10 @@ func (handler *handlers) applyConnection(form url.Values, fields connectionField
 var connectionFormFields = map[string]string{"address": "email"}
 
 func (handler *handlers) saveConnection(ctx context.Context, call Call, form url.Values, connection store.Connection) (connectionOutput, error) {
-	saved, err := handler.services.Connections.Save(ctx, form, connection)
+	saved, err := handler.services.Connections.Save(ctx, call.Access(), form, connection)
 
 	if err != nil {
-		return connectionOutput{}, err
+		return connectionOutput{}, formError(err, connectionFormFields)
 	}
 
 	if saved.Duplicate != nil {
@@ -469,7 +481,7 @@ type createConnectionInput struct {
 
 func (handler *handlers) createConnection(ctx context.Context, call Call, input createConnectionInput) (connectionOutput, error) {
 	// A new connection starts as in the UI (store.NewConnection).
-	form := handler.services.Connections.FormValues(handler.services.Connections.New(input.Type))
+	form := handler.services.Connections.FormValues(handler.services.Connections.New(input.Type, call.Access()))
 	form.Set("type", input.Type)
 
 	if input.Type == config.ChannelEmail {
@@ -480,15 +492,13 @@ func (handler *handlers) createConnection(ctx context.Context, call Call, input 
 		}
 
 		if !ok || !destination.Verified {
-			return connectionOutput{}, problemsError(map[string]string{
-				"email": "confirm " + strconv.Quote(input.Email) + " first with start_email_verification and confirm_email",
-			}, nil)
+			return connectionOutput{}, unconfirmed("email", "confirm "+strconv.Quote(input.Email)+" first with start_email_verification and confirm_email")
 		}
 
 		form.Set("destination_id", destination.ID)
 	}
 
-	if err := handler.applyConnection(form, input.connectionFields, input.chatFields); err != nil {
+	if err := handler.applyConnection(call, form, input.connectionFields, input.chatFields); err != nil {
 		return connectionOutput{}, err
 	}
 
@@ -506,7 +516,7 @@ type updateConnectionInput struct {
 }
 
 func (handler *handlers) updateConnection(ctx context.Context, call Call, input updateConnectionInput) (connectionOutput, error) {
-	connection, err := handler.services.Connections.Get(ctx, input.ConnectionID)
+	connection, err := handler.services.Connections.Get(ctx, call.Access(), input.ConnectionID)
 
 	if err != nil {
 		return connectionOutput{}, err
@@ -514,7 +524,7 @@ func (handler *handlers) updateConnection(ctx context.Context, call Call, input 
 
 	form := handler.services.Connections.FormValues(connection)
 
-	if err := handler.applyConnection(form, input.connectionFields, input.chatFields); err != nil {
+	if err := handler.applyConnection(call, form, input.connectionFields, input.chatFields); err != nil {
 		return connectionOutput{}, err
 	}
 
@@ -530,14 +540,14 @@ type setConnectionActiveInput struct {
 // refuse a connection whose tokens can no longer be read, so it could not
 // be turned off.
 func (handler *handlers) setConnectionActive(ctx context.Context, call Call, input setConnectionActiveInput) (connectionOutput, error) {
-	connection, err := handler.services.Connections.Get(ctx, input.ConnectionID)
+	connection, err := handler.services.Connections.Get(ctx, call.Access(), input.ConnectionID)
 
 	if err != nil {
 		return connectionOutput{}, err
 	}
 
 	if err := handler.services.Connections.SetActive(ctx, connection, input.Active); errors.Is(err, store.ErrNotVerified) {
-		return connectionOutput{}, problemsError(map[string]string{"active": "Confirm the email address first."}, nil)
+		return connectionOutput{}, unconfirmed("active", "Confirm the email address first.")
 	} else if err != nil {
 		return connectionOutput{}, err
 	}
@@ -561,13 +571,13 @@ type chatTestOutput struct {
 	Message string `json:"message"`
 }
 
-func (handler *handlers) testChat(ctx context.Context, _ Call, input testChatInput) (chatTestOutput, error) {
+func (handler *handlers) testChat(ctx context.Context, call Call, input testChatInput) (chatTestOutput, error) {
 	var existing store.Connection
 
 	channelType := input.Type
 
 	if input.ConnectionID != "" {
-		connection, err := handler.services.Connections.Get(ctx, input.ConnectionID)
+		connection, err := handler.services.Connections.Get(ctx, call.Access(), input.ConnectionID)
 
 		if err != nil {
 			return chatTestOutput{}, err
@@ -586,7 +596,7 @@ func (handler *handlers) testChat(ctx context.Context, _ Call, input testChatInp
 }
 
 func (handler *handlers) sendTestMessage(ctx context.Context, call Call, input connectionInput) (doneOutput, error) {
-	connection, err := handler.services.Connections.Get(ctx, input.ConnectionID)
+	connection, err := handler.services.Connections.Get(ctx, call.Access(), input.ConnectionID)
 
 	if err != nil {
 		return doneOutput{}, err
@@ -595,10 +605,10 @@ func (handler *handlers) sendTestMessage(ctx context.Context, call Call, input c
 	var delivery *notify.DeliveryError
 
 	if err := handler.services.Connections.SendTest(ctx, connection); errors.Is(err, store.ErrNotVerified) {
-		return doneOutput{}, Invalid("the address is not confirmed: no test message is sent")
+		return doneOutput{}, conflict("the address is not confirmed: no test message is sent")
 	} else if errors.As(err, &delivery) {
-		// A refused delivery is the answer, not a server failure.
-		return doneOutput{}, Invalid("not delivered: %s", call.Text(err.Error()))
+		// The destination refused it: told as it is, not a failure of this server.
+		return doneOutput{}, InputError{status: http.StatusBadGateway, message: "not delivered: " + call.Text(err.Error())}
 	} else if err != nil {
 		return doneOutput{}, err
 	}
@@ -606,24 +616,28 @@ func (handler *handlers) sendTestMessage(ctx context.Context, call Call, input c
 	return doneOutput{Done: "test message sent: check the destination"}, nil
 }
 
-func (handler *handlers) retryConnection(ctx context.Context, _ Call, input connectionInput) (doneOutput, error) {
-	if _, err := handler.services.Connections.Get(ctx, input.ConnectionID); err != nil {
-		return doneOutput{}, err
-	}
+// unconfirmed refuses at field what an unconfirmed address may not do (409).
+func unconfirmed(field, problem string) error {
+	input, _ := problemsError(map[string]string{field: problem}, nil).(InputError)
+	input.status = http.StatusConflict
 
-	if err := handler.services.Connections.RetryNow(ctx, input.ConnectionID); err != nil {
+	return input
+}
+
+func (handler *handlers) retryConnection(ctx context.Context, call Call, input connectionInput) (doneOutput, error) {
+	if err := handler.services.Connections.RetryNow(ctx, call.Access(), input.ConnectionID); err != nil {
 		return doneOutput{}, err
 	}
 
 	return doneOutput{Done: "the waiting messages are being sent now"}, nil
 }
 
-func (handler *handlers) deleteConnection(ctx context.Context, _ Call, input connectionInput) (doneOutput, error) {
-	if _, err := handler.services.Connections.Get(ctx, input.ConnectionID); err != nil {
+func (handler *handlers) deleteConnection(ctx context.Context, call Call, input connectionInput) (doneOutput, error) {
+	if _, err := handler.services.Connections.Get(ctx, call.Access(), input.ConnectionID); err != nil {
 		return doneOutput{}, err
 	}
 
-	if err := handler.services.Connections.Delete(ctx, input.ConnectionID); err != nil {
+	if err := handler.services.Connections.Delete(ctx, call.Access(), input.ConnectionID); err != nil {
 		return doneOutput{}, err
 	}
 
@@ -687,7 +701,7 @@ func (handler *handlers) listDeliveries(ctx context.Context, call Call, input li
 	filter := input.outbox()
 	filter.Limit, filter.Offset = limit+1, offset
 
-	records, err := handler.services.Deliveries.List(ctx, filter)
+	records, err := handler.services.Deliveries.List(ctx, call.Access(), filter)
 
 	if err != nil {
 		return output, err
@@ -717,8 +731,8 @@ func (handler *handlers) listDeliveries(ctx context.Context, call Call, input li
 	return output, nil
 }
 
-func (handler *handlers) countDeliveries(ctx context.Context, _ Call, input deliveriesFilter) (countOutput, error) {
-	count, err := handler.services.Deliveries.Count(ctx, input.outbox())
+func (handler *handlers) countDeliveries(ctx context.Context, call Call, input deliveriesFilter) (countOutput, error) {
+	count, err := handler.services.Deliveries.Count(ctx, call.Access(), input.outbox())
 
 	return countOutput{Count: count}, err
 }

@@ -47,7 +47,7 @@ type logIssueOutput struct {
 
 func (handler *handlers) listLogs(ctx context.Context, call Call, input listLogsInput) (Page[logOutput], error) {
 	output := Page[logOutput]{Items: []logOutput{}}
-	filter, err := handler.logFilter(input.logFiltersInput)
+	filter, err := handler.logFilter(call, input.logFiltersInput)
 
 	if err != nil {
 		return output, err
@@ -68,14 +68,14 @@ func (handler *handlers) listLogs(ctx context.Context, call Call, input listLogs
 		return output, err
 	}
 
-	logs, err := handler.services.Logs.List(ctx, filter)
+	logs, err := handler.services.Logs.List(ctx, call.Access(), filter)
 
 	if err != nil {
 		return output, err
 	}
 
 	logs, more := store.Page(logs, limit)
-	issues, err := handler.services.Logs.Issues(ctx, logs)
+	issues, err := handler.services.Logs.Issues(ctx, call.Access(), logs)
 
 	if err != nil {
 		return output, err
@@ -118,7 +118,7 @@ func (handler *handlers) deleteLogs(ctx context.Context, call Call, input delete
 		return deletedLogsOutput{}, Invalid("at most %d logs at once", services.MaxActionLogs)
 	}
 
-	deleted, err := handler.services.Logs.Delete(ctx, call.Viewer, input.LogIDs)
+	deleted, err := handler.services.Logs.Delete(ctx, call.Access(), call.Viewer, input.LogIDs)
 
 	return deletedLogsOutput{Deleted: deleted}, err
 }
@@ -129,14 +129,14 @@ type countOutput struct {
 	More bool `json:"more,omitempty"`
 }
 
-func (handler *handlers) countLogs(ctx context.Context, _ Call, input logFiltersInput) (countOutput, error) {
-	filter, err := handler.logFilter(input)
+func (handler *handlers) countLogs(ctx context.Context, call Call, input logFiltersInput) (countOutput, error) {
+	filter, err := handler.logFilter(call, input)
 
 	if err != nil {
 		return countOutput{}, err
 	}
 
-	count, more, err := handler.services.Logs.Count(ctx, filter)
+	count, more, err := handler.services.Logs.Count(ctx, call.Access(), filter)
 
 	return countOutput{Count: count, More: more}, err
 }
@@ -146,18 +146,18 @@ type levelsOutput struct {
 	Levels []string `json:"levels"`
 }
 
-func (handler *handlers) listLogLevels(ctx context.Context, _ Call, _ noInput) (levelsOutput, error) {
-	present, err := handler.services.Logs.Levels(ctx)
+func (handler *handlers) listLogLevels(ctx context.Context, call Call, _ noInput) (levelsOutput, error) {
+	present, err := handler.services.Logs.Levels(ctx, call.Access())
 
 	return levelsOutput{Levels: append([]string{}, config.InLevelOrder(present, config.LogLevels)...)}, err
 }
 
-func (handler *handlers) logFilter(input logFiltersInput) (store.LogFilter, error) {
+func (handler *handlers) logFilter(call Call, input logFiltersInput) (store.LogFilter, error) {
 	filter := store.LogFilter{Query: strings.TrimSpace(input.Query), TraceID: strings.TrimSpace(input.TraceID), Levels: input.Level}
 
 	var err error
 
-	if filter.ProjectIDs, err = projectIDs(handler.projects.List(), input.Project); err != nil {
+	if filter.ProjectIDs, err = handler.projectIDs(call, input.Project); err != nil {
 		return filter, err
 	}
 
@@ -181,7 +181,7 @@ type traceOutput struct {
 }
 
 // listTrace is REST only: log attributes are raw SDK data.
-func (handler *handlers) listTrace(ctx context.Context, _ Call, input listTraceInput) (traceOutput, error) {
+func (handler *handlers) listTrace(ctx context.Context, call Call, input listTraceInput) (traceOutput, error) {
 	traceID := strings.TrimSpace(input.TraceID)
 
 	if traceID == "" {
@@ -189,13 +189,13 @@ func (handler *handlers) listTrace(ctx context.Context, _ Call, input listTraceI
 	}
 
 	output := traceOutput{TraceID: traceID}
-	events, err := handler.services.Issues.Events(ctx, store.EventFilter{TraceID: traceID, Limit: MaxLimit})
+	events, err := handler.services.Issues.Events(ctx, call.Access(), store.EventFilter{TraceID: traceID, Limit: MaxLimit})
 
 	if err != nil {
 		return output, err
 	}
 
-	logs, err := handler.services.Logs.List(ctx, store.LogFilter{TraceID: traceID, Limit: MaxLimit})
+	logs, err := handler.services.Logs.List(ctx, call.Access(), store.LogFilter{TraceID: traceID, Limit: MaxLimit})
 
 	if err != nil {
 		return output, err

@@ -4,14 +4,14 @@ What the fields of the settings pages mean. The UI shows the same text as hints 
 
 ## Projects
 
-A project is one service (backend, frontend, worker) with its own DSN. Projects from `PROJECTS` take their key from the environment (their name only when they are created) and cannot be deleted here; the rest of their settings change here. Deleting a project stops its DSN at once, then deletes its issues, events and logs; a deletion stopped by a restart goes on at the next start.
+A project is one service (backend, frontend, worker) with its own DSN. Projects from `PROJECTS` take their key from the environment (their name only when they are created) and cannot be deleted here; the rest of their settings change here. Deleting a project stops its DSN at once, then deletes its issues, events and logs; a deletion stopped by a restart goes on at the next start. A project an admin with only some projects adds joins his projects at once; a deleted one leaves every user's. The storage card shows the parts of your projects; Other includes the projects you do not see. A name another project has is refused, without naming that project when it is not one of yours.
 
 | Field | |
 |---|---|
 | Color | Marks the project's badge in lists and the header of its emails. |
 | DSN | The address the app's Sentry SDK sends errors and logs to. The key in it only allows sending to this project, so it can be in browser code. |
 | Logs | Log levels to store; others are dropped when they arrive. Unchanged, the project follows RECORD_LOG_LEVELS. Errors and messages of every level are stored. |
-| Disk share | The part of MAX_DATABASE_SIZE the project may take. When it reaches it, even with the database under its limit, the cleanup deletes the project's own data in the usual order, down to 80% of its share, so a flood in one project does not push out the others. A ceiling, not a reservation: shares may add up to more than 100%. At 100% the project has no limit of its own. |
+| Disk share | The part of MAX_DATABASE_SIZE the project may take. When it reaches it, even with the database under its limit, the cleanup deletes the project's own data in the usual order, down to 80% of its share, so a flood in one project does not push out the others. A ceiling, not a reservation: shares may add up to more than 100%. At 100% the project has no limit of its own. Only someone with all projects changes it, since it decides how the projects compete for the database. |
 | History kept | The oldest record of each kind still stored. When the database nears its limit, the cleanup deletes the oldest first: logs below error, then error logs, then errors. |
 
 ## Notifications
@@ -27,7 +27,30 @@ A connection sends new issues and issues that happen again after being resolved 
 | Incoming webhook URL | A Slack incoming webhook; it posts to the channel chosen when it was created. Mattermost and Rocket.Chat webhooks work too. Stored encrypted. |
 | Slack bot token | Optional, instead of the webhook: a bot token (xoxb-…) with the chat:write scope. The bot posts each error and puts the prompt for a coding agent in a thread under it. A new token replaces a saved webhook, and a new webhook without a token replaces a saved bot and its channel. Stored encrypted. |
 | Channel ID | The channel the Slack bot posts to (C0123456789, at the bottom of the channel details). Invite the bot to it first. |
-| Projects | Projects whose issues are sent. All projects includes the ones added later. |
+| Projects | Projects whose issues are sent. All projects includes the ones added later. An admin with only some projects chooses among them, and sees only the connections that send for nothing else. |
 | Levels | Levels that are sent; a new connection sends fatal and error. Events of other levels are still stored, they only do not notify. |
 | Active | Off: nothing is sent, and messages waiting for a retry fail. |
 | Include Open issue link | Adds a link to the issue page; offered only when PUBLIC_URL is set. Off by default for chats, which people outside the team may read. |
+
+## Users
+
+Who may change whom:
+
+- The superadmin changes every other user.
+- An admin changes users of the role user (never other admins or the superadmin), and only those whose projects he all has: he could otherwise reset their password, log in as them and see projects he does not have. He gives the role user only.
+- A user changes only himself, on the Account page; so does everyone for their own name and password.
+
+Changing means the name and role, resetting the password, deleting the user and disconnecting their coding agents. A user's projects are a separate field: an admin adds or removes his own projects for any user of the role user, and the user's other projects stay as they are.
+
+For an admin with the projects backend and frontend, a user of the role user with:
+
+- backend, or backend and frontend: he changes everything.
+- backend and frontend 2: read-only; in the projects field he adds or removes backend and frontend, frontend 2 stays.
+- All projects: read-only, the projects field too.
+
+An admin with All projects changes every user of the role user.
+
+| Field | |
+|---|---|
+| Role | What the user may do. The superadmin gives admin or user; an admin gives user only. |
+| Projects | Projects whose issues, logs and settings the user sees, here and through their coding agents. All projects includes the ones added later; the superadmin always has all. An admin changes only his own projects in this field; the user's other projects stay. Only someone with all projects gives all projects or changes a user who has them. A user without projects sees none. |

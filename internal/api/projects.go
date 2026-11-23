@@ -50,13 +50,13 @@ func (handler *handlers) listProjects(ctx context.Context, call Call, input list
 		return output, err
 	}
 
-	projects := handler.projects.List()
+	projects := handler.visibleProjects(call)
 
 	if offset >= len(projects) {
 		return output, nil
 	}
 
-	counts, err := handler.services.Projects.UnresolvedCounts(ctx)
+	counts, err := handler.services.Projects.UnresolvedCounts(ctx, call.Access())
 
 	if err != nil {
 		return output, err

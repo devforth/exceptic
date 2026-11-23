@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"reflect"
@@ -112,8 +113,9 @@ func LoginRequests(logger *slog.Logger, auth *session.Auth, appName string) map[
 				return
 			}
 
+			// Not a refusal of this user: the server has none yet.
 			if auth.Disabled(r.Context()) {
-				server.JSONError(w, http.StatusForbidden, loginDisabled)
+				server.JSONError(w, http.StatusServiceUnavailable, loginDisabled)
 
 				return
 			}
@@ -124,7 +126,7 @@ func LoginRequests(logger *slog.Logger, auth *session.Auth, appName string) map[
 			case err != nil:
 				failed(w, r, "login", err)
 			case result == session.LoginBlocked:
-				server.JSONError(w, http.StatusTooManyRequests, session.TooManyAttempts)
+				failed(w, r, "login", tooManyAttempts(nil))
 			case result == session.LoginWrongCredentials:
 				server.JSONError(w, http.StatusUnauthorized, wrongLogin)
 			default:
@@ -154,7 +156,10 @@ func LoginRequests(logger *slog.Logger, auth *session.Auth, appName string) map[
 
 			problems, err := auth.ChangePassword(w, r, viewer, input.CurrentPassword, input.Password, input.ConfirmPassword)
 
-			if err == nil {
+			switch {
+			case errors.Is(err, session.ErrTooManyAttempts):
+				err = tooManyAttempts(map[string]string{"current_password": session.TooManyAttempts})
+			case err == nil:
 				err = problemsError(problems, nil)
 			}
 
@@ -169,18 +174,31 @@ func LoginRequests(logger *slog.Logger, auth *session.Auth, appName string) map[
 	}
 }
 
+// tooManyAttempts: the login limit refused a password check (429), for
+// as long as its window lasts; fields show it at the form's field.
+func tooManyAttempts(fields map[string]string) error {
+	return InputError{status: http.StatusTooManyRequests, message: session.TooManyAttempts, fields: fields, retryAfter: session.LoginWindow}
+}
+
 func noContent(w http.ResponseWriter) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusNoContent)
 }
 
 // readPlain decodes the JSON body of a plain request into input; it answers
-// 400 itself when the body is not one.
+// itself when the body is not one (400) or too large (413).
 func readPlain(w http.ResponseWriter, r *http.Request, input any) bool {
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody))
 	decoder.DisallowUnknownFields()
 
 	if err := decoder.Decode(input); err != nil {
+		if tooLarge := new(http.MaxBytesError); errors.As(err, &tooLarge) {
+			outcome := OutcomeOf(bodyError(err))
+			server.WriteJSON(w, outcome.Status, outcome.Body)
+
+			return false
+		}
+
 		server.JSONError(w, http.StatusBadRequest, "the body must be a JSON object of the request's input")
 
 		return false

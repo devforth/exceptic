@@ -43,17 +43,19 @@ func New(dependencies Dependencies) *All {
 	settings, database := dependencies.Settings, dependencies.Store
 	connections := newConnections(dependencies.Logger, database, dependencies.Factory, dependencies.Registry, settings)
 	connections.notifier = dependencies.Notifier
+	users := NewUsers(dependencies.Logger, database)
+	users.projects = dependencies.Registry
 
 	return &All{
 		AppName:      settings.AppName,
 		Issues:       newIssues(dependencies.Logger, database),
 		Projects:     newProjects(database, dependencies.Registry, settings),
 		Connections:  connections,
-		Deliveries:   newDeliveries(database),
+		Deliveries:   newDeliveries(database, connections),
 		Verification: newVerification(dependencies.Logger, database, dependencies.Factory, connections),
 		Logs:         newLogs(database),
 		Agents:       newAgents(dependencies.OAuth, database, settings),
-		Users:        NewUsers(dependencies.Logger, database),
+		Users:        users,
 		Sessions:     NewSessions(database),
 	}
 }

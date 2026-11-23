@@ -45,7 +45,7 @@ func NewUI(logger *slog.Logger, endpoints []Endpoint, plain map[string]http.Hand
 
 	handler := &UI{logger: logger, endpoints: endpoints, plain: plain, sessions: sessions, publicURL: publicURL, trustedProxies: trustedProxies}
 
-	// Any other name or method: after the same checks, as a refused endpoint answers.
+	// Any other name: after the same checks.
 	handler.unknown = handler.guard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := handler.caller(w, r); ok {
 			server.JSONError(w, http.StatusNotFound, ErrNotFound.Error())
@@ -66,6 +66,7 @@ func (handler *UI) Register(router *http.ServeMux, protect func(http.Handler) ht
 	for _, request := range PlainRequests {
 		if plain, ok := handler.plain[request.Name]; ok {
 			router.Handle(request.Method+" "+server.UIAPIPrefix+request.Name, guarded(plain))
+			router.Handle(server.UIAPIPrefix+request.Name, guarded(wrongMethod(request.Method, handler.caller)))
 		}
 	}
 }

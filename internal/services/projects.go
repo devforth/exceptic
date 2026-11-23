@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/devforth/exceptic/internal/platform/config"
@@ -30,16 +33,21 @@ func (service *Projects) List() config.Projects {
 	return service.registry.List()
 }
 
+// Visible gives the current projects within access.
+func (service *Projects) Visible(access store.Access) config.Projects {
+	return access.Visible(service.List())
+}
+
 // RecordedLogLevels are the log levels project records, highest first.
 func (service *Projects) RecordedLogLevels(project config.Project) []string {
 	return service.recording.RecordedLogLevels(project.LogLevels)
 }
 
-// ColorsByName is the shown color of every project, by name.
-func (service *Projects) ColorsByName() map[string]string {
+// ColorsByName is the shown color of every project within access, by name.
+func (service *Projects) ColorsByName(access store.Access) map[string]string {
 	colors := map[string]string{}
 
-	for _, project := range service.List() {
+	for _, project := range service.Visible(access) {
 		colors[project.Name] = project.Color
 	}
 
@@ -51,16 +59,55 @@ func (service *Projects) FromEnv(id int) bool {
 	return service.registry.FromEnv(id)
 }
 
-// Get reads a project with its settings; store.ErrNotFound when missing.
-func (service *Projects) Get(ctx context.Context, id int) (store.Project, error) {
+// Get reads a project with its settings; store.ErrNotFound when missing,
+// ErrHidden outside access.
+func (service *Projects) Get(ctx context.Context, access store.Access, id int) (store.Project, error) {
+	if err := service.Check(access, id); err != nil {
+		return store.Project{}, err
+	}
+
 	return service.registry.Get(ctx, id)
 }
 
-// Save applies the form to project and stores it: a new one when its ID is
-// 0, the stored one otherwise.
+// Check: the project exists (store.ErrNotFound) and is within access (ErrHidden).
+func (service *Projects) Check(access store.Access, id int) error {
+	switch _, ok := service.List().ByID(id); {
+	case !ok:
+		return Missing("project", strconv.Itoa(id))
+	case !access.Sees(id):
+		return Hidden("project", strconv.Itoa(id))
+	default:
+		return nil
+	}
+}
+
+// Find is the project of a name or ID among every project: store.ErrNotFound
+// when there is none, ErrHidden outside access. The refusals name it as given.
+func (service *Projects) Find(access store.Access, nameOrID string) (config.Project, error) {
+	project, ok := service.List().Find(strings.TrimSpace(nameOrID))
+
+	switch {
+	case !ok:
+		return project, Missing("project", strconv.Quote(nameOrID)+" (see list_projects)")
+	case !access.Sees(project.ID):
+		return project, Hidden("project", strconv.Quote(nameOrID))
+	default:
+		return project, nil
+	}
+}
+
+// Save applies the form to project and stores it as viewer: a new one when
+// its ID is 0 (it joins a limited viewer's access), the stored one
+// otherwise (ErrHidden outside viewer's access). A disk share changed
+// without every project is ErrForbidden, a taken name ErrConflict, each a
+// Refusal at its field.
 // It returns the project as read from the form (with its id once saved) and
 // the field errors when nothing was saved.
-func (service *Projects) Save(ctx context.Context, form url.Values, project store.Project) (store.Project, Problems, error) {
+func (service *Projects) Save(ctx context.Context, viewer store.User, form url.Values, project store.Project) (store.Project, Problems, error) {
+	if project.ID != 0 && !viewer.ProjectAccess().Sees(project.ID) {
+		return project, nil, Hidden("project", strconv.Itoa(project.ID))
+	}
+
 	// A new project's id is random, so its palette color is not known yet:
 	// the color the form showed is stored as chosen.
 	paletteColor := ""
@@ -69,7 +116,17 @@ func (service *Projects) Save(ctx context.Context, form url.Values, project stor
 		paletteColor = service.Color(store.Project{ID: project.ID})
 	}
 
+	stored := project
 	problems := readProjectForm(form, &project, service.recording, paletteColor)
+	access := viewer.ProjectAccess()
+
+	// The share decides how the projects compete for the database, hidden
+	// ones included.
+	if project.Share() != stored.Share() && !access.All() {
+		problems["disk_share"] = DiskShareProblem
+
+		return project, nil, Refusal{Kind: ErrForbidden, Problems: problems}
+	}
 
 	if len(problems) > 0 {
 		return project, problems, nil
@@ -78,21 +135,37 @@ func (service *Projects) Save(ctx context.Context, form url.Values, project stor
 	var err error
 
 	if project.ID == 0 {
-		project.ID, err = service.registry.Create(ctx, project)
+		project.ID, err = service.registry.Create(ctx, project, viewer.ID)
 	} else {
 		err = service.registry.Update(ctx, project)
 	}
 
 	if errors.Is(err, store.ErrProjectConflict) {
-		return project, Problems{"name": "Another project already has this name."}, nil
+		return project, nil, Refusal{Kind: ErrConflict, Problems: Problems{"name": service.nameProblem(access, project.Name)}}
 	}
 
 	return project, nil, err
 }
 
+// DiskShareProblem: only someone with every project sets a disk share.
+const DiskShareProblem = "Only someone with access to all projects can change the disk share."
+
+// nameProblem says a name is taken without telling of a project outside access.
+func (service *Projects) nameProblem(access store.Access, name string) string {
+	if other, ok := service.List().Find(name); ok && access.Sees(other.ID) {
+		return "Another project already has this name."
+	}
+
+	return "This name cannot be used."
+}
+
 // Delete removes a project added in the web app with its data; one from
 // PROJECTS cannot be deleted (projects.ErrFromEnv).
-func (service *Projects) Delete(ctx context.Context, id int) error {
+func (service *Projects) Delete(ctx context.Context, access store.Access, id int) error {
+	if err := service.Check(access, id); err != nil {
+		return err
+	}
+
 	return service.registry.Delete(ctx, id)
 }
 
@@ -125,9 +198,14 @@ func (service *Projects) Color(project store.Project) string {
 	return config.DefaultProjectColor(id)
 }
 
-// UnresolvedCounts gives the number of unresolved issues of each project, by id.
-func (service *Projects) UnresolvedCounts(ctx context.Context) (map[int]int, error) {
-	return service.store.UnresolvedCounts(ctx)
+// UnresolvedCounts gives the number of unresolved issues of each project
+// within access, by id.
+func (service *Projects) UnresolvedCounts(ctx context.Context, access store.Access) (map[int]int, error) {
+	counts, err := service.store.UnresolvedCounts(ctx)
+
+	maps.DeleteFunc(counts, func(id, _ int) bool { return !access.Sees(id) })
+
+	return counts, err
 }
 
 // DatabaseSize is how many bytes the database holds.
@@ -144,9 +222,10 @@ type Storage struct {
 	Percent     int // of the limit
 	// CleanupStopPercent: at the limit the cleanup deletes down to this percent of it.
 	CleanupStopPercent int
-	// Projects are the current projects' parts of UsedBytes, in list order;
-	// Other is the rest (the ingest queue, data of deleted projects, users,
-	// notifications). Without parts while Counting.
+	// Projects are the parts of UsedBytes of the current projects the
+	// viewer sees, in list order; Other is the rest (the projects not seen,
+	// the ingest queue, data of deleted projects, users, notifications).
+	// Without parts while Counting.
 	Projects   []ProjectStorage
 	OtherBytes int64
 	Other      string
@@ -169,7 +248,9 @@ type ProjectStorage struct {
 	Oldest store.OldestKept
 }
 
-func (service *Projects) Storage(ctx context.Context) (Storage, error) {
+// Storage is the whole database's size and limit, which the cleanup acts
+// on, with the parts of the projects within access.
+func (service *Projects) Storage(ctx context.Context, access store.Access) (Storage, error) {
 	used, err := service.DatabaseSize(ctx)
 
 	if err != nil {
@@ -191,7 +272,7 @@ func (service *Projects) Storage(ctx context.Context) (Storage, error) {
 
 	storage.OtherBytes = used
 
-	for _, project := range service.List() {
+	for _, project := range service.Visible(access) {
 		part := ProjectStorage{ID: project.ID, Name: project.Name, Oldest: usage.Oldest[project.ID]}
 
 		part.LimitBytes = store.ShareLimit(storage.LimitBytes, project.DiskShare)
@@ -226,8 +307,13 @@ type Contact struct {
 	Received bool
 }
 
-// Contact tells whether an app reaches the project, for its setup page.
-func (service *Projects) Contact(ctx context.Context, projectID int) (Contact, error) {
+// Contact tells whether an app reaches the project, for its setup page
+// (Check's refusals).
+func (service *Projects) Contact(ctx context.Context, access store.Access, projectID int) (Contact, error) {
+	if err := service.Check(access, projectID); err != nil {
+		return Contact{}, err
+	}
+
 	usage, err := service.store.ProjectUsage(ctx)
 	_, received := usage.LastReceived[projectID]
 	contact := Contact{Received: received, Connected: received}
@@ -239,7 +325,49 @@ func (service *Projects) Contact(ctx context.Context, projectID int) (Contact, e
 	return contact, err
 }
 
-// Cleanups are every run of the cleanup by size the store keeps, newest first.
-func (service *Projects) Cleanups(ctx context.Context) ([]store.CleanupRun, error) {
-	return service.store.CleanupHistory(ctx, store.CleanupRunsKept)
+// Cleanups are the runs of the cleanup by size the store keeps, newest
+// first, as access shows them (visibleRun).
+func (service *Projects) Cleanups(ctx context.Context, access store.Access) ([]store.CleanupRun, error) {
+	runs, err := service.store.CleanupHistory(ctx, store.CleanupRunsKept)
+	shown := []store.CleanupRun{}
+
+	for _, run := range runs {
+		if run, ok := visibleRun(access, run); ok {
+			shown = append(shown, run)
+		}
+	}
+
+	return shown, err
+}
+
+// visibleRun is a run as access shows it: none of a project outside it; a
+// run over the database with only the counts of the projects within it,
+// without the steps that deleted only in others (its sizes and the freed
+// bytes of the steps shown stay: they are the database's).
+func visibleRun(access store.Access, run store.CleanupRun) (store.CleanupRun, bool) {
+	if access.All() {
+		return run, true
+	}
+
+	if run.Project != 0 && !access.Sees(run.Project) {
+		return run, false
+	}
+
+	steps := make([]store.CleanupStep, 0, len(run.Steps))
+
+	for _, step := range run.Steps {
+		deleted := len(step.Projects) > 0
+		step.Projects = maps.Clone(step.Projects)
+		maps.DeleteFunc(step.Projects, func(id int, _ *store.CleanupCounts) bool { return !access.Sees(id) })
+
+		if deleted && len(step.Projects) == 0 {
+			continue // it deleted only in hidden projects
+		}
+
+		steps = append(steps, step)
+	}
+
+	run.Steps = steps
+
+	return run, true
 }

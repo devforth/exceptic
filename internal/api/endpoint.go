@@ -10,11 +10,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"reflect"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
 
@@ -100,6 +102,19 @@ type Call struct {
 	Actor store.Actor
 	// Address is the server as the client reached it (for DSNs).
 	Address *url.URL
+}
+
+// Access is the projects the call sees: every one for the REST API's
+// token, the viewer's otherwise, none without a viewer.
+func (call Call) Access() store.Access {
+	switch {
+	case call.Transport == TransportREST:
+		return store.Access{}
+	case call.Viewer.ID == "":
+		return store.OnlyProjects()
+	default:
+		return call.Viewer.ProjectAccess()
+	}
 }
 
 // ForAgent: the output may reach a model provider, so free text written by
@@ -214,11 +229,10 @@ func Define[In, Out any](endpoint Endpoint, handler func(context.Context, Call, 
 }
 
 // Run checks the caller's role and the input against the schema, decodes
-// the input and runs the handler. An endpoint the caller may not use is
-// ErrNotFound, as if it did not exist.
+// the input and runs the handler; Refused says why it does not.
 func (endpoint Endpoint) Run(ctx context.Context, call Call, input map[string]any) (any, error) {
-	if !endpoint.AllowedFor(call) {
-		return nil, ErrNotFound
+	if err := endpoint.Refused(call); err != nil {
+		return nil, err
 	}
 
 	return endpoint.run(ctx, call, input)
@@ -229,24 +243,32 @@ func (endpoint Endpoint) Serves(transport Transport) bool {
 	return endpoint.Transports&transport != 0
 }
 
-// AllowedFor: the REST token runs what REST serves; a user what their role
-// allows, and in the web app with a temporary password only what is open then.
+// AllowedFor: the caller may run the endpoint (Refused).
 func (endpoint Endpoint) AllowedFor(call Call) bool {
-	if call.Transport == 0 || !endpoint.Serves(call.Transport) {
-		return false
+	return endpoint.Refused(call) == nil
+}
+
+// errPasswordChange refuses the web app while the password is temporary.
+var errPasswordChange = services.Forbidden("change your password first")
+
+// Refused says why the caller may not run the endpoint, nil when they
+// may: ErrNotFound when the transport does not serve it; the REST token runs
+// everything else; for a user services.ErrForbidden when the role does not
+// allow it, and in the web app with a temporary password everything not
+// open then.
+func (endpoint Endpoint) Refused(call Call) error {
+	switch {
+	case call.Transport == 0 || !endpoint.Serves(call.Transport):
+		return ErrNotFound
+	case call.Transport == TransportREST:
+		return nil // protectAPI has checked the token
+	case call.Viewer.ID == "" || endpoint.Admin && !call.Viewer.CanAdminister():
+		return services.ErrForbidden
+	case call.Transport == TransportUI && call.Viewer.MustChangePassword && !endpoint.OpenWithTemporaryPassword:
+		return errPasswordChange
+	default:
+		return nil
 	}
-
-	if call.Transport == TransportREST {
-		return true // protectAPI has checked the token
-	}
-
-	viewer := call.Viewer
-
-	if viewer.ID == "" || endpoint.Admin && !viewer.CanAdminister() {
-		return false
-	}
-
-	return call.Transport != TransportUI || !viewer.MustChangePassword || endpoint.OpenWithTemporaryPassword
 }
 
 // The notes that end the description of a tool that must be confirmed:
@@ -304,16 +326,21 @@ func jsonType(schema *jsonschema.Schema) string {
 	return ""
 }
 
-// ErrNotFound: the issue or event asked for does not exist.
+// ErrNotFound: what was asked for does not exist, or the transport does
+// not serve the endpoint.
 var ErrNotFound = errors.New("not found")
 
-// InputError is a mistake in the input, reported to the client as it is:
-// over HTTP also the problem of each input field and the record that
-// already exists (ErrorBody); MCP gets the message, which names them too.
+// InputError is a refused input, reported to the client as it is: over
+// HTTP with its status (400 unless set) and also the problem of each input
+// field and the record that already exists (ErrorBody); MCP gets the
+// message, which names them too.
 type InputError struct {
-	message   string
-	fields    map[string]string
-	duplicate *DuplicateOutput
+	status     int
+	message    string
+	fields     map[string]string
+	duplicate  *DuplicateOutput
+	retryAfter time.Duration
+	hidden     bool // a field names a project outside the viewer's
 }
 
 func (err InputError) Error() string { return err.message }
@@ -332,23 +359,39 @@ type DuplicateOutput struct {
 	Name string `json:"name"`
 }
 
-func (err InputError) body() ErrorBody {
-	return ErrorBody{Error: err.message, Fields: err.fields, Duplicate: err.duplicate}
-}
-
 // Invalid is an InputError.
 func Invalid(format string, args ...any) error {
 	return InputError{message: fmt.Sprintf(format, args...)}
 }
 
+// conflict is an InputError of a stored record in the way (409).
+func conflict(format string, args ...any) error {
+	return InputError{status: http.StatusConflict, message: fmt.Sprintf(format, args...)}
+}
+
+// notFound names what was asked for and does not exist (404).
+func notFound(format string, args ...any) error {
+	return InputError{status: http.StatusNotFound, message: "not found: " + fmt.Sprintf(format, args...)}
+}
+
 // duplicateError: the connection duplicate already sends where the input
-// asks (what is said of it: "sends there").
+// asks (what is said of it: "sends there"); one the viewer does not see is
+// not named.
 func duplicateError(duplicate services.Duplicate, what string) error {
+	if duplicate.ID == "" {
+		return InputError{status: http.StatusConflict, message: hiddenDuplicate}
+	}
+
 	return InputError{
+		status:    http.StatusConflict,
 		message:   fmt.Sprintf("connection %s (%s) already %s: update it instead", duplicate.ID, duplicate.Name, what),
 		duplicate: &DuplicateOutput{ID: duplicate.ID, Name: duplicate.Name},
 	}
 }
+
+// hiddenDuplicate refuses a destination a connection the viewer does not
+// see already sends to, without naming it.
+const hiddenDuplicate = "Another connection already sends there."
 
 // problemsError reports the field errors of a form as one InputError
 // ("name: ...; levels: ..."), nil when there are none. fields renames form
@@ -373,21 +416,100 @@ func problemsError(problems map[string]string, fields map[string]string) error {
 	return InputError{message: strings.Join(lines, "; "), fields: named}
 }
 
-// Outcome sorts an error for the transports: an input mistake or a missing
-// record is shown to the client (public is its message); anything else is
-// logged and reported without details.
-func Outcome(err error) (public string, notFound, ok bool) {
-	var input InputError
+// formError is the error of a form: a services.Refusal with its status
+// (403 or 409) and its fields renamed, err as it is otherwise.
+func formError(err error, fields map[string]string) error {
+	var refusal services.Refusal
+
+	if !errors.As(err, &refusal) {
+		return err
+	}
+
+	input, _ := problemsError(refusal.Problems, fields).(InputError)
+	input.status = refusalStatus(refusal.Kind)
+
+	return input
+}
+
+// refusalStatus is the HTTP status of a refusal of the services.
+func refusalStatus(kind error) int {
+	switch {
+	case errors.Is(kind, services.ErrForbidden), errors.Is(kind, services.ErrHidden):
+		return http.StatusForbidden
+	case errors.Is(kind, services.ErrConflict):
+		return http.StatusConflict
+	case errors.Is(kind, store.ErrNotFound):
+		return http.StatusNotFound
+	default:
+		return http.StatusBadRequest
+	}
+}
+
+// Outcome is how every transport reports an error: Status over HTTP, Kind
+// at the start of an MCP tool error, Body. Logged: unexpected, so it is
+// logged and the client told only "internal error".
+type Outcome struct {
+	Status     int
+	Kind       string
+	Body       ErrorBody
+	RetryAfter time.Duration
+	// Hidden: a record outside the viewer's projects (MCP names theirs).
+	Hidden bool
+	Logged bool
+}
+
+// The kinds a tool error starts with, by HTTP status.
+var outcomeKinds = map[int]string{
+	http.StatusBadRequest:            "invalid",
+	http.StatusForbidden:             "forbidden",
+	http.StatusNotFound:              "not found",
+	http.StatusConflict:              "conflict",
+	http.StatusRequestEntityTooLarge: "too large",
+	http.StatusTooManyRequests:       "too many requests",
+	http.StatusBadGateway:            "unavailable",
+	http.StatusServiceUnavailable:    "unavailable",
+	http.StatusInternalServerError:   "internal error",
+}
+
+// OutcomeOf sorts an error for the transports, the one place that does.
+func OutcomeOf(err error) Outcome {
+	var (
+		input   InputError
+		refusal services.Refusal
+		reason  services.Reason
+	)
+
+	outcome := Outcome{Status: http.StatusInternalServerError, Body: ErrorBody{Error: "internal error"}}
 
 	switch {
 	case errors.As(err, &input):
-		return input.message, false, true
+		outcome.Status, outcome.RetryAfter, outcome.Hidden = cmp.Or(input.status, http.StatusBadRequest), input.retryAfter, input.hidden
+		outcome.Body = ErrorBody{Error: input.message, Fields: input.fields, Duplicate: input.duplicate}
+	case errors.As(err, &refusal):
+		return OutcomeOf(formError(refusal, nil))
+	case errors.As(err, &reason):
+		outcome.Status, outcome.Body.Error = refusalStatus(reason.Kind), reason.Text
 	case errors.Is(err, ErrNotFound):
-		return err.Error(), true, true
-	case errors.Is(err, store.ErrNotFound), errors.Is(err, services.ErrForbidden):
-		// What a user may not change looks as if it did not exist.
-		return ErrNotFound.Error(), true, true
+		outcome.Status, outcome.Body.Error = http.StatusNotFound, err.Error()
+	case errors.Is(err, store.ErrNotFound):
+		outcome.Status, outcome.Body.Error = http.StatusNotFound, ErrNotFound.Error()
+	case errors.Is(err, services.ErrForbidden), errors.Is(err, services.ErrHidden):
+		outcome.Status, outcome.Body.Error = http.StatusForbidden, err.Error()
 	default:
-		return "", false, false
+		outcome.Logged = true
 	}
+
+	outcome.Kind = outcomeKinds[outcome.Status]
+	outcome.Hidden = outcome.Hidden || errors.Is(err, services.ErrHidden)
+
+	return outcome
+}
+
+// ToolText is the text of an MCP tool error: its kind, then the message.
+func (outcome Outcome) ToolText() string {
+	if strings.HasPrefix(outcome.Body.Error, outcome.Kind) {
+		return outcome.Body.Error
+	}
+
+	return outcome.Kind + ": " + outcome.Body.Error
 }

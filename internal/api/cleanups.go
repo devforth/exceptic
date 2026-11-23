@@ -65,8 +65,8 @@ type cleanupDeleted struct {
 	Deleted string `json:"deleted"`
 }
 
-func (handler *handlers) listCleanups(ctx context.Context, _ Call, _ noInput) (cleanupsOutput, error) {
-	runs, err := handler.services.Projects.Cleanups(ctx)
+func (handler *handlers) listCleanups(ctx context.Context, call Call, _ noInput) (cleanupsOutput, error) {
+	runs, err := handler.services.Projects.Cleanups(ctx, call.Access())
 
 	return cleanups(runs, handler.services.Projects.Name), err
 }

@@ -142,10 +142,17 @@ func (server *notificationsServer) must(name string, input map[string]any, outpu
 func (server *notificationsServer) refused(name string, input map[string]any) api.ErrorBody {
 	server.t.Helper()
 
+	return server.refusedWith(http.StatusBadRequest, name, input)
+}
+
+// refusedWith is refused with another status: 409 for a conflict.
+func (server *notificationsServer) refusedWith(status int, name string, input map[string]any) api.ErrorBody {
+	server.t.Helper()
+
 	var body api.ErrorBody
 
-	if code := server.send(name, input, &body); code != http.StatusBadRequest {
-		server.t.Fatalf("%s %v: %d %+v, want 400", name, input, code, body)
+	if code := server.send(name, input, &body); code != status {
+		server.t.Fatalf("%s %v: %d %+v, want %d", name, input, code, body, status)
 	}
 
 	return body
@@ -332,10 +339,10 @@ func TestUIConnections(t *testing.T) {
 		t.Errorf("a missing connection: %d", code)
 	}
 
-	// A user's session gets what looks like an unknown request.
+	// A user's role may not read connections.
 	user := server.webUser(store.RoleUser, false)
 
-	if response := user.call(http.MethodGet, "get_connection?connection_id="+webhookID, ""); response.Code != http.StatusNotFound {
+	if response := user.call(http.MethodGet, "get_connection?connection_id="+webhookID, ""); response.Code != http.StatusForbidden {
 		t.Errorf("a user read a connection: %d", response.Code)
 	}
 }
@@ -511,7 +518,7 @@ func TestUIEmailSteps(t *testing.T) {
 	}
 
 	// Saving before the code is confirmed is refused at the address.
-	if body := server.refused("create_connection", map[string]any{"type": "email", "email": "ops@example.com"}); body.Fields["email"] == "" {
+	if body := server.refusedWith(http.StatusConflict, "create_connection", map[string]any{"type": "email", "email": "ops@example.com"}); body.Fields["email"] == "" {
 		t.Errorf("save unconfirmed: %+v", body)
 	}
 
@@ -538,13 +545,13 @@ func TestUIEmailSteps(t *testing.T) {
 	}
 
 	// One connection per address: no code, the existing one named.
-	if body := server.refused("start_email_verification", map[string]any{"email": "OPS@example.com"}); body.Duplicate == nil || body.Duplicate.ID != id || body.Duplicate.Name != "Ops" {
+	if body := server.refusedWith(http.StatusConflict, "start_email_verification", map[string]any{"email": "OPS@example.com"}); body.Duplicate == nil || body.Duplicate.ID != id || body.Duplicate.Name != "Ops" {
 		t.Errorf("an address already added: %+v", body)
 	}
 
 	server.expectNoMail("an address already added must not get a code")
 
-	if body := server.refused("create_connection", map[string]any{"type": "email", "email": "ops@example.com"}); body.Duplicate == nil || body.Duplicate.ID != id {
+	if body := server.refusedWith(http.StatusConflict, "create_connection", map[string]any{"type": "email", "email": "ops@example.com"}); body.Duplicate == nil || body.Duplicate.ID != id {
 		t.Errorf("a second connection to the address: %+v", body)
 	}
 
@@ -629,7 +636,7 @@ func TestUIConnectionFieldErrors(t *testing.T) {
 		t.Errorf("projects: %+v", details)
 	}
 
-	if body := server.refused("create_connection", map[string]any{"type": "slack", "webhook_url": hook.url}); body.Duplicate == nil || body.Duplicate.ID != id || body.Duplicate.Name != "Chat" {
+	if body := server.refusedWith(http.StatusConflict, "create_connection", map[string]any{"type": "slack", "webhook_url": hook.url}); body.Duplicate == nil || body.Duplicate.ID != id || body.Duplicate.Name != "Chat" {
 		t.Errorf("the same webhook again: %+v", body)
 	}
 
@@ -638,7 +645,7 @@ func TestUIConnectionFieldErrors(t *testing.T) {
 
 	otherID := server.create(map[string]any{"type": "slack", "name": "Other", "webhook_url": newWebhook(t).url})
 
-	if body := server.refused("update_connection", map[string]any{"connection_id": otherID, "webhook_url": hook.url}); body.Duplicate == nil || body.Duplicate.ID != id {
+	if body := server.refusedWith(http.StatusConflict, "update_connection", map[string]any{"connection_id": otherID, "webhook_url": hook.url}); body.Duplicate == nil || body.Duplicate.ID != id {
 		t.Errorf("moving onto a used webhook: %+v", body)
 	}
 }
@@ -678,7 +685,7 @@ func TestSlackBotConnection(t *testing.T) {
 	server := newNotificationsServer(t)
 	id := server.create(map[string]any{"type": "slack", "name": "Bot chat", "slack_bot_token": slackBotToken, "slack_channel": "C0123456789"})
 
-	if body := server.refused("create_connection", map[string]any{"type": "slack", "slack_bot_token": slackBotToken, "slack_channel": "C0123456789"}); body.Duplicate == nil {
+	if body := server.refusedWith(http.StatusConflict, "create_connection", map[string]any{"type": "slack", "slack_bot_token": slackBotToken, "slack_channel": "C0123456789"}); body.Duplicate == nil {
 		t.Errorf("the same bot channel twice: %+v", body)
 	}
 
@@ -758,7 +765,7 @@ func TestUIDeliveries(t *testing.T) {
 	messages := map[string]int64{}
 
 	for _, channel := range []string{brokenID, workingID} {
-		if err := server.database.EnqueueOutbox(ctx, []string{channel}, "notification", []byte(notification), now); err != nil {
+		if err := server.database.EnqueueOutbox(ctx, []string{channel}, []int{1}, "notification", []byte(notification), now); err != nil {
 			t.Fatal(err)
 		}
 
@@ -767,7 +774,7 @@ func TestUIDeliveries(t *testing.T) {
 
 	summary := `{"Count":12,"Window":60000000000,"Items":[{"Kind":"new_issue","Project":"backend","Title":"Error: disk is full","IssueID":"issue008"}]}`
 
-	if err := server.database.EnqueueOutbox(ctx, []string{workingID}, "summary", []byte(summary), now); err != nil {
+	if err := server.database.EnqueueOutbox(ctx, []string{workingID}, []int{1}, "summary", []byte(summary), now); err != nil {
 		t.Fatal(err)
 	}
 

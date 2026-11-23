@@ -5,14 +5,15 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/devforth/exceptic/internal/storage/kv"
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
-// EnqueueOutbox adds the message once per channel, due immediately.
-func (database *Store) EnqueueOutbox(_ context.Context, channels []string, kind string, payload []byte, now time.Time) error {
+// EnqueueOutbox adds the message about projectIDs once per channel, due immediately.
+func (database *Store) EnqueueOutbox(_ context.Context, channels []string, projectIDs []int, kind string, payload []byte, now time.Time) error {
 	ids := make([]int64, len(channels))
 
 	for index := range channels {
@@ -28,7 +29,7 @@ func (database *Store) EnqueueOutbox(_ context.Context, channels []string, kind 
 	return database.db.Update(true, func(batch *kv.Batch) error {
 		for index, channel := range channels {
 			message := store.OutboxRecord{
-				OutboxMessage: store.OutboxMessage{ID: ids[index], Channel: channel, Kind: kind, Payload: payload, CreatedAt: now.UTC()},
+				OutboxMessage: store.OutboxMessage{ID: ids[index], Channel: channel, Kind: kind, ProjectIDs: projectIDs, Payload: payload, CreatedAt: now.UTC()},
 				Status:        store.OutboxPending, NextAttemptAt: now.UTC(), UpdatedAt: now.UTC(),
 			}
 
@@ -178,17 +179,26 @@ func (database *Store) PendingChannels(context.Context) ([]string, error) {
 
 // outboxQuery walks the messages of a filter, newest first, each filter by an index.
 func (database *Store) outboxQuery(filter store.OutboxFilter) kv.Query[store.OutboxRecord] {
+	var query kv.Query[store.OutboxRecord]
+
 	switch {
-	case filter.Status != "" && filter.Channel != "":
-		return database.outbox.By("channel", kv.Text(filter.Channel)).
-			Where(func(message store.OutboxRecord) bool { return message.Status == filter.Status }).Newest()
-	case filter.Status != "":
-		return database.outbox.By("status", kv.Text(filter.Status)).Newest()
 	case filter.Channel != "":
-		return database.outbox.By("channel", kv.Text(filter.Channel)).Newest()
+		query = database.outbox.By("channel", kv.Text(filter.Channel))
+	case filter.Status != "":
+		query = database.outbox.By("status", kv.Text(filter.Status))
+	default:
+		query = database.outbox.Primary()
 	}
 
-	return database.outbox.Primary().Newest()
+	if filter.Channels != nil || !filter.Access.All() || (filter.Status != "" && filter.Channel != "") {
+		query = query.Where(func(message store.OutboxRecord) bool {
+			return (filter.Status == "" || message.Status == filter.Status) &&
+				(filter.Channels == nil || slices.Contains(filter.Channels, message.Channel)) &&
+				filter.Access.SeesEach(message.ProjectIDs)
+		})
+	}
+
+	return query.Newest()
 }
 
 // ListOutbox returns outbox messages for the delivery log, newest first.

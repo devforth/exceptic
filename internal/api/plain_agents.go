@@ -32,13 +32,13 @@ type agentRequests struct {
 	agents *services.Agents
 }
 
-// actingUser is the user of the session: 401 without one; 404 while the
+// actingUser is the user of the session: 401 without one; 403 while the
 // password is temporary (only the account page is open, as in the catalog).
 func (handlers agentRequests) actingUser(w http.ResponseWriter, r *http.Request) (store.User, bool) {
 	viewer, ok := sessionViewer(handlers.logger, handlers.auth, w, r)
 
 	if ok && viewer.MustChangePassword {
-		server.JSONError(w, http.StatusNotFound, ErrNotFound.Error())
+		handlers.failed(w, r, "", errPasswordChange)
 
 		return store.User{}, false
 	}

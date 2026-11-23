@@ -98,7 +98,7 @@ func New(ctx context.Context, options Options) (*App, error) {
 		Database:       db,
 		Ingest:         app.pipeline.Handler(),
 		API:            api.NewREST(logger, endpoints, settings.Notifications.PublicURL, settings.TrustedProxies),
-		MCP:            api.NewMCP(logger, db, endpoints, authorization, settings.AppName, options.Version),
+		MCP:            api.NewMCP(logger, db, registry, endpoints, authorization, settings.AppName, options.Version),
 		OAuth:          authorization,
 		Web:            spa,
 		UIAPI:          api.NewUI(logger, endpoints, plainRequests, auth, settings.Notifications.PublicURL, settings.TrustedProxies),

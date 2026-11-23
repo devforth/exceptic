@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -29,24 +30,68 @@ func newConnections(logger *slog.Logger, database store.Store, factory notify.Fa
 	return &Connections{logger: logger, store: database, factory: factory, projects: projects, notifications: settings.Notifications, now: time.Now}
 }
 
-// New is what a new connection of channelType starts with (store.NewConnection).
-func (service *Connections) New(channelType string) store.Connection {
-	return store.NewConnection(channelType)
+// New is what a new connection of channelType starts with
+// (store.NewConnection): every project, or the projects of a limited access.
+func (service *Connections) New(channelType string, access store.Access) store.Connection {
+	connection := store.NewConnection(channelType)
+
+	if !access.All() {
+		connection.AllProjects, connection.ProjectIDs = false, nil
+
+		for _, project := range access.Visible(service.projects.List()) {
+			connection.ProjectIDs = append(connection.ProjectIDs, project.ID)
+		}
+	}
+
+	return connection
 }
 
-// List returns every connection.
-func (service *Connections) List(ctx context.Context) ([]store.Connection, error) {
-	return service.store.ListConnections(ctx)
+// List returns the connections within access (Visible).
+func (service *Connections) List(ctx context.Context, access store.Access) ([]store.Connection, error) {
+	connections, err := service.store.ListConnections(ctx)
+
+	if err != nil || access.All() {
+		return connections, err
+	}
+
+	return slices.DeleteFunc(connections, func(connection store.Connection) bool { return !Visible(access, connection) }), nil
 }
 
-// DeliveryHealth sums up the delivery of each connection, by connection id.
-func (service *Connections) DeliveryHealth(ctx context.Context) (map[string]store.DeliveryHealth, error) {
-	return service.store.DeliveryHealthByChannel(ctx)
+// Visible: access sees the connection, which sends only for projects it
+// sees. A connection for every project, or for none (its projects were
+// deleted), is seen only with every project.
+func Visible(access store.Access, connection store.Connection) bool {
+	return access.All() || (!connection.AllProjects && len(connection.ProjectIDs) > 0 && access.Covers(store.OnlyProjects(connection.ProjectIDs...)))
 }
 
-// Get reads a connection; store.ErrNotFound when it does not exist.
-func (service *Connections) Get(ctx context.Context, id string) (store.Connection, error) {
-	return service.store.GetConnection(ctx, id)
+// DeliveryHealth sums up the delivery of each of the connections (read
+// through an access), by connection id.
+func (service *Connections) DeliveryHealth(ctx context.Context, connections ...store.Connection) (map[string]store.DeliveryHealth, error) {
+	all, err := service.store.DeliveryHealthByChannel(ctx)
+	health := map[string]store.DeliveryHealth{}
+
+	for _, connection := range connections {
+		if summary, ok := all[connection.ID]; ok {
+			health[connection.ID] = summary
+		}
+	}
+
+	return health, err
+}
+
+// Get reads a connection; store.ErrNotFound when it does not exist,
+// ErrHidden outside access.
+func (service *Connections) Get(ctx context.Context, access store.Access, id string) (store.Connection, error) {
+	connection, err := service.store.GetConnection(ctx, id)
+
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return store.Connection{}, Missing("connection", id)
+	case err == nil && !Visible(access, connection):
+		return store.Connection{}, Hidden("connection", id)
+	}
+
+	return connection, err
 }
 
 // create saves a new connection and returns its id. chatSecret is the
@@ -93,8 +138,16 @@ func (service *Connections) SetActive(ctx context.Context, connection store.Conn
 	return service.saved(ctx, connection)
 }
 
-// RetryNow makes the waiting messages of a connection due now.
-func (service *Connections) RetryNow(ctx context.Context, id string) error {
+// RetryNow makes the waiting messages of a connection within access due now.
+func (service *Connections) RetryNow(ctx context.Context, access store.Access, id string) error {
+	if _, err := service.Get(ctx, access, id); err != nil {
+		return err
+	}
+
+	return service.retryNow(ctx, id)
+}
+
+func (service *Connections) retryNow(ctx context.Context, id string) error {
 	if err := service.store.RetryOutboxNow(ctx, id, service.now()); err != nil {
 		return err
 	}
@@ -118,13 +171,22 @@ func (service *Connections) saved(ctx context.Context, connection store.Connecti
 		return nil
 	}
 
-	return service.RetryNow(ctx, connection.ID)
+	return service.retryNow(ctx, connection.ID)
 }
 
-// Delete removes a connection; one already gone (deleted from another tab)
-// is not an error. Its destination stays, so a confirmed address stays
-// confirmed.
-func (service *Connections) Delete(ctx context.Context, id string) error {
+// Delete removes a connection within access (outside it nothing, as for
+// one that does not exist); one already gone (deleted from another tab) is not an error. Its
+// destination stays, so a confirmed address stays confirmed.
+func (service *Connections) Delete(ctx context.Context, access store.Access, id string) error {
+	connection, err := service.store.GetConnection(ctx, id)
+
+	switch {
+	case errors.Is(err, store.ErrNotFound) || (err == nil && !Visible(access, connection)):
+		return nil // as one already gone
+	case err != nil:
+		return err
+	}
+
 	if err := service.store.DeleteConnection(ctx, id); err != nil && !errors.Is(err, store.ErrNotFound) {
 		return err
 	}
@@ -257,8 +319,9 @@ func (service *Connections) destinationKey(connection store.Connection) string {
 }
 
 // findDuplicate returns the connection other than exceptID that already
-// sends to key (see destinationKey), or nil.
-func (service *Connections) findDuplicate(ctx context.Context, channelType, key string, exceptID string) (*Duplicate, error) {
+// sends to key (see destinationKey), or nil; one outside access is not
+// named (an empty Duplicate).
+func (service *Connections) findDuplicate(ctx context.Context, access store.Access, channelType, key string, exceptID string) (*Duplicate, error) {
 	if key == "" {
 		return nil, nil
 	}
@@ -271,6 +334,10 @@ func (service *Connections) findDuplicate(ctx context.Context, channelType, key 
 
 	for _, connection := range connections {
 		if connection.ID != exceptID && connection.Type == channelType && service.destinationKey(connection) == key {
+			if !Visible(access, connection) {
+				return &Duplicate{}, nil
+			}
+
 			return &Duplicate{ID: connection.ID, Name: connection.Name}, nil
 		}
 	}

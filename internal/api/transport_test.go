@@ -215,21 +215,34 @@ func TestUIPlainNamesOnly(t *testing.T) {
 }
 
 // Over HTTP a refused input names its fields and the record that already
-// exists, so a form shows them; MCP gets the one message naming them.
+// exists, so a form shows them, with the status of its kind; MCP gets the
+// kind and the one message naming them.
 func TestInputErrorBody(t *testing.T) {
 	cases := map[string]struct {
-		err  error
-		want ErrorBody
+		err    error
+		status int
+		want   ErrorBody
+		text   string
 	}{
 		"fields": {
-			problemsError(map[string]string{"name": "taken", "log_level": "unknown level"}, projectFormFields),
+			problemsError(map[string]string{"name": "taken", "log_level": "unknown level"}, projectFormFields), http.StatusBadRequest,
 			ErrorBody{Error: "log_levels: unknown level; name: taken", Fields: map[string]string{"name": "taken", "log_levels": "unknown level"}},
+			"invalid: log_levels: unknown level; name: taken",
 		},
 		"duplicate": {
-			duplicateError(services.Duplicate{ID: "conn0001", Name: "alerts"}, "sends there"),
+			duplicateError(services.Duplicate{ID: "conn0001", Name: "alerts"}, "sends there"), http.StatusConflict,
 			ErrorBody{Error: "connection conn0001 (alerts) already sends there: update it instead", Duplicate: &DuplicateOutput{ID: "conn0001", Name: "alerts"}},
+			"conflict: connection conn0001 (alerts) already sends there: update it instead",
 		},
-		"plain": {Invalid("offset out of range"), ErrorBody{Error: "offset out of range"}},
+		"refusal": {
+			services.Refusal{Kind: services.ErrConflict, Problems: services.Problems{"username": "taken"}}, http.StatusConflict,
+			ErrorBody{Error: "username: taken", Fields: map[string]string{"username": "taken"}}, "conflict: username: taken",
+		},
+		"hidden":  {services.Hidden("issue", "abcd1234"), http.StatusForbidden, ErrorBody{Error: "issue abcd1234 is not in your projects"}, "forbidden: issue abcd1234 is not in your projects"},
+		"missing": {services.Missing("issue", "abcd1234"), http.StatusNotFound, ErrorBody{Error: "not found: issue abcd1234"}, "not found: issue abcd1234"},
+		"role":    {services.ErrForbidden, http.StatusForbidden, ErrorBody{Error: "your role may not do this"}, "forbidden: your role may not do this"},
+		"plain":   {Invalid("offset out of range"), http.StatusBadRequest, ErrorBody{Error: "offset out of range"}, "invalid: offset out of range"},
+		"unknown": {errors.New("disk failed"), http.StatusInternalServerError, ErrorBody{Error: "internal error"}, "internal error"},
 	}
 
 	for label, test := range cases {
@@ -242,12 +255,12 @@ func TestInputErrorBody(t *testing.T) {
 
 		var body ErrorBody
 
-		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil || response.Code != http.StatusBadRequest || !reflect.DeepEqual(body, test.want) {
+		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil || response.Code != test.status || !reflect.DeepEqual(body, test.want) {
 			t.Errorf("%s: %d %s", label, response.Code, response.Body)
 		}
 
-		if message, _, _ := Outcome(test.err); message != test.want.Error {
-			t.Errorf("%s: MCP text %q", label, message)
+		if text := OutcomeOf(test.err).ToolText(); text != test.text {
+			t.Errorf("%s: MCP text %q", label, text)
 		}
 	}
 }

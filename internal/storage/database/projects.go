@@ -55,8 +55,9 @@ func projectConflict(err error) error {
 }
 
 // CreateProject adds a project with a random 8-digit id that is not taken,
-// nor was by a project deleted since the start.
-func (database *Store) CreateProject(_ context.Context, project store.Project, now time.Time) (int, error) {
+// nor was by a project deleted since the start; a limited owner (ownerID,
+// "" for none) gets it in the same batch, so they see it at once.
+func (database *Store) CreateProject(_ context.Context, project store.Project, now time.Time, ownerID string) (int, error) {
 	project.CreatedAt = now.UTC()
 
 	err := database.db.Update(true, func(batch *kv.Batch) error {
@@ -80,7 +81,15 @@ func (database *Store) CreateProject(_ context.Context, project store.Project, n
 			}
 		}
 
-		return projectConflict(database.projects.Insert(batch, keepNone(project)))
+		if err := projectConflict(database.projects.Insert(batch, keepNone(project))); err != nil {
+			return err
+		}
+
+		if ownerID == "" {
+			return nil
+		}
+
+		return database.addProjectToUser(batch, ownerID, project.ID)
 	})
 
 	return project.ID, err
@@ -202,7 +211,8 @@ func (database *Store) MarkContact(projectID int, at time.Time) (written bool, e
 	return written && err == nil, err
 }
 
-// DeleteProject deletes the project and its place in connections in one batch,
+// DeleteProject deletes the project and its place in connections and users'
+// access in one batch,
 // so its DSN stops at once and no later event or log of it is stored, and
 // marks its data for PurgeProjects.
 func (database *Store) DeleteProject(_ context.Context, id int) error {
@@ -233,7 +243,11 @@ func (database *Store) DeleteProject(_ context.Context, id int) error {
 			database.contactsMutex.Unlock()
 		})
 
-		return database.dropProjectFromConnections(batch, id)
+		if err := database.dropProjectFromConnections(batch, id); err != nil {
+			return err
+		}
+
+		return database.dropProjectFromUsers(batch, id)
 	})
 }
 

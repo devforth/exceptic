@@ -139,8 +139,9 @@ var LogCountLimit = 10000
 
 // LogIssue is the issue of the error raised in the same request as a log line.
 type LogIssue struct {
-	IssueID string
-	Title   string
+	IssueID   string
+	ProjectID int
+	Title     string
 }
 
 // Page trims rows fetched with one extra (Limit = limit+1) back to limit and

@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -339,7 +340,7 @@ func TestPasswordCheckWait(t *testing.T) {
 
 	change := httptest.NewRequest(http.MethodPost, "/account/password", nil)
 
-	if problems, err := auth.ChangePassword(httptest.NewRecorder(), change, store.User{Username: "admin"}, "guess", "new", "new"); problems["current_password"] != TooManyAttempts || err != nil {
+	if problems, err := auth.ChangePassword(httptest.NewRecorder(), change, store.User{Username: "admin"}, "guess", "new", "new"); !errors.Is(err, ErrTooManyAttempts) {
 		t.Fatalf("a password change with no place: %v %v", problems, err)
 	}
 

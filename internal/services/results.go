@@ -42,7 +42,9 @@ type EmailStep struct {
 	VerifiedAt time.Time
 	Duplicate  *Duplicate // the connection that already uses the address
 	Error      string
-	Notice     string
+	Unsent     bool // Error: the mail server refused the code
+
+	Notice string
 }
 
 func (step EmailStep) Verified() bool { return step.State == EmailVerified }
@@ -74,4 +76,7 @@ type UserInput struct {
 	Username string
 	Name     string
 	Role     string
+	// Access is the projects chosen of what the viewer was shown (nil: a new
+	// user gets the viewer's, a saved one keeps theirs).
+	Access *store.Access
 }

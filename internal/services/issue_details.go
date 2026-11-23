@@ -42,14 +42,14 @@ type IssueDetails struct {
 // Details reads an issue with one of its events: eventID (UUID or hex), the
 // latest when empty. A missing issue is store.ErrNotFound; a missing,
 // foreign or unreadable event is a state of the page, not an error.
-func (issues *Issues) Details(ctx context.Context, issueID, eventID string) (IssueDetails, error) {
+func (issues *Issues) Details(ctx context.Context, access store.Access, issueID, eventID string) (IssueDetails, error) {
 	var details IssueDetails
 
 	if !store.ValidID(issueID) {
 		return details, store.ErrNotFound
 	}
 
-	issue, err := issues.Get(ctx, issueID)
+	issue, err := issues.Get(ctx, access, issueID)
 
 	if err != nil {
 		return details, err
@@ -57,11 +57,11 @@ func (issues *Issues) Details(ctx context.Context, issueID, eventID string) (Iss
 
 	details.Issue = issue
 
-	if details.History, err = issues.History(ctx, issue.ID); err != nil {
+	if details.History, err = issues.History(ctx, issue); err != nil {
 		return details, err
 	}
 
-	if details.Events, err = issues.Events(ctx, store.EventFilter{IssueID: issue.ID, Limit: RecentEventsShown + 1}); err != nil {
+	if details.Events, err = issues.Events(ctx, access, store.EventFilter{IssueID: issue.ID, Limit: RecentEventsShown + 1}); err != nil {
 		return details, err
 	}
 
@@ -94,11 +94,11 @@ func (issues *Issues) Details(ctx context.Context, issueID, eventID string) (Iss
 
 	details.EventState = EventShown
 
-	if details.RelatedLogs, details.LogsFromRequest, err = issues.RelatedLogs(ctx, event, details.Parsed); err != nil {
+	if details.RelatedLogs, details.LogsFromRequest, err = issues.RelatedLogs(ctx, access, event, details.Parsed); err != nil {
 		return details, err
 	}
 
-	details.TraceHasLogs, err = issues.TraceLogs(ctx, event)
+	details.TraceHasLogs, err = issues.TraceLogs(ctx, access, event)
 
 	return details, err
 }

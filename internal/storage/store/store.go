@@ -55,7 +55,7 @@ type Store interface {
 
 	// Notification outbox.
 
-	EnqueueOutbox(ctx context.Context, channels []string, kind string, payload []byte, now time.Time) error
+	EnqueueOutbox(ctx context.Context, channels []string, projectIDs []int, kind string, payload []byte, now time.Time) error
 	// DueOutbox returns a channel's due messages, oldest first.
 	DueOutbox(ctx context.Context, channel string, now time.Time, limit int) ([]OutboxMessage, error)
 	MarkOutboxSent(ctx context.Context, id int64, now time.Time) error
@@ -74,9 +74,11 @@ type Store interface {
 
 	ListProjects(ctx context.Context) ([]Project, error)
 	GetProject(ctx context.Context, id int) (Project, error)
-	CreateProject(ctx context.Context, project Project, now time.Time) (int, error)
+	// CreateProject adds a project; a limited owner (a user id, or "") gets it in the same batch.
+	CreateProject(ctx context.Context, project Project, now time.Time, ownerID string) (int, error)
 	UpdateProject(ctx context.Context, project Project) error
-	// DeleteProject deletes a project at once; PurgeProjects then deletes its data.
+	// DeleteProject deletes a project at once, also from connections and
+	// users' access; PurgeProjects then deletes its data.
 	DeleteProject(ctx context.Context, id int) error
 	PurgeProjects(ctx context.Context) error
 	// SeedProject writes a project from PROJECTS: env sets its key, and its name when it creates it.
@@ -90,21 +92,23 @@ type Store interface {
 	// DeleteIssues deletes the issues that exist, with their events and history; it says how many.
 	DeleteIssues(ctx context.Context, issueIDs []string) (int, error)
 	UnresolvedCounts(ctx context.Context) (map[int]int, error)
-	// IssueLevels returns the levels at least one issue has, in no order.
-	IssueLevels(ctx context.Context) ([]string, error)
+	// IssueLevels returns the levels at least one issue of the projects has
+	// (every project when none is given), in no order.
+	IssueLevels(ctx context.Context, projectIDs []int) ([]string, error)
 	ListEvents(ctx context.Context, filter EventFilter) ([]EventSummary, error)
 	// GetEvent finds an event by its SDK event_id within a project.
 	GetEvent(ctx context.Context, projectID int, eventID string) (Event, error)
 	LatestEvent(ctx context.Context, issueID string) (Event, error)
 	// CountLogs stops at LogCountLimit; more says there are more.
 	CountLogs(ctx context.Context, filter LogFilter) (count int, more bool, err error)
-	// LogLevels returns the levels at least one log has.
-	LogLevels(ctx context.Context) ([]string, error)
+	// LogLevels returns the levels at least one log of the projects has
+	// (every project when none is given).
+	LogLevels(ctx context.Context, projectIDs []int) ([]string, error)
 	ListLogs(ctx context.Context, filter LogFilter) ([]LogRecord, error)
 	// IssuesForLogs finds the issue of each log's request, by span.
 	IssuesForLogs(ctx context.Context, logs []LogRecord) (map[int64]LogIssue, error)
-	// DeleteLogs deletes the logs that exist; it says how many.
-	DeleteLogs(ctx context.Context, logIDs []int64) (int, error)
+	// DeleteLogs deletes the logs that exist and access sees; it says how many.
+	DeleteLogs(ctx context.Context, access Access, logIDs []int64) (int, error)
 
 	// The database.
 
@@ -132,7 +136,7 @@ type Store interface {
 	UserPassword(ctx context.Context, id string) (string, error)
 	Superadmin(ctx context.Context) (User, error)
 	ListUsers(ctx context.Context) ([]User, error)
-	UpdateUser(ctx context.Context, id string, name, role string) error
+	UpdateUser(ctx context.Context, id string, change UserChange) error
 	UpdateUserName(ctx context.Context, id string, name string) error
 	// SetPassword ends the user's other sessions.
 	SetPassword(ctx context.Context, id string, change PasswordChange) error

@@ -235,7 +235,7 @@ func TestConsentRejectsForgedDecisions(t *testing.T) {
 		"page":     temporary.consent(params),
 		"decision": temporary.decide(params, shown.FormToken, true),
 	} {
-		if response.Code != http.StatusNotFound {
+		if response.Code != http.StatusForbidden {
 			t.Errorf("temporary password, %s: %d %s", label, response.Code, response.Body)
 		}
 	}

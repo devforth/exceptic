@@ -58,7 +58,7 @@ func TestConnectionsCreateUpdateDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	connections, err := service.List(ctx)
+	connections, err := service.List(ctx, store.Access{})
 
 	if err != nil || len(connections) != 1 {
 		t.Fatalf("connections = %v, %v; want the new one", connections, err)
@@ -78,7 +78,7 @@ func TestConnectionsCreateUpdateDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	updated, err := service.Get(ctx, created.ID)
+	updated, err := service.Get(ctx, store.Access{}, created.ID)
 
 	if err != nil || updated.Name != "renamed" || updated.Secret != secondSecret || updated.DestinationID != created.DestinationID {
 		t.Errorf("updated = %+v, %v; want the new name and secret on the same destination", updated, err)
@@ -88,20 +88,20 @@ func TestConnectionsCreateUpdateDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if inactive, _ := service.Get(ctx, created.ID); inactive.Active {
+	if inactive, _ := service.Get(ctx, store.Access{}, created.ID); inactive.Active {
 		t.Errorf("connection still active after SetActive(false)")
 	}
 
-	if err := service.Delete(ctx, created.ID); err != nil {
+	if err := service.Delete(ctx, store.Access{}, created.ID); err != nil {
 		t.Fatal(err)
 	}
 
 	// Deleted from another tab: not an error.
-	if err := service.Delete(ctx, created.ID); err != nil {
+	if err := service.Delete(ctx, store.Access{}, created.ID); err != nil {
 		t.Errorf("second delete = %v, want nil", err)
 	}
 
-	if _, err := service.Get(ctx, created.ID); !errors.Is(err, store.ErrNotFound) {
+	if _, err := service.Get(ctx, store.Access{}, created.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("Get after delete = %v, want ErrNotFound", err)
 	}
 }
@@ -161,7 +161,7 @@ func TestSelectedEvent(t *testing.T) {
 	save("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "first", now)
 	save("cccccccccccccccccccccccccccccccc", "other", now)
 
-	issue, err := issues.Get(ctx, issueID)
+	issue, err := issues.Get(ctx, store.Access{}, issueID)
 
 	if err != nil {
 		t.Fatal(err)
@@ -200,11 +200,11 @@ func TestDeleteIssue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := issues.Delete(ctx, result.IssueID); err != nil {
+	if err := issues.Delete(ctx, store.Access{}, result.IssueID); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 
-	if err := issues.Delete(ctx, result.IssueID); !errors.Is(err, store.ErrNotFound) {
+	if err := issues.Delete(ctx, store.Access{}, result.IssueID); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("deleting again: %v, want store.ErrNotFound", err)
 	}
 }
@@ -219,7 +219,7 @@ func TestSaveRetriesWaitingMessages(t *testing.T) {
 	id, _ := database.CreateConnection(ctx, store.Connection{Name: "Chat", DestinationID: destination, AllProjects: true, Levels: []string{"error"}, Active: true}, time.Now())
 	channel := id
 
-	if err := database.EnqueueOutbox(ctx, []string{channel}, "notification", []byte(`{}`), time.Now()); err != nil {
+	if err := database.EnqueueOutbox(ctx, []string{channel}, []int{1}, "notification", []byte(`{}`), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -349,13 +349,13 @@ func TestNewProjectKeepsTheShownColor(t *testing.T) {
 
 	service := newProjects(database, registry, &config.Config{})
 	shown := service.Color(store.Project{})
-	saved, problems, err := service.Save(ctx, url.Values{"name": {"worker"}, "color": {shown}}, store.Project{})
+	saved, problems, err := service.Save(ctx, store.User{}, url.Values{"name": {"worker"}, "color": {shown}}, store.Project{})
 
 	if err != nil || len(problems) > 0 {
 		t.Fatal(err, problems)
 	}
 
-	stored, err := service.Get(ctx, saved.ID)
+	stored, err := service.Get(ctx, store.Access{}, saved.ID)
 
 	// Stored, not left to the palette of the random id, which may match by chance.
 	if err != nil || stored.Color != shown {
@@ -424,7 +424,7 @@ func TestSlackDuplicates(t *testing.T) {
 		{notify.SlackSecret{BotToken: "xoxb-first", Channel: "alerts"}, true},
 		{notify.SlackSecret{BotToken: "xoxb-second", Channel: "#alerts"}, false},
 	} {
-		duplicate, err := connections.findDuplicate(ctx, config.ChannelSlack, test.secret.Key(), "")
+		duplicate, err := connections.findDuplicate(ctx, store.Access{}, config.ChannelSlack, test.secret.Key(), "")
 
 		if err != nil || (duplicate != nil) != test.duplicate {
 			t.Errorf("%+v: duplicate %v, %v; want %v", test.secret, duplicate, err, test.duplicate)
@@ -443,15 +443,39 @@ func TestStorage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	full, err := newProjects(database, registry, &config.Config{Retention: config.Retention{MaxDatabaseBytes: 1}}).Storage(ctx)
+	full, err := newProjects(database, registry, &config.Config{Retention: config.Retention{MaxDatabaseBytes: 1}}).Storage(ctx, store.Access{})
 
 	if err != nil || full.Percent != 100 || full.Limit == "" || full.UsedBytes == 0 || full.CleanupStopPercent != config.CleanupStopPercent {
 		t.Errorf("storage = %+v, %v; want the percent capped at 100", full, err)
 	}
 
-	unlimited, err := newProjects(database, registry, &config.Config{}).Storage(ctx)
+	unlimited, err := newProjects(database, registry, &config.Config{}).Storage(ctx, store.Access{})
 
 	if err != nil || unlimited.Limit != "" || unlimited.Percent != 0 || unlimited.Used == "" {
 		t.Errorf("no size limit: %+v, %v", unlimited, err)
+	}
+}
+
+// A run over the database leaves out, for a limited viewer, the steps that
+// deleted only in hidden projects, and the hidden counts of the others.
+func TestVisibleRunHidesStepsOfHiddenProjects(t *testing.T) {
+	run := store.CleanupRun{Steps: []store.CleanupStep{
+		{Number: 1, Freed: 100, Projects: map[int]*store.CleanupCounts{2: {Logs: 5}}},
+		{Number: 2, Freed: 200, Projects: map[int]*store.CleanupCounts{1: {Logs: 1}, 2: {Logs: 3}}},
+		{Number: 3, Freed: 300},
+	}}
+
+	shown, ok := visibleRun(store.OnlyProjects(1), run)
+
+	if !ok || len(shown.Steps) != 2 || shown.Steps[0].Number != 2 || shown.Steps[1].Number != 3 {
+		t.Fatalf("steps shown: %+v", shown.Steps)
+	}
+
+	if _, hidden := shown.Steps[0].Projects[2]; hidden || len(run.Steps[1].Projects) != 2 {
+		t.Errorf("counts shown %v, stored %v", shown.Steps[0].Projects, run.Steps[1].Projects)
+	}
+
+	if all, _ := visibleRun(store.Access{}, run); len(all.Steps) != 3 {
+		t.Errorf("every project: %+v", all.Steps)
 	}
 }

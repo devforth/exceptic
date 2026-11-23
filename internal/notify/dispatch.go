@@ -2,6 +2,7 @@ package notify
 
 import (
 	"encoding/json"
+	"slices"
 	"time"
 
 	"github.com/devforth/exceptic/internal/platform/logging"
@@ -26,7 +27,7 @@ func (notifier *Notifier) dispatch() {
 		for connectionID, current := range windows {
 			if current.held > 0 {
 				summary := Summary{Count: current.held, Window: notifier.options.Window, Items: current.examples}
-				notifier.enqueue([]string{connectionID}, kindSummary, summary)
+				notifier.enqueue([]string{connectionID}, current.projects, kindSummary, summary)
 			}
 		}
 
@@ -95,6 +96,10 @@ func (notifier *Notifier) route(notification Notification, windows map[string]*w
 		} else {
 			current.held++
 
+			if !slices.Contains(current.projects, notification.ProjectID) {
+				current.projects = append(current.projects, notification.ProjectID)
+			}
+
 			if len(current.examples) < maxSummaryItems {
 				current.examples = append(current.examples, notification)
 			}
@@ -102,12 +107,13 @@ func (notifier *Notifier) route(notification Notification, windows map[string]*w
 	}
 
 	if len(send) > 0 {
-		notifier.enqueue(send, kindNotification, notification)
+		notifier.enqueue(send, []int{notification.ProjectID}, kindNotification, notification)
 	}
 }
 
-// enqueue writes a message for connections in one batch and wakes their workers.
-func (notifier *Notifier) enqueue(connectionIDs []string, kind string, message any) {
+// enqueue writes a message about projectIDs for connections in one batch and
+// wakes their workers.
+func (notifier *Notifier) enqueue(connectionIDs []string, projectIDs []int, kind string, message any) {
 	payload, err := json.Marshal(message)
 
 	if err != nil {
@@ -117,7 +123,7 @@ func (notifier *Notifier) enqueue(connectionIDs []string, kind string, message a
 	}
 
 	// The outbox channel of a connection is its id.
-	if err := notifier.options.Store.EnqueueOutbox(notifier.ctx, connectionIDs, kind, payload, notifier.options.Now()); err != nil {
+	if err := notifier.options.Store.EnqueueOutbox(notifier.ctx, connectionIDs, projectIDs, kind, payload, notifier.options.Now()); err != nil {
 		notifier.options.Logger.Error("write notification to outbox", "connection_ids", connectionIDs, "err", err)
 
 		return

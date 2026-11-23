@@ -35,6 +35,42 @@ type User struct {
 	MustChangePassword bool
 	CreatedAt          time.Time
 	LastLoginAt        *time.Time
+	// Access is the projects the user sees; ProjectAccess applies it.
+	Access Access
+}
+
+// ProjectAccess is the projects the user sees: every one for the superadmin,
+// whatever is stored.
+func (user User) ProjectAccess() Access {
+	if user.Role == RoleSuperadmin {
+		return Access{}
+	}
+
+	return user.Access
+}
+
+// CanGiveAccess: user may give chosen to another user.
+func (user User) CanGiveAccess(chosen Access) bool {
+	return user.CanAdminister() && user.ProjectAccess().Covers(chosen)
+}
+
+// CanChangeAccessOf: user may change target's access. A target with every
+// project is changed only by someone with every project.
+func (user User) CanChangeAccessOf(target User) bool {
+	return user.CanManage(target) && target.ProjectAccess().ChangeableBy(user.ProjectAccess())
+}
+
+// CoveredBy: viewer has every project user has.
+func (user User) CoveredBy(viewer Access) bool {
+	return viewer.Covers(user.ProjectAccess())
+}
+
+// CanTakeOver: user may rename, delete or reset the password of target,
+// change their role and reach their agents. A password or role would give
+// user, or target as an admin, target's projects, and the rest is for those
+// who have them: only when user has them all.
+func (user User) CanTakeOver(target User) bool {
+	return user.CanManage(target) && target.CoveredBy(user.ProjectAccess())
 }
 
 // DisplayName is the name, or the username when no name is set.
@@ -47,29 +83,46 @@ func (user User) CanAdminister() bool {
 	return user.Role == RoleSuperadmin || user.Role == RoleAdmin
 }
 
-// CanManage reports whether user may change target and what is theirs
-// (edit, reset the password, delete, disconnect their agents): never the
-// superadmin, and not themselves here (they have the account page).
+// CanManage reports whether user may change target at all (their access,
+// and with CanTakeOver the rest), by the hierarchy: the superadmin every other
+// user, an admin users of the role user, nobody themselves here (they have the
+// account page).
 func (user User) CanManage(target User) bool {
-	return user.CanAdminister() && target.ID != user.ID && target.Role != RoleSuperadmin
+	if target.ID == user.ID {
+		return false
+	}
+
+	switch user.Role {
+	case RoleSuperadmin:
+		return true
+	case RoleAdmin:
+		return target.Role == RoleUser
+	}
+
+	return false
 }
 
-// CanAccessAgentsOf: one's own MCP agents, or those of a user one manages.
+// CanAccessAgentsOf: one's own MCP agents, or those of a user one may take
+// over (disconnecting them is part of a password reset).
 func (user User) CanAccessAgentsOf(owner User) bool {
-	return owner.ID == user.ID || user.CanManage(owner)
+	return owner.ID == user.ID || user.CanTakeOver(owner)
 }
 
 // AssignableRoles are the roles an administrator may give: there is one
 // superadmin, so never that one.
 var AssignableRoles = []string{RoleAdmin, RoleUser}
 
-// AssignableRoles are the roles user may give.
+// AssignableRoles are the roles user may give: an admin only the role user,
+// whom he then manages.
 func (user User) AssignableRoles() []string {
-	if !user.CanAdminister() {
-		return nil
+	switch user.Role {
+	case RoleSuperadmin:
+		return slices.Clone(AssignableRoles)
+	case RoleAdmin:
+		return []string{RoleUser}
 	}
 
-	return slices.Clone(AssignableRoles)
+	return nil
 }
 
 // CanAssign reports whether user may give role.
@@ -80,6 +133,19 @@ func (user User) CanAssign(role string) bool {
 // Actor is the user as the author of a change made through source.
 func (user User) Actor(source string) Actor {
 	return Actor{UserID: user.ID, Name: user.DisplayName(), Source: source}
+}
+
+// UserChange is a change of a user by an administrator whose access is By.
+// Both are checked against the stored user under the write lock, so two
+// administrators saving one user keep each other's projects: a new name or
+// role only when By covers the user (User.CoveredBy, else
+// ErrTakeOverLocked), and
+// Access, when set (what By chose of what it was shown), merged with the
+// stored access (Access.Replace).
+type UserChange struct {
+	Name, Role string
+	By         Access
+	Access     *Access
 }
 
 // PasswordChange is a new password hash and what it ends.

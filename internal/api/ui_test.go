@@ -3,7 +3,6 @@ package api_test
 import (
 	"context"
 	"encoding/json"
-	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -32,9 +31,16 @@ type uiUser struct {
 func (server *restServer) webUser(role string, mustChangePassword bool) uiUser {
 	server.t.Helper()
 
+	return server.addWebUser(store.User{Role: role, MustChangePassword: mustChangePassword})
+}
+
+// addWebUser stores user, named after its role, with a session for it.
+func (server *restServer) addWebUser(user store.User) uiUser {
+	server.t.Helper()
+
 	ctx := context.Background()
-	name := role + "-" + store.NewID()
-	id, err := server.database.CreateUser(ctx, store.User{Username: name, Name: "Web " + role, Role: role, MustChangePassword: mustChangePassword, CreatedAt: time.Now()}, "x")
+	user.Username, user.Name, user.CreatedAt = user.Role+"-"+store.NewID(), "Web "+user.Role, time.Now()
+	id, err := server.database.CreateUser(ctx, user, "x")
 
 	if err != nil {
 		server.t.Fatal(err)
@@ -200,8 +206,8 @@ func TestUIRoutesFollowTheCatalog(t *testing.T) {
 			t.Errorf("%s %s: %d %s", method, endpoint.Name, response.Code, response.Body)
 		}
 
-		if response := user.call(other, endpoint.Name, "{}"); response.Code != http.StatusNotFound {
-			t.Errorf("%s %s: %d, want 404", other, endpoint.Name, response.Code)
+		if response := user.call(other, endpoint.Name, "{}"); response.Code != http.StatusMethodNotAllowed {
+			t.Errorf("%s %s: %d, want 405", other, endpoint.Name, response.Code)
 		}
 	}
 
@@ -212,19 +218,19 @@ func TestUIRoutesFollowTheCatalog(t *testing.T) {
 	}
 }
 
-// What a user may not use answers exactly as an unknown endpoint: an admin
-// endpoint to a user, and every endpoint while the password is temporary
-// unless it is open then.
-func TestUIRefusalsLookUnknown(t *testing.T) {
+// What a user may not use is forbidden, saying why: an admin endpoint to
+// a user, and every endpoint while the password is temporary unless it is
+// open then. The refusal comes before the input is read.
+func TestUIRefusals(t *testing.T) {
 	server := newRESTServer(t)
 	user := server.webUser(store.RoleUser, false)
 	temporary := server.webUser(store.RoleAdmin, true)
 
-	same := func(label string, got, want *httptest.ResponseRecorder) {
+	refused := func(label string, response *httptest.ResponseRecorder, want string) {
 		t.Helper()
 
-		if got.Code != want.Code || got.Body.String() != want.Body.String() || !maps.EqualFunc(got.Header(), want.Header(), slices.Equal) {
-			t.Errorf("%s: %d %s %v, want %d %s %v", label, got.Code, got.Body, got.Header(), want.Code, want.Body, want.Header())
+		if response.Code != http.StatusForbidden || errorOf(t, response).Error != want || response.Header().Get("Content-Security-Policy") == "" {
+			t.Errorf("%s: %d %s %v", label, response.Code, response.Body, response.Header())
 		}
 	}
 
@@ -233,15 +239,12 @@ func TestUIRefusalsLookUnknown(t *testing.T) {
 			continue
 		}
 
-		method, _, _ := strings.Cut(api.Route(api.TransportUI, endpoint), " ")
-		unknown := user.call(method, "nope", "{}")
-
 		if endpoint.Admin {
-			same(endpoint.Name+" as user", user.callRoute(endpoint, "{}"), unknown)
+			refused(endpoint.Name+" as user", user.callRoute(endpoint, "not json"), "your role may not do this")
 		}
 
 		if !endpoint.OpenWithTemporaryPassword {
-			same(endpoint.Name+" with a temporary password", temporary.callRoute(endpoint, "{}"), temporary.call(method, "nope", "{}"))
+			refused(endpoint.Name+" with a temporary password", temporary.callRoute(endpoint, "not json"), "change your password first")
 		}
 	}
 
@@ -390,7 +393,7 @@ func TestGetSession(t *testing.T) {
 	server := newRESTServer(t)
 	server.ingestFixtures()
 
-	unresolved, err := server.app.Services.Issues.Unresolved(context.Background())
+	unresolved, err := server.app.Services.Issues.Unresolved(context.Background(), store.Access{})
 
 	if err != nil || unresolved == 0 {
 		t.Fatalf("unresolved %d, %v", unresolved, err)

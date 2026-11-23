@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/url"
 	"strconv"
 	"time"
@@ -23,7 +22,7 @@ func (handler *handlers) management() []Endpoint {
 	return append([]Endpoint{
 		Define(Endpoint{
 			Name:        "get_account",
-			Description: "Who the agent acts for: username, name and role (superadmin, admin or user), which decides the tools offered.",
+			Description: "Who the agent acts for: username, name, role (superadmin, admin or user), which decides the tools offered, and the projects they see.",
 			ReadOnly:    true, Transports: TransportMCP,
 		}, handler.getAccount),
 		Define(Endpoint{
@@ -33,7 +32,7 @@ func (handler *handlers) management() []Endpoint {
 		}, handler.updateAccountName),
 		Define(Endpoint{
 			Name:        "list_agents",
-			Description: "Coding agents and personal tokens connected to MCP for the user (admins: user_id of a user they manage, from owners), with when each was last used; connected is false for a personal token never used.",
+			Description: "Coding agents and personal tokens connected to MCP for the user (admins: user_id of a user whose projects they all have, from owners), with when each was last used; connected is false for a personal token never used.",
 			ReadOnly:    true, Transports: ActsAsUser,
 		}, handler.listAgents),
 		Define(Endpoint{
@@ -72,34 +71,34 @@ func (handler *handlers) management() []Endpoint {
 
 		Define(Endpoint{
 			Name:        "list_users",
-			Description: "Users of the panel with their role, last login and whether you may change them (can_manage).",
+			Description: "Users of the panel with their role, last login, projects and whether you may change their projects (can_manage, access_editable), and their name, role and password or delete them (can_take_over: only when you have all their projects). With only some projects yourself, you see only those of each user's projects.",
 			ReadOnly:    true, Admin: true, Transports: ActsAsUser,
 		}, handler.listUsers),
 		Define(Endpoint{
 			Name:        "get_user",
-			Description: "A user with whether the viewer may change them.",
+			Description: "A user with whether the viewer may change them and their projects.",
 			ReadOnly:    true, Admin: true, Transports: TransportUI,
 		}, handler.getUser),
 		Define(Endpoint{
 			Name:        "create_user",
-			Description: "Add a user with a role (admin or user). Returns a temporary password, shown only this once, that the user must change at the first login: give it to the user privately.",
+			Description: "Add a user with a role (admin or user) and the projects they see (default: yours). Returns a temporary password, shown only this once, that the user must change at the first login: give it to the user privately.",
 			Admin:       true, Transports: ActsAsUser, Confirm: true,
 			Choices: map[string][]string{"role": store.AssignableRoles},
 		}, handler.createUser),
 		Define(Endpoint{
 			Name:        "update_user",
-			Description: "Change another user's name or role (admin or user); fields not given keep their values. Not the superadmin, not yourself (update_account_name).",
+			Description: "Change another user's name, role (admin or user) or projects; fields not given keep their values. projects replaces only the user's projects you see; the others stay. Name and role change only when you have all the user's projects (can_take_over). Not the superadmin, not yourself (update_account_name).",
 			Idempotent:  true, Admin: true, Transports: ActsAsUser, Confirm: true,
 			Choices: map[string][]string{"role": store.AssignableRoles},
 		}, handler.updateUser),
 		Define(Endpoint{
 			Name:        "reset_user_password",
-			Description: "Give another user a new temporary password (returned once): their sessions end and their connected agents are disconnected.",
+			Description: "Give another user a new temporary password (returned once): their sessions end and their connected agents are disconnected. Only for a user whose projects you all have (can_take_over).",
 			Destructive: true, Admin: true, Transports: ActsAsUser,
 		}, handler.resetUserPassword),
 		Define(Endpoint{
 			Name:        "delete_user",
-			Description: "Delete another user; their sessions and connected agents end. Their past status changes keep their name.",
+			Description: "Delete another user; their sessions and connected agents end. Their past status changes keep their name. Only for a user whose projects you all have (can_take_over).",
 			Destructive: true, Admin: true, Transports: ActsAsUser,
 		}, handler.deleteUser),
 	}, handler.notificationEndpoints()...)
@@ -108,6 +107,7 @@ func (handler *handlers) management() []Endpoint {
 // Account and agents.
 
 type userOutput struct {
+	userAccess
 	ID       string `json:"id"`
 	Username string `json:"username"`
 	Name     string `json:"name,omitempty"`
@@ -119,28 +119,63 @@ type userOutput struct {
 	LastLoginAt        *time.Time `json:"last_login_at,omitempty"`
 }
 
-func userView(user store.User) userOutput {
+// userAccess is the projects a user sees, as much as the viewer may see
+// of it (store.Access.Shown): a viewer with some projects is shown only
+// those of the user's.
+type userAccess struct {
+	AllProjects bool     `json:"all_projects"`
+	ProjectIDs  []int    `json:"project_ids"`
+	Projects    []string `json:"projects"`
+}
+
+// userView is user as viewer sees them.
+func (handler *handlers) userView(viewer, user store.User) userOutput {
+	shown := user.ProjectAccess().Shown(viewer.ProjectAccess())
+	access := userAccess{AllProjects: shown.All(), ProjectIDs: []int{}, Projects: []string{}}
+
+	for _, id := range shown.ProjectIDs {
+		access.ProjectIDs, access.Projects = append(access.ProjectIDs, id), append(access.Projects, handler.projectName(id))
+	}
+
 	return userOutput{
-		ID: user.ID, Username: user.Username, Name: user.Name, DisplayName: user.DisplayName(), Role: user.Role,
+		userAccess: access,
+		ID:         user.ID, Username: user.Username, Name: user.Name, DisplayName: user.DisplayName(), Role: user.Role,
 		MustChangePassword: user.MustChangePassword, CreatedAt: user.CreatedAt, LastLoginAt: user.LastLoginAt,
 	}
 }
 
 // managedUser is a user as an administrator sees them: CanManage says
-// whether the viewer may change them (store.User.CanManage).
+// whether the viewer may change them at all (store.User.CanManage),
+// CanTakeOver whether their name, role and password and delete them
+// (store.User.CanTakeOver), and AccessEditable whether their projects;
+// each reason says why not when the viewer may change the rest.
 type managedUser struct {
-	User      userOutput `json:"user"`
-	CanManage bool       `json:"can_manage"`
+	User           userOutput `json:"user"`
+	CanManage      bool       `json:"can_manage"`
+	CanTakeOver    bool       `json:"can_take_over"`
+	TakeOverReason string     `json:"take_over_reason,omitempty"`
+	AccessEditable bool       `json:"access_editable"`
+	AccessReason   string     `json:"access_reason,omitempty"`
 }
 
-func managedView(viewer, user store.User) managedUser {
-	return managedUser{User: userView(user), CanManage: viewer.CanManage(user)}
+func (handler *handlers) managedView(viewer, user store.User) managedUser {
+	editable, reason := handler.services.Users.AccessEditable(viewer, user)
+	view := managedUser{
+		User: handler.userView(viewer, user), CanManage: viewer.CanManage(user), CanTakeOver: viewer.CanTakeOver(user),
+		AccessEditable: editable, AccessReason: reason,
+	}
+
+	if view.CanManage && !view.CanTakeOver {
+		view.TakeOverReason = services.TakeOverProblem
+	}
+
+	return view
 }
 
 type noInput struct{}
 
 func (handler *handlers) getAccount(_ context.Context, call Call, _ noInput) (userOutput, error) {
-	return userView(call.Viewer), nil
+	return handler.userView(call.Viewer, call.Viewer), nil
 }
 
 type accountNameInput struct {
@@ -160,7 +195,7 @@ func (handler *handlers) updateAccountName(ctx context.Context, call Call, input
 
 	user, err := handler.services.Users.Get(ctx, call.Viewer.ID)
 
-	return userView(user), err
+	return handler.userView(user, user), err
 }
 
 type listAgentsInput struct {
@@ -195,11 +230,6 @@ func (handler *handlers) listAgents(ctx context.Context, call Call, input listAg
 
 	if err != nil {
 		return agentsOutput{}, err
-	}
-
-	// Page falls back to the viewer's own agents: say so instead.
-	if input.UserID != "" && page.Owner.ID != input.UserID {
-		return agentsOutput{}, ErrNotFound
 	}
 
 	output := agentsOutput{User: page.Owner.Username, UserID: page.Owner.ID, Agents: []agentOutput{}}
@@ -251,17 +281,29 @@ type projectSettings struct {
 	ShownColor string `json:"shown_color"`
 	// DiskShare: the percent of MAX_DATABASE_SIZE it may hold before a cleanup of its own.
 	DiskShare int `json:"disk_share"`
+	// DiskShareLocked: why the viewer may not change the disk share.
+	DiskShareLocked string `json:"disk_share_locked,omitempty"`
 }
 
-// findProject reads the project given by name or ID; an unknown one is not found.
-func (handler *handlers) findProject(ctx context.Context, nameOrID string) (store.Project, error) {
-	project, ok := handler.projects.List().Find(nameOrID)
-
-	if !ok {
-		return store.Project{}, fmt.Errorf("unknown project %q (see list_projects): %w", nameOrID, ErrNotFound)
+// diskShareLocked is why the call may not change a disk share; empty when it may.
+func diskShareLocked(call Call) string {
+	if call.Access().All() {
+		return ""
 	}
 
-	return handler.services.Projects.Get(ctx, project.ID)
+	return services.DiskShareProblem
+}
+
+// findProject reads the project given by name or ID: an unknown one is
+// not found, one the call does not see forbidden.
+func (handler *handlers) findProject(ctx context.Context, call Call, nameOrID string) (store.Project, error) {
+	project, err := handler.services.Projects.Find(call.Access(), nameOrID)
+
+	if err != nil {
+		return store.Project{}, err
+	}
+
+	return handler.services.Projects.Get(ctx, call.Access(), project.ID)
 }
 
 func (handler *handlers) settings(call Call, project store.Project) projectSettings {
@@ -269,20 +311,25 @@ func (handler *handlers) settings(call Call, project store.Project) projectSetti
 
 	return projectSettings{
 		projectView: handler.projectView(call, shown), Color: project.Color, ShownColor: handler.services.Projects.Color(project), DiskShare: project.Share(),
+		DiskShareLocked: diskShareLocked(call),
 	}
 }
 
 // projectDefaults is what the form of a new project starts with.
 type projectDefaults struct {
-	ShownColor string   `json:"shown_color"`
-	LogLevels  []string `json:"log_levels"`
-	DiskShare  int      `json:"disk_share"`
+	ShownColor      string   `json:"shown_color"`
+	LogLevels       []string `json:"log_levels"`
+	DiskShare       int      `json:"disk_share"`
+	DiskShareLocked string   `json:"disk_share_locked,omitempty"`
 }
 
-func (handler *handlers) getProjectDefaults(context.Context, Call, noInput) (projectDefaults, error) {
+func (handler *handlers) getProjectDefaults(_ context.Context, call Call, _ noInput) (projectDefaults, error) {
 	defaults := handler.services.Projects.FormValues(store.Project{})
 
-	return projectDefaults{ShownColor: handler.services.Projects.Color(store.Project{}), LogLevels: defaults["log_level"], DiskShare: store.Project{}.Share()}, nil
+	return projectDefaults{
+		ShownColor: handler.services.Projects.Color(store.Project{}), LogLevels: defaults["log_level"], DiskShare: store.Project{}.Share(),
+		DiskShareLocked: diskShareLocked(call),
+	}, nil
 }
 
 type projectIDInput struct {
@@ -317,13 +364,17 @@ type sdkPlatform struct {
 }
 
 func (handler *handlers) getProjectSetup(ctx context.Context, call Call, input projectIDInput) (projectSetup, error) {
-	project, ok := handler.projects.List().ByID(input.Project)
-
-	if !ok || call.Address == nil {
-		return projectSetup{}, ErrNotFound
+	if call.Address == nil {
+		return projectSetup{}, errors.New("project setup without the server's address")
 	}
 
-	contact, err := handler.services.Projects.Contact(ctx, project.ID)
+	contact, err := handler.services.Projects.Contact(ctx, call.Access(), input.Project)
+
+	if err != nil {
+		return projectSetup{}, err
+	}
+
+	project, _ := handler.projects.List().ByID(input.Project)
 	setup := projectSetup{
 		ID: project.ID, Name: project.Name, DSN: project.DSN(call.Address),
 		Connected: contact.Connected, ConnectedAt: contact.ConnectedAt, Received: contact.Received, Platforms: []sdkPlatform{},
@@ -339,7 +390,7 @@ func (handler *handlers) getProjectSetup(ctx context.Context, call Call, input p
 }
 
 func (handler *handlers) getProject(ctx context.Context, call Call, input projectInput) (projectSettings, error) {
-	project, err := handler.findProject(ctx, input.Project)
+	project, err := handler.findProject(ctx, call, input.Project)
 
 	if err != nil {
 		return projectSettings{}, err
@@ -352,7 +403,7 @@ func (handler *handlers) getProject(ctx context.Context, call Call, input projec
 type projectFields struct {
 	Color     *string   `json:"color,omitempty" jsonschema:"#rrggbb, or empty for the palette color."`
 	LogLevels *[]string `json:"log_levels,omitempty" jsonschema:"Log levels to store; an empty list stores none. Events of every level are stored."`
-	DiskShare *int      `json:"disk_share,omitempty" jsonschema:"Percent of MAX_DATABASE_SIZE the project may hold, in steps of 5; above it the cleanup deletes its own data first. 100: no limit of its own."`
+	DiskShare *int      `json:"disk_share,omitempty" jsonschema:"Percent of MAX_DATABASE_SIZE the project may hold, in steps of 5; above it the cleanup deletes its own data first. 100: no limit of its own. Only someone with every project changes it."`
 }
 
 var projectChoices = map[string][]string{"log_levels": config.LogLevels}
@@ -381,18 +432,19 @@ type createProjectInput struct {
 }
 
 func (handler *handlers) saveProject(ctx context.Context, call Call, form url.Values, project store.Project) (projectSettings, error) {
-	saved, problems, err := handler.services.Projects.Save(ctx, form, project)
+	saved, problems, err := handler.services.Projects.Save(ctx, call.Viewer, form, project)
 
 	if err != nil {
-		return projectSettings{}, err
+		return projectSettings{}, formError(err, projectFormFields)
 	}
 
 	if err := problemsError(problems, projectFormFields); err != nil {
 		return projectSettings{}, err
 	}
 
-	// As stored: a new project's key is made by the store.
-	saved, err = handler.services.Projects.Get(ctx, saved.ID)
+	// As stored: a new project's key is made by the store. Read with every
+	// project: the caller's access read before the save lacks a new one.
+	saved, err = handler.services.Projects.Get(ctx, store.Access{}, saved.ID)
 
 	return handler.settings(call, saved), err
 }
@@ -412,7 +464,7 @@ type updateProjectInput struct {
 }
 
 func (handler *handlers) updateProject(ctx context.Context, call Call, input updateProjectInput) (projectSettings, error) {
-	project, err := handler.findProject(ctx, input.Project)
+	project, err := handler.findProject(ctx, call, input.Project)
 
 	if err != nil {
 		return projectSettings{}, err
@@ -429,15 +481,15 @@ func (handler *handlers) updateProject(ctx context.Context, call Call, input upd
 	return handler.saveProject(ctx, call, form, project)
 }
 
-func (handler *handlers) deleteProject(ctx context.Context, _ Call, input projectInput) (doneOutput, error) {
-	project, err := handler.findProject(ctx, input.Project)
+func (handler *handlers) deleteProject(ctx context.Context, call Call, input projectInput) (doneOutput, error) {
+	project, err := handler.findProject(ctx, call, input.Project)
 
 	if err != nil {
 		return doneOutput{}, err
 	}
 
-	if err := handler.services.Projects.Delete(ctx, project.ID); errors.Is(err, projects.ErrFromEnv) {
-		return doneOutput{}, Invalid("project %q comes from PROJECTS: remove it there", project.Name)
+	if err := handler.services.Projects.Delete(ctx, call.Access(), project.ID); errors.Is(err, projects.ErrFromEnv) {
+		return doneOutput{}, conflict("project %q comes from PROJECTS: remove it there", project.Name)
 	} else if err != nil {
 		return doneOutput{}, err
 	}
@@ -452,7 +504,7 @@ func (handler *handlers) listUsers(ctx context.Context, call Call, _ noInput) (P
 	output := Page[managedUser]{Items: []managedUser{}}
 
 	for _, user := range users {
-		output.Items = append(output.Items, managedView(call.Viewer, user))
+		output.Items = append(output.Items, handler.managedView(call.Viewer, user))
 	}
 
 	return output, err
@@ -461,13 +513,47 @@ func (handler *handlers) listUsers(ctx context.Context, call Call, _ noInput) (P
 func (handler *handlers) getUser(ctx context.Context, call Call, input userInput) (managedUser, error) {
 	user, err := handler.services.Users.Get(ctx, input.UserID)
 
-	return managedView(call.Viewer, user), err
+	return handler.managedView(call.Viewer, user), err
 }
 
 type createUserInput struct {
 	Username string `json:"username" jsonschema:"Login name: letters, digits and . _ @ -."`
 	Name     string `json:"name,omitempty" jsonschema:"Display name."`
 	Role     string `json:"role" jsonschema:"The role."`
+	accessFields
+}
+
+// accessFields choose the projects a user sees; nil keeps them (a new
+// user gets the viewer's).
+type accessFields struct {
+	AllProjects *bool     `json:"all_projects,omitempty" jsonschema:"Every project, including future ones (only someone who has every project may give it)."`
+	Projects    *[]string `json:"projects,omitempty" jsonschema:"Project names or IDs the user sees, when all_projects is not true; an empty list: none."`
+}
+
+// access reads the fields (projectsField's refusals).
+func (handler *handlers) access(call Call, fields accessFields) (*store.Access, error) {
+	switch {
+	case fields.AllProjects != nil && *fields.AllProjects:
+		return &store.Access{}, nil
+	case fields.Projects == nil && fields.AllProjects == nil:
+		return nil, nil
+	}
+
+	var names []string
+
+	if fields.Projects != nil {
+		names = *fields.Projects
+	}
+
+	ids, err := handler.projectsField(call, "projects", names)
+
+	if err != nil {
+		return nil, err
+	}
+
+	access := store.OnlyProjects(ids...)
+
+	return &access, nil
 }
 
 type passwordOutput struct {
@@ -479,7 +565,13 @@ type passwordOutput struct {
 const temporaryPasswordNote = "Shown only this once. Give it to the user privately; they choose their own password at the first login. Do not store it."
 
 func (handler *handlers) createUser(ctx context.Context, call Call, input createUserInput) (passwordOutput, error) {
-	id, password, problems, err := handler.services.Users.Create(ctx, call.Viewer, services.UserInput{Username: input.Username, Name: input.Name, Role: input.Role})
+	access, err := handler.access(call, input.accessFields)
+
+	if err != nil {
+		return passwordOutput{}, err
+	}
+
+	id, password, problems, err := handler.services.Users.Create(ctx, call.Viewer, services.UserInput{Username: input.Username, Name: input.Name, Role: input.Role, Access: access})
 
 	if err != nil {
 		return passwordOutput{}, err
@@ -489,13 +581,13 @@ func (handler *handlers) createUser(ctx context.Context, call Call, input create
 		return passwordOutput{}, err
 	}
 
-	return handler.withPassword(ctx, id, password)
+	return handler.withPassword(ctx, call, id, password)
 }
 
-func (handler *handlers) withPassword(ctx context.Context, id string, password string) (passwordOutput, error) {
+func (handler *handlers) withPassword(ctx context.Context, call Call, id string, password string) (passwordOutput, error) {
 	user, err := handler.services.Users.Get(ctx, id)
 
-	return passwordOutput{User: userView(user), TemporaryPassword: password, Note: temporaryPasswordNote}, err
+	return passwordOutput{User: handler.userView(call.Viewer, user), TemporaryPassword: password, Note: temporaryPasswordNote}, err
 }
 
 type userInput struct {
@@ -506,6 +598,7 @@ type updateUserInput struct {
 	UserID string  `json:"user_id" jsonschema:"id from list_users."`
 	Name   *string `json:"name,omitempty" jsonschema:"Display name."`
 	Role   *string `json:"role,omitempty" jsonschema:"The role."`
+	accessFields
 }
 
 func (handler *handlers) updateUser(ctx context.Context, call Call, input updateUserInput) (userOutput, error) {
@@ -515,7 +608,13 @@ func (handler *handlers) updateUser(ctx context.Context, call Call, input update
 		return userOutput{}, err
 	}
 
-	change := services.UserInput{Username: user.Username, Name: user.Name, Role: user.Role}
+	access, err := handler.access(call, input.accessFields)
+
+	if err != nil {
+		return userOutput{}, err
+	}
+
+	change := services.UserInput{Username: user.Username, Name: user.Name, Role: user.Role, Access: access}
 
 	if input.Name != nil {
 		change.Name = *input.Name
@@ -537,7 +636,7 @@ func (handler *handlers) updateUser(ctx context.Context, call Call, input update
 
 	user, err = handler.services.Users.Get(ctx, input.UserID)
 
-	return userView(user), err
+	return handler.userView(call.Viewer, user), err
 }
 
 func (handler *handlers) resetUserPassword(ctx context.Context, call Call, input userInput) (passwordOutput, error) {
@@ -547,7 +646,7 @@ func (handler *handlers) resetUserPassword(ctx context.Context, call Call, input
 		return passwordOutput{}, err
 	}
 
-	return handler.withPassword(ctx, input.UserID, password)
+	return handler.withPassword(ctx, call, input.UserID, password)
 }
 
 func (handler *handlers) deleteUser(ctx context.Context, call Call, input userInput) (doneOutput, error) {

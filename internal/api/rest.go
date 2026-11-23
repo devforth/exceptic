@@ -64,19 +64,40 @@ func (handler *REST) caller(_ http.ResponseWriter, r *http.Request) (Call, bool)
 
 // register adds the routes of the endpoints transport serves, one by one: a
 // subtree pattern would overlap the ingest route /api/{projectID}/envelope/.
+// Another method at an endpoint's path answers 405.
 func register(router *http.ServeMux, logger *slog.Logger, transport Transport, endpoints []Endpoint,
 	protect func(http.Handler) http.Handler, caller func(http.ResponseWriter, *http.Request) (Call, bool),
 ) {
 	for _, endpoint := range endpoints {
 		if endpoint.Serves(transport) {
-			router.Handle(Route(transport, endpoint), protect(serve(logger, transport, endpoint, caller)))
+			route := Route(transport, endpoint)
+			method, path, _ := strings.Cut(route, " ")
+			router.Handle(route, protect(serve(logger, transport, endpoint, caller)))
+			router.Handle(path, protect(wrongMethod(method, caller)))
 		}
 	}
 }
 
+// wrongMethod answers a request with another method than method, the
+// caller checked first as for any request.
+func wrongMethod(method string, caller func(http.ResponseWriter, *http.Request) (Call, bool)) http.Handler {
+	allow := method
+
+	if method == http.MethodGet {
+		allow = "GET, HEAD"
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := caller(w, r); ok {
+			w.Header().Set("Allow", allow)
+			server.JSONError(w, http.StatusMethodNotAllowed, "method not allowed: use "+method)
+		}
+	})
+}
+
 // serve runs endpoint over HTTP for the caller of the request; caller has
 // answered itself when it returns false. The role is checked before the
-// input is read, so a refused endpoint answers as an unknown one.
+// input is read.
 func serve(logger *slog.Logger, transport Transport, endpoint Endpoint, caller func(http.ResponseWriter, *http.Request) (Call, bool)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		call, ok := caller(w, r)
@@ -85,8 +106,8 @@ func serve(logger *slog.Logger, transport Transport, endpoint Endpoint, caller f
 			return
 		}
 
-		if !endpoint.AllowedFor(call) {
-			fail(logger, transport, w, r, endpoint, ErrNotFound)
+		if err := endpoint.Refused(call); err != nil {
+			fail(logger, transport, w, r, endpoint, err)
 
 			return
 		}
@@ -94,7 +115,7 @@ func serve(logger *slog.Logger, transport Transport, endpoint Endpoint, caller f
 		input, err := readInput(endpoint, w, r)
 
 		if err != nil {
-			server.JSONError(w, http.StatusBadRequest, err.Error())
+			fail(logger, transport, w, r, endpoint, err)
 
 			return
 		}
@@ -119,21 +140,20 @@ func serve(logger *slog.Logger, transport Transport, endpoint Endpoint, caller f
 	})
 }
 
+// fail answers err as OutcomeOf sorts it (the HTTP transports' one place),
+// logging an unexpected one.
 func fail(logger *slog.Logger, transport Transport, w http.ResponseWriter, r *http.Request, endpoint Endpoint, err error) {
-	message, notFound, ok := Outcome(err)
+	outcome := OutcomeOf(err)
 
-	switch {
-	case !ok:
+	if outcome.Logged {
 		logger.Error("api request failed", "transport", transport, "endpoint", endpoint.Name, "path", r.URL.Path, "err", err)
-		server.JSONError(w, http.StatusInternalServerError, "internal error")
-	case notFound:
-		server.JSONError(w, http.StatusNotFound, message)
-	default: // an InputError
-		var input InputError
-
-		errors.As(err, &input)
-		server.WriteJSON(w, http.StatusBadRequest, input.body())
 	}
+
+	if outcome.RetryAfter > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(int(outcome.RetryAfter.Seconds())))
+	}
+
+	server.WriteJSON(w, outcome.Status, outcome.Body)
 }
 
 // readInput is the query (GET) or the JSON body (POST) as the endpoint's
@@ -144,14 +164,14 @@ func readInput(endpoint Endpoint, w http.ResponseWriter, r *http.Request) (map[s
 	}
 
 	if r.URL.RawQuery != "" {
-		return nil, fmt.Errorf("pass the input of %s as a JSON body", endpoint.Name)
+		return nil, Invalid("pass the input of %s as a JSON body", endpoint.Name)
 	}
 
 	input := map[string]any{}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBody))
 
 	if err != nil {
-		return nil, fmt.Errorf("read body: %w", err)
+		return nil, bodyError(err)
 	}
 
 	if len(strings.TrimSpace(string(body))) == 0 {
@@ -159,10 +179,19 @@ func readInput(endpoint Endpoint, w http.ResponseWriter, r *http.Request) (map[s
 	}
 
 	if err := json.Unmarshal(body, &input); err != nil {
-		return nil, fmt.Errorf("the body must be a JSON object: %w", err)
+		return nil, Invalid("the body must be a JSON object: %v", err)
 	}
 
 	return input, nil
+}
+
+// bodyError is a body that could not be read: 413 over maxBody.
+func bodyError(err error) error {
+	if tooLarge := new(http.MaxBytesError); errors.As(err, &tooLarge) {
+		return InputError{status: http.StatusRequestEntityTooLarge, message: fmt.Sprintf("the body is larger than %d KiB", maxBody>>10)}
+	}
+
+	return Invalid("read body: %v", err)
 }
 
 // queryInput converts query strings to the types of the input fields.
@@ -173,7 +202,7 @@ func queryInput(endpoint Endpoint, r *http.Request) (map[string]any, error) {
 		fieldType, itemType, ok := endpoint.FieldType(name)
 
 		if !ok {
-			return nil, fmt.Errorf("unknown parameter %q", name)
+			return nil, Invalid("unknown parameter %q", name)
 		}
 
 		if fieldType == "array" {
@@ -197,7 +226,7 @@ func queryInput(endpoint Endpoint, r *http.Request) (map[string]any, error) {
 		}
 
 		if len(values) > 1 {
-			return nil, fmt.Errorf("parameter %q given more than once", name)
+			return nil, Invalid("parameter %q given more than once", name)
 		}
 
 		converted, err := convert(name, fieldType, values[0])
@@ -218,7 +247,7 @@ func convert(name, fieldType, value string) (any, error) {
 		number, err := strconv.ParseInt(value, 10, 64)
 
 		if err != nil {
-			return nil, fmt.Errorf("%s must be an integer", name)
+			return nil, Invalid("%s must be an integer", name)
 		}
 
 		return number, nil
@@ -226,7 +255,7 @@ func convert(name, fieldType, value string) (any, error) {
 		flag, err := strconv.ParseBool(value)
 
 		if err != nil {
-			return nil, fmt.Errorf("%s must be true or false", name)
+			return nil, Invalid("%s must be true or false", name)
 		}
 
 		return flag, nil

@@ -386,7 +386,7 @@ func (database *Store) UnresolvedCounts(context.Context) (map[int]int, error) {
 	return counts, nil
 }
 
-func (database *Store) IssueLevels(context.Context) ([]string, error) {
+func (database *Store) IssueLevels(_ context.Context, projectIDs []int) ([]string, error) {
 	database.issuesMutex.RLock()
 
 	defer database.issuesMutex.RUnlock()
@@ -394,7 +394,9 @@ func (database *Store) IssueLevels(context.Context) ([]string, error) {
 	seen := map[string]bool{}
 
 	for _, issue := range database.table.byID {
-		seen[issue.Level] = true
+		if len(projectIDs) == 0 || slices.Contains(projectIDs, issue.ProjectID) {
+			seen[issue.Level] = true
+		}
 	}
 
 	return slices.Collect(maps.Keys(seen)), nil

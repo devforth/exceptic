@@ -247,8 +247,8 @@ func TestRoutesFollowTheCatalog(t *testing.T) {
 
 		other := map[string]string{http.MethodGet: http.MethodPost, http.MethodPost: http.MethodGet}[method]
 
-		if response := server.do(other, path, ""); !strings.Contains(response.Body.String(), "unknown API endpoint") {
-			t.Errorf("%s %s: %d %s, want the unknown endpoint answer", other, path, response.Code, response.Body)
+		if response := server.do(other, path, ""); response.Code != http.StatusMethodNotAllowed || !strings.HasPrefix(response.Header().Get("Allow"), method) {
+			t.Errorf("%s %s: %d %s, want 405", other, path, response.Code, response.Body)
 		}
 
 		if response := server.do(method, path, ""); strings.Contains(response.Body.String(), "unknown API endpoint") {
@@ -351,11 +351,15 @@ func TestListIssues(t *testing.T) {
 		t.Fatalf("pages covered %d issues, want 9", len(seen))
 	}
 
-	for _, bad := range []string{"?status=open", "?sort=title", "?limit=-1", "?limit=500", "?limit=ten", "?project=nope",
+	for _, bad := range []string{"?status=open", "?sort=title", "?limit=-1", "?limit=500", "?limit=ten",
 		"?cursor=garbage", "?date_by=week", "?unknown=1", "?status=all&status=resolved"} {
 		if response := server.do(http.MethodGet, "/api/v1/list_issues"+bad, ""); response.Code != http.StatusBadRequest {
 			t.Errorf("%s: got %d, want 400", bad, response.Code)
 		}
+	}
+
+	if response := server.do(http.MethodGet, "/api/v1/list_issues?project=nope", ""); response.Code != http.StatusNotFound {
+		t.Errorf("an unknown project: got %d, want 404", response.Code)
 	}
 }
 

@@ -104,7 +104,7 @@ type Store interface {
 	GetConnection(ctx context.Context, id string) (store.Connection, error)
 	GetEvent(ctx context.Context, projectID int, eventID string) (store.Event, error)
 
-	EnqueueOutbox(ctx context.Context, channels []string, kind string, payload []byte, now time.Time) error
+	EnqueueOutbox(ctx context.Context, channels []string, projectIDs []int, kind string, payload []byte, now time.Time) error
 	DueOutbox(ctx context.Context, channel string, now time.Time, limit int) ([]store.OutboxMessage, error)
 	PendingChannels(ctx context.Context) ([]string, error)
 	MarkOutboxSent(ctx context.Context, id int64, now time.Time) error
@@ -205,6 +205,7 @@ type window struct {
 	// errors with large events must not pile up in memory until the window ends.
 	held     int
 	examples []Notification
+	projects []int // of every held notification
 }
 
 // New starts the goroutines. Without a store Notify does nothing.

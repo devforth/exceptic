@@ -74,9 +74,15 @@ func (handler *handlers) projectName(projectID int) string {
 	return project.Name
 }
 
+// visibleProjects are the projects the call sees: names and IDs of the
+// others are unknown to it, as those of projects that do not exist.
+func (handler *handlers) visibleProjects(call Call) config.Projects {
+	return handler.services.Projects.Visible(call.Access())
+}
+
 func (handler *handlers) listIssues(ctx context.Context, call Call, input listIssuesInput) (Page[issueOutput], error) {
 	output := Page[issueOutput]{Items: []issueOutput{}}
-	filter, err := handler.issueFilter(input)
+	filter, err := handler.issueFilter(call, input)
 
 	if err != nil {
 		return output, err
@@ -84,7 +90,7 @@ func (handler *handlers) listIssues(ctx context.Context, call Call, input listIs
 
 	limit := filter.Limit
 	filter.Limit++ // one extra row tells whether there is a next page
-	issues, err := handler.services.Issues.List(ctx, filter)
+	issues, err := handler.services.Issues.List(ctx, call.Access(), filter)
 
 	if err != nil {
 		return output, err
@@ -103,30 +109,30 @@ func (handler *handlers) listIssues(ctx context.Context, call Call, input listIs
 	return output, nil
 }
 
-func (handler *handlers) countIssues(ctx context.Context, _ Call, input issueFiltersInput) (countOutput, error) {
-	filter, err := handler.issueFilter(listIssuesInput{issueFiltersInput: input})
+func (handler *handlers) countIssues(ctx context.Context, call Call, input issueFiltersInput) (countOutput, error) {
+	filter, err := handler.issueFilter(call, listIssuesInput{issueFiltersInput: input})
 
 	if err != nil {
 		return countOutput{}, err
 	}
 
-	count, err := handler.services.Issues.Count(ctx, filter)
+	count, err := handler.services.Issues.Count(ctx, call.Access(), filter)
 
 	return countOutput{Count: count}, err
 }
 
-func (handler *handlers) listIssueLevels(ctx context.Context, _ Call, _ noInput) (levelsOutput, error) {
-	present, err := handler.services.Issues.Levels(ctx)
+func (handler *handlers) listIssueLevels(ctx context.Context, call Call, _ noInput) (levelsOutput, error) {
+	present, err := handler.services.Issues.Levels(ctx, call.Access())
 
 	return levelsOutput{Levels: append([]string{}, config.InLevelOrder(present, config.Levels)...)}, err
 }
 
-func (handler *handlers) issueFilter(input listIssuesInput) (store.IssueFilter, error) {
+func (handler *handlers) issueFilter(call Call, input listIssuesInput) (store.IssueFilter, error) {
 	filter := store.IssueFilter{Query: strings.TrimSpace(input.Query), Sort: input.Sort, DateField: input.DateBy}
 
 	var err error
 
-	if filter.ProjectIDs, err = projectIDs(handler.projects.List(), input.Project); err != nil {
+	if filter.ProjectIDs, err = handler.projectIDs(call, input.Project); err != nil {
 		return filter, err
 	}
 
@@ -159,8 +165,8 @@ type getIssueInput struct {
 	EventID string `json:"event_id,omitempty" jsonschema:"An event of this issue (see list_issue_events); its latest event when empty."`
 }
 
-func (handler *handlers) getIssue(ctx context.Context, _ Call, input getIssueInput) (Text, error) {
-	issue, err := handler.services.Issues.Get(ctx, input.IssueID)
+func (handler *handlers) getIssue(ctx context.Context, call Call, input getIssueInput) (Text, error) {
+	issue, err := handler.services.Issues.Get(ctx, call.Access(), input.IssueID)
 
 	if err != nil {
 		return "", err
@@ -175,10 +181,10 @@ func (handler *handlers) getIssue(ctx context.Context, _ Call, input getIssueInp
 	// Asked for an event the issue does not have: say so rather than
 	// describe another one.
 	if err != nil && input.EventID != "" {
-		return "", fmt.Errorf("event %s of issue %s: %w", input.EventID, issue.ID, ErrNotFound)
+		return "", notFound("event %s of issue %s", input.EventID, issue.ID)
 	}
 
-	return handler.describe(ctx, issue, event)
+	return handler.describe(ctx, call, issue, event)
 }
 
 type getEventInput struct {
@@ -186,35 +192,41 @@ type getEventInput struct {
 	EventID string `json:"event_id" jsonschema:"Event ID: 32 hex characters, with or without dashes."`
 }
 
-func (handler *handlers) findEvent(ctx context.Context, input getEventInput) (store.Event, error) {
-	project, ok := handler.projects.List().Find(strings.TrimSpace(input.Project))
+func (handler *handlers) findEvent(ctx context.Context, call Call, input getEventInput) (store.Event, error) {
+	project, err := handler.services.Projects.Find(call.Access(), input.Project)
 
-	if !ok {
-		return store.Event{}, fmt.Errorf("project %q: %w", input.Project, ErrNotFound)
+	if err != nil {
+		return store.Event{}, err
 	}
 
-	return handler.services.Issues.Event(ctx, project.ID, input.EventID)
+	event, err := handler.services.Issues.Event(ctx, call.Access(), project.ID, input.EventID)
+
+	if errors.Is(err, store.ErrNotFound) {
+		return event, notFound("event %s of project %q", input.EventID, input.Project)
+	}
+
+	return event, err
 }
 
-func (handler *handlers) getEvent(ctx context.Context, _ Call, input getEventInput) (Text, error) {
-	event, err := handler.findEvent(ctx, input)
+func (handler *handlers) getEvent(ctx context.Context, call Call, input getEventInput) (Text, error) {
+	event, err := handler.findEvent(ctx, call, input)
 
 	if err != nil {
 		return "", err
 	}
 
-	issue, err := handler.services.Issues.Get(ctx, event.IssueID)
+	issue, err := handler.services.Issues.Get(ctx, call.Access(), event.IssueID)
 
 	if err != nil {
 		return "", err
 	}
 
-	return handler.describe(ctx, issue, event)
+	return handler.describe(ctx, call, issue, event)
 }
 
 // getEventPayload is REST only: the payload is the event as stored.
-func (handler *handlers) getEventPayload(ctx context.Context, _ Call, input getEventInput) (store.Event, error) {
-	return handler.findEvent(ctx, input)
+func (handler *handlers) getEventPayload(ctx context.Context, call Call, input getEventInput) (store.Event, error) {
+	return handler.findEvent(ctx, call, input)
 }
 
 // relatedLogsLimit is how many logs of its request an event's prompt holds.
@@ -224,7 +236,7 @@ const relatedLogsLimit = 20
 // gone) as a full agent prompt, after a line of IDs for follow-up calls.
 // The prompt is built from an allowlist and redacted (package agentprompt),
 // whoever asks.
-func (handler *handlers) describe(ctx context.Context, issue store.Issue, event store.Event) (Text, error) {
+func (handler *handlers) describe(ctx context.Context, call Call, issue store.Issue, event store.Event) (Text, error) {
 	var (
 		parsed      *sentry.Event
 		logs        []store.LogRecord
@@ -239,7 +251,7 @@ func (handler *handlers) describe(ctx context.Context, issue store.Issue, event 
 			return "", err
 		}
 
-		if logs, fromRequest, err = handler.services.Issues.RelatedLogsLimit(ctx, event, parsed, relatedLogsLimit+1); err != nil {
+		if logs, fromRequest, err = handler.services.Issues.RelatedLogsLimit(ctx, call.Access(), event, parsed, relatedLogsLimit+1); err != nil {
 			return "", err
 		}
 
@@ -302,7 +314,7 @@ func eventsPage(call Call, events []store.EventSummary, limit int) Page[eventOut
 func (handler *handlers) listIssueEvents(ctx context.Context, call Call, input listIssueEventsInput) (Page[eventOutput], error) {
 	output := Page[eventOutput]{Items: []eventOutput{}}
 
-	if _, err := handler.services.Issues.Get(ctx, input.IssueID); err != nil {
+	if _, err := handler.services.Issues.Get(ctx, call.Access(), input.IssueID); err != nil {
 		return output, err
 	}
 
@@ -313,7 +325,7 @@ func (handler *handlers) listIssueEvents(ctx context.Context, call Call, input l
 		return output, err
 	}
 
-	events, err := handler.services.Issues.Events(ctx, store.EventFilter{IssueID: input.IssueID, BeforeID: beforeID, Limit: limit + 1})
+	events, err := handler.services.Issues.Events(ctx, call.Access(), store.EventFilter{IssueID: input.IssueID, BeforeID: beforeID, Limit: limit + 1})
 
 	if err != nil {
 		return output, err
@@ -329,9 +341,11 @@ type issueIDsInput struct {
 type issueBatchOutput struct {
 	Issues          []issueOutput `json:"issues"`
 	MissingIssueIDs []string      `json:"missing_issue_ids,omitempty"`
+	// ForbiddenIssueIDs exist in projects outside the caller's.
+	ForbiddenIssueIDs []string `json:"forbidden_issue_ids,omitempty"`
 }
 
-func (handler *handlers) batchOutput(call Call, ids []string, issues []store.Issue) issueBatchOutput {
+func (handler *handlers) batchOutput(call Call, ids []string, issues []store.Issue, hiddenIDs []string) issueBatchOutput {
 	byID := make(map[string]store.Issue, len(issues))
 
 	for _, issue := range issues {
@@ -341,9 +355,12 @@ func (handler *handlers) batchOutput(call Call, ids []string, issues []store.Iss
 	output := issueBatchOutput{Issues: []issueOutput{}}
 
 	for _, id := range ids {
-		if issue, found := byID[id]; found {
+		switch issue, found := byID[id]; {
+		case found:
 			output.Issues = append(output.Issues, handler.issueOutput(call, issue))
-		} else {
+		case slices.Contains(hiddenIDs, id):
+			output.ForbiddenIssueIDs = append(output.ForbiddenIssueIDs, id)
+		default:
 			output.MissingIssueIDs = append(output.MissingIssueIDs, id)
 		}
 	}
@@ -358,13 +375,13 @@ func (handler *handlers) getIssues(ctx context.Context, call Call, input issueID
 		return issueBatchOutput{}, Invalid("%s", err)
 	}
 
-	issues, err := handler.services.Issues.GetMany(ctx, ids)
+	issues, hiddenIDs, err := handler.services.Issues.GetMany(ctx, call.Access(), ids)
 
 	if err != nil {
 		return issueBatchOutput{}, err
 	}
 
-	return handler.batchOutput(call, ids, issues), nil
+	return handler.batchOutput(call, ids, issues, hiddenIDs), nil
 }
 
 type updateIssueStatusInput struct {
@@ -372,8 +389,9 @@ type updateIssueStatusInput struct {
 	Status   string   `json:"status" jsonschema:"The status of every issue in the call."`
 }
 
-// updateIssueStatus changes one or many issues at once: all or none. The
-// change is recorded in the issues' history with the call's actor.
+// updateIssueStatus changes one or many issues at once: all or none (an
+// issue outside the call's projects is forbidden, a missing one not found).
+// The change is recorded in the issues' history with the call's actor.
 func (handler *handlers) updateIssueStatus(ctx context.Context, call Call, input updateIssueStatusInput) (issueBatchOutput, error) {
 	ids, err := store.NormalizeIssueIDs(input.IssueIDs)
 
@@ -381,17 +399,13 @@ func (handler *handlers) updateIssueStatus(ctx context.Context, call Call, input
 		return issueBatchOutput{}, Invalid("%s", err)
 	}
 
-	issues, err := handler.services.Issues.SetStatus(ctx, ids, input.Status, call.Actor)
-
-	if errors.Is(err, store.ErrNotFound) {
-		return issueBatchOutput{}, Invalid("one or more issue IDs were not found; no status changed")
-	}
+	issues, err := handler.services.Issues.SetStatus(ctx, call.Access(), ids, input.Status, call.Actor)
 
 	if err != nil {
 		return issueBatchOutput{}, err
 	}
 
-	return handler.batchOutput(call, ids, issues), nil
+	return handler.batchOutput(call, ids, issues, nil), nil
 }
 
 type deleteIssueInput struct {
@@ -402,8 +416,8 @@ type deletedOutput struct {
 	Deleted string `json:"deleted"`
 }
 
-func (handler *handlers) deleteIssue(ctx context.Context, _ Call, input deleteIssueInput) (deletedOutput, error) {
-	if err := handler.services.Issues.Delete(ctx, input.IssueID); err != nil {
+func (handler *handlers) deleteIssue(ctx context.Context, call Call, input deleteIssueInput) (deletedOutput, error) {
+	if err := handler.services.Issues.Delete(ctx, call.Access(), input.IssueID); err != nil {
 		return deletedOutput{}, err
 	}
 

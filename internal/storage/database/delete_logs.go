@@ -2,15 +2,17 @@ package database
 
 import (
 	"context"
+	"errors"
 	"slices"
 
 	"github.com/devforth/exceptic/internal/storage/kv"
+	"github.com/devforth/exceptic/internal/storage/store"
 )
 
-// DeleteLogs deletes the logs of logIDs that exist, in batches of up to
-// cleanupChunk; it says how many. A log's key starts with its level, so
-// each id is looked for under every level.
-func (database *Store) DeleteLogs(ctx context.Context, logIDs []int64) (int, error) {
+// DeleteLogs deletes the logs of logIDs that exist and access sees, in
+// batches of up to cleanupChunk; it says how many. A log's key starts with
+// its level, so each id is looked for under every level.
+func (database *Store) DeleteLogs(ctx context.Context, access store.Access, logIDs []int64) (int, error) {
 	ids := slices.Compact(slices.Sorted(slices.Values(logIDs)))
 	deleted := 0
 
@@ -24,17 +26,28 @@ func (database *Store) DeleteLogs(ctx context.Context, logIDs []int64) (int, err
 		err := database.update(func(writer *batchWriter) error {
 			for _, id := range chunk {
 				for _, rank := range allRanks {
-					found, err := database.logs.DeleteKey(writer.batch, logKey(rank, id))
+					record, err := database.logs.Get(database.db, logKey(rank, id))
+
+					if errors.Is(err, kv.ErrNotFound) {
+						continue
+					}
 
 					if err != nil {
 						return err
 					}
 
-					if found {
-						gone++
-
+					// Outside access: as if it were missing.
+					if !access.Sees(record.ProjectID) {
 						break
 					}
+
+					if _, err := database.logs.DeleteKey(writer.batch, logKey(rank, id)); err != nil {
+						return err
+					}
+
+					gone++
+
+					break
 				}
 			}
 

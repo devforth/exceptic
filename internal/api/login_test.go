@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -245,12 +246,13 @@ func TestUILoginLimitNotResetByInsider(t *testing.T) {
 		"login": func(server *restServer, _ *browser) {
 			server.browser(from(7)...).login("mallory", password)
 		},
-		// The current password is right, the new one mismatched: nothing changes.
+		// The current password is right, the new one mismatched: nothing
+		// changes (refused, or blocked by the limit).
 		"change_password": func(server *restServer, attacker *browser) {
 			response := attacker.call(http.MethodPost, "change_password",
 				map[string]string{"current_password": password, "password": "new password 123", "confirm_password": "other password 123"})
 
-			if response.Code != http.StatusBadRequest {
+			if response.Code != http.StatusBadRequest && response.Code != http.StatusTooManyRequests {
 				server.t.Errorf("mismatched change: %d %s", response.Code, response.Body)
 			}
 		},
@@ -356,8 +358,9 @@ func TestUILoginRateLimit(t *testing.T) {
 	}
 
 	// Even the right password is refused while the address is blocked.
-	if response := client.login("admin", adminPassword); response.Code != http.StatusTooManyRequests || errorOf(t, response).Error != session.TooManyAttempts {
-		t.Fatalf("got %d %s, want 429", response.Code, response.Body)
+	if response := client.login("admin", adminPassword); response.Code != http.StatusTooManyRequests || errorOf(t, response).Error != session.TooManyAttempts ||
+		response.Header().Get("Retry-After") != strconv.Itoa(int(session.LoginWindow.Seconds())) {
+		t.Fatalf("got %d %s %v, want 429 with Retry-After", response.Code, response.Body, response.Header())
 	}
 }
 
@@ -471,7 +474,7 @@ func TestUIDisabledWithoutPassword(t *testing.T) {
 		t.Fatalf("login_state: %+v %v", state, err)
 	}
 
-	if response := client.login("admin", ""); response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), "ADMIN_PASSWORD") {
+	if response := client.login("admin", ""); response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "ADMIN_PASSWORD") {
 		t.Fatalf("login: %d %s", response.Code, response.Body)
 	}
 }
@@ -554,7 +557,8 @@ func TestUIChangePassword(t *testing.T) {
 		client.changePassword("guess guess guess", "another password 789")
 	}
 
-	if response := client.changePassword("new password 456", "another password 789"); errorOf(t, response).Fields["current_password"] != session.TooManyAttempts {
+	if response := client.changePassword("new password 456", "another password 789"); response.Code != http.StatusTooManyRequests ||
+		errorOf(t, response).Fields["current_password"] != session.TooManyAttempts || response.Header().Get("Retry-After") == "" {
 		t.Errorf("after the guesses: %d %s", response.Code, response.Body)
 	}
 }
@@ -582,7 +586,7 @@ func TestUITemporaryPassword(t *testing.T) {
 		t.Fatalf("get_session: %+v %v", session, err)
 	}
 
-	if response := user.call(http.MethodPost, "update_account_name", map[string]string{"name": "Dev"}); response.Code != http.StatusNotFound {
+	if response := user.call(http.MethodPost, "update_account_name", map[string]string{"name": "Dev"}); response.Code != http.StatusForbidden {
 		t.Errorf("update_account_name with a temporary password: %d", response.Code)
 	}
 

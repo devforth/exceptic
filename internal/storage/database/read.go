@@ -278,17 +278,23 @@ func (database *Store) ListLogs(ctx context.Context, filter store.LogFilter) ([]
 	return logs, err
 }
 
-// LogLevels looks for one key per level: a log's key starts with its level's rank.
-func (database *Store) LogLevels(context.Context) ([]string, error) {
+// LogLevels looks for one key per level: a log's key starts with its
+// level's rank, and in the project index with its project and rank.
+func (database *Store) LogLevels(_ context.Context, projectIDs []int) ([]string, error) {
 	var levels []string
 
 	for _, rank := range allRanks {
-		found := false
-		err := database.logs.Primary(kv.U8(rank)).Limit(1).Keys(database.db, func(kv.Key) (bool, error) {
-			found = true
+		queries := []kv.Query[logRecord]{database.logs.Primary(kv.U8(rank))}
 
-			return false, nil
-		})
+		if len(projectIDs) > 0 {
+			queries = queries[:0]
+
+			for _, project := range projectIDs {
+				queries = append(queries, database.logs.By("project", kv.U32(uint32(project)), kv.U8(rank)))
+			}
+		}
+
+		found, err := anyKey(database.db, queries)
 
 		if err != nil {
 			return nil, err
@@ -300,6 +306,25 @@ func (database *Store) LogLevels(context.Context) ([]string, error) {
 	}
 
 	return levels, nil
+}
+
+// anyKey reports whether one of the queries has a key.
+func anyKey(reader kv.Reader, queries []kv.Query[logRecord]) (bool, error) {
+	found := false
+
+	for _, query := range queries {
+		err := query.Limit(1).Keys(reader, func(kv.Key) (bool, error) {
+			found = true
+
+			return false, nil
+		})
+
+		if err != nil || found {
+			return found, err
+		}
+	}
+
+	return false, nil
 }
 
 func (database *Store) CountLogs(ctx context.Context, filter store.LogFilter) (int, bool, error) {
@@ -361,7 +386,7 @@ func (database *Store) IssuesForLogs(_ context.Context, logs []store.LogRecord) 
 			if ok {
 				for _, span := range []string{meta.SpanID, meta.ParentSpanID} {
 					if key := meta.TraceID + "/" + span; span != "" && bySpan[key] == (store.LogIssue{}) {
-						bySpan[key] = store.LogIssue{IssueID: issue.ID, Title: issue.Title}
+						bySpan[key] = store.LogIssue{IssueID: issue.ID, ProjectID: issue.ProjectID, Title: issue.Title}
 					}
 				}
 			}

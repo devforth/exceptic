@@ -2,12 +2,14 @@ package api
 
 import (
 	"cmp"
+	"errors"
+	"net/http"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/devforth/exceptic/internal/platform/config"
+	"github.com/devforth/exceptic/internal/services"
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
@@ -57,15 +59,17 @@ func parseOffset(cursor string) (int, error) {
 	return int(offset), nil
 }
 
-// projectIDs resolves projects given by name or ID as a filter: none when empty.
-func projectIDs(projects config.Projects, namesOrIDs []string) ([]int, error) {
+// projectIDs resolves projects given by name or ID as a filter (none when
+// empty), each once: an unknown one is not found, one outside the call's
+// projects forbidden (services.Projects.Find).
+func (handler *handlers) projectIDs(call Call, namesOrIDs []string) ([]int, error) {
 	var ids []int
 
 	for _, nameOrID := range namesOrIDs {
-		project, ok := projects.Find(strings.TrimSpace(nameOrID))
+		project, err := handler.services.Projects.Find(call.Access(), nameOrID)
 
-		if !ok {
-			return nil, Invalid("unknown project %q (see list_projects)", nameOrID)
+		if err != nil {
+			return nil, err
 		}
 
 		if !slices.Contains(ids, project.ID) {
@@ -74,6 +78,28 @@ func projectIDs(projects config.Projects, namesOrIDs []string) ([]int, error) {
 	}
 
 	return ids, nil
+}
+
+// projectsField is projectIDs for a form's field: an unknown project is
+// the field's problem (400), one outside the call's projects a refusal
+// (403) at the field.
+func (handler *handlers) projectsField(call Call, field string, namesOrIDs []string) ([]int, error) {
+	ids, err := handler.projectIDs(call, namesOrIDs)
+
+	var reason services.Reason
+
+	if !errors.As(err, &reason) {
+		return ids, err
+	}
+
+	problem := strings.Replace(reason.Text, "not found: project", "unknown project", 1)
+	input, _ := problemsError(map[string]string{field: problem}, nil).(InputError)
+
+	if errors.Is(reason, services.ErrHidden) {
+		input.status, input.hidden = http.StatusForbidden, true
+	}
+
+	return nil, input
 }
 
 func parseTime(name, value string) (time.Time, error) {

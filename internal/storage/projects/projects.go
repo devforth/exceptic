@@ -123,11 +123,12 @@ func (registry *Registry) Get(ctx context.Context, id int) (store.Project, error
 	return registry.store.GetProject(ctx, id)
 }
 
-// Create adds a project with a new DSN key; returns its id.
-func (registry *Registry) Create(ctx context.Context, project store.Project) (int, error) {
+// Create adds a project with a new DSN key; returns its id. A limited
+// owner (a user id, or "") gets it in their access at once.
+func (registry *Registry) Create(ctx context.Context, project store.Project, ownerID string) (int, error) {
 	project.PublicKey = NewPublicKey()
 
-	id, err := registry.store.CreateProject(ctx, project, time.Now())
+	id, err := registry.store.CreateProject(ctx, project, time.Now(), ownerID)
 
 	if err != nil {
 		return 0, err

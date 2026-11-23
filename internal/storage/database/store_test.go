@@ -286,7 +286,7 @@ func TestVerifyFindsWhatIsLeft(t *testing.T) {
 
 	defer func() { _ = database.Close() }()
 
-	if err := database.EnqueueOutbox(ctx, []string{"conn0001"}, "notification", []byte(`{}`), time.Now()); err != nil {
+	if err := database.EnqueueOutbox(ctx, []string{"conn0001"}, []int{1}, "notification", []byte(`{}`), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -543,7 +543,7 @@ func TestProjectKeepsNoLevels(t *testing.T) {
 
 	var none []string
 
-	id, err := database.CreateProject(ctx, store.Project{Name: "api", PublicKey: "0123456789abcdef", LogLevels: &none}, time.Now())
+	id, err := database.CreateProject(ctx, store.Project{Name: "api", PublicKey: "0123456789abcdef", LogLevels: &none}, time.Now(), "")
 
 	if err != nil {
 		t.Fatal(err)
@@ -670,7 +670,7 @@ func TestOutboxPayloads(t *testing.T) {
 	now := time.Now()
 
 	for _, payload := range []string{`{"Title":"boom"}`, `{"Count":3}`} {
-		if err := database.EnqueueOutbox(ctx, []string{"conn0001"}, "notification", []byte(payload), now); err != nil {
+		if err := database.EnqueueOutbox(ctx, []string{"conn0001"}, []int{1}, "notification", []byte(payload), now); err != nil {
 			t.Fatal(err)
 		}
 	}

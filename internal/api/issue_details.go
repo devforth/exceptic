@@ -137,7 +137,7 @@ type relatedLogOutput struct {
 }
 
 func (handler *handlers) getIssueDetails(ctx context.Context, call Call, input issueDetailsInput) (issueDetailsOutput, error) {
-	details, err := handler.services.Issues.Details(ctx, input.IssueID, input.EventID)
+	details, err := handler.services.Issues.Details(ctx, call.Access(), input.IssueID, input.EventID)
 
 	if err != nil {
 		return issueDetailsOutput{}, err

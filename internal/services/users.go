@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -16,16 +17,14 @@ import (
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
-// ErrForbidden: the viewer's role does not allow the change.
-var ErrForbidden = errors.New("not allowed")
-
 // Users manages the panel's users. Who may change whom is decided by the
 // methods of store.User; every method checks it again, whatever the page
 // showed. Users change their own password through Auth.
 type Users struct {
-	logger *slog.Logger
-	store  store.Store
-	now    func() time.Time
+	logger   *slog.Logger
+	store    store.Store
+	projects config.ProjectList // nil: project ids are not checked
+	now      func() time.Time
 }
 
 func NewUsers(logger *slog.Logger, database store.Store) *Users {
@@ -90,7 +89,14 @@ func (users *Users) Create(ctx context.Context, viewer store.User, input UserInp
 	}
 
 	input.Username = strings.TrimSpace(input.Username)
-	problems := checkUserInput(viewer, input)
+	access := viewer.ProjectAccess()
+
+	if input.Access != nil {
+		access = *input.Access
+	}
+
+	problems := checkUserInput(input)
+	users.checkAccess(problems, access)
 
 	switch {
 	case input.Username == "":
@@ -99,8 +105,15 @@ func (users *Users) Create(ctx context.Context, viewer store.User, input UserInp
 		problems["username"] = fmt.Sprintf("Up to %d letters, digits and . _ @ -.", config.MaxUsername)
 	}
 
-	if len(problems) > 0 {
-		return "", "", problems, nil
+	forbidden := Problems{}
+	checkRole(forbidden, viewer, input.Role)
+
+	if !viewer.CanGiveAccess(access) {
+		forbidden["projects"] = accessLockedProblem
+	}
+
+	if err := refused(problems, forbidden); err != nil || len(problems) > 0 {
+		return "", "", problems, err
 	}
 
 	password := temporaryPassword()
@@ -110,17 +123,20 @@ func (users *Users) Create(ctx context.Context, viewer store.User, input UserInp
 		return "", "", nil, err
 	}
 
-	user := store.User{Username: input.Username, Name: nameOr(input.Name, input.Username), Role: input.Role, MustChangePassword: true, CreatedAt: users.now()}
+	user := store.User{Username: input.Username, Name: nameOr(input.Name, input.Username), Role: input.Role, MustChangePassword: true, CreatedAt: users.now(), Access: access}
 	id, err := users.store.CreateUser(ctx, user, hash)
 
 	if errors.Is(err, store.ErrUsernameTaken) {
-		return "", "", Problems{"username": "This username is taken."}, nil
+		return "", "", nil, Refusal{Kind: ErrConflict, Problems: Problems{"username": "This username is taken."}}
 	}
 
 	return id, password, nil, err
 }
 
-// Update changes a user's name and role.
+// Update changes a user's name, role and access. The access chosen
+// replaces only the part the viewer sees (store.Access.Replace): the
+// user's other projects stay. Name and role change only when the viewer
+// may take the user over (store.User.CanTakeOver).
 func (users *Users) Update(ctx context.Context, viewer store.User, id string, input UserInput) (Problems, error) {
 	target, err := users.manageable(ctx, viewer, id)
 
@@ -128,18 +144,120 @@ func (users *Users) Update(ctx context.Context, viewer store.User, id string, in
 		return nil, err
 	}
 
-	if problems := checkUserInput(viewer, input); len(problems) > 0 {
-		return problems, nil
+	problems := checkUserInput(input)
+	change := store.UserChange{Name: nameOr(input.Name, target.Username), Role: input.Role, By: viewer.ProjectAccess(), Access: input.Access}
+
+	if input.Access != nil {
+		users.checkAccess(problems, *input.Access)
 	}
 
-	return nil, users.store.UpdateUser(ctx, id, nameOr(input.Name, target.Username), input.Role)
+	forbidden := Problems{}
+
+	if !viewer.CanTakeOver(target) {
+		takeOverProblems(forbidden, target, change)
+	}
+
+	checkRole(forbidden, viewer, input.Role)
+
+	if err := refused(problems, forbidden); err != nil || len(problems) > 0 {
+		return problems, err
+	}
+
+	err = users.store.UpdateUser(ctx, id, change)
+
+	// What the viewer may not give, decided again against the stored user.
+	switch {
+	case errors.Is(err, store.ErrAccessLocked):
+		return nil, Refusal{Kind: ErrForbidden, Problems: Problems{"projects": accessLockedProblem}}
+	case errors.Is(err, store.ErrTakeOverLocked):
+		// The user gained a project meanwhile: say it at the fields changed.
+		problems = Problems{"role": TakeOverProblem}
+		takeOverProblems(problems, target, change)
+
+		return nil, Refusal{Kind: ErrForbidden, Problems: problems}
+	}
+
+	return nil, err
+}
+
+// refused is the refusal of a form with forbidden problems (what the
+// viewer may not give), the other problems shown with them; nil without.
+func refused(problems, forbidden Problems) error {
+	if len(forbidden) == 0 {
+		return nil
+	}
+
+	maps.Copy(problems, forbidden)
+
+	return Refusal{Kind: ErrForbidden, Problems: problems}
+}
+
+// checkRole adds a problem when viewer may not give role.
+func checkRole(problems Problems, viewer store.User, role string) {
+	if !viewer.CanAssign(role) {
+		problems["role"] = "Your role may not give this role."
+	}
+}
+
+// takeOverProblems adds a problem at the name and the role when change
+// changes them.
+func takeOverProblems(problems Problems, target store.User, change store.UserChange) {
+	if change.Name != target.DisplayName() {
+		problems["name"] = TakeOverProblem
+	}
+
+	if change.Role != target.Role {
+		problems["role"] = TakeOverProblem
+	}
+}
+
+// TakeOverProblem: why viewer may not rename, delete or reset the password
+// of a user, or change their role (store.User.CanTakeOver).
+const TakeOverProblem = "Only an admin with all of this user's projects can change it."
+
+// AccessEditable says whether viewer may change target's access, and why
+// not when they manage target but may not.
+func (users *Users) AccessEditable(viewer, target store.User) (bool, string) {
+	if viewer.CanChangeAccessOf(target) {
+		return true, ""
+	}
+
+	if viewer.CanManage(target) {
+		return false, accessLockedProblem
+	}
+
+	return false, ""
+}
+
+// accessLockedProblem: a change only someone with every project may make.
+const accessLockedProblem = "Only someone with access to all projects can give or change access to all projects."
+
+// checkAccess adds a problem when access names a project that does not exist.
+func (users *Users) checkAccess(problems Problems, access store.Access) {
+	if users.projects == nil || access.All() {
+		return
+	}
+
+	for _, id := range access.ProjectIDs {
+		if _, ok := users.projects.List().ByID(id); !ok {
+			problems["projects"] = "Choose existing projects."
+
+			return
+		}
+	}
 }
 
 // ResetPassword gives a user a temporary password (returned to be shown
 // once); their sessions end and their agents are disconnected.
 func (users *Users) ResetPassword(ctx context.Context, viewer store.User, id string) (string, error) {
-	if _, err := users.manageable(ctx, viewer, id); err != nil {
+	target, err := users.manageable(ctx, viewer, id)
+
+	if err != nil {
 		return "", err
+	}
+
+	if !viewer.CanTakeOver(target) {
+		return "", Forbidden(TakeOverProblem)
 	}
 
 	return users.setTemporaryPassword(ctx, id, true)
@@ -148,8 +266,14 @@ func (users *Users) ResetPassword(ctx context.Context, viewer store.User, id str
 // Delete removes a user with their sessions and agents; their name stays in
 // the issue histories.
 func (users *Users) Delete(ctx context.Context, viewer store.User, id string) error {
-	if _, err := users.manageable(ctx, viewer, id); err != nil {
+	target, err := users.manageable(ctx, viewer, id)
+
+	if err != nil {
 		return err
+	}
+
+	if !viewer.CanTakeOver(target) {
+		return Forbidden(TakeOverProblem)
 	}
 
 	return users.store.DeleteUser(ctx, id)
@@ -190,12 +314,19 @@ func (users *Users) setTemporaryPassword(ctx context.Context, id string, revokeA
 func (users *Users) manageable(ctx context.Context, viewer store.User, id string) (store.User, error) {
 	target, err := users.Get(ctx, id)
 
-	if err == nil && !viewer.CanManage(target) {
-		err = ErrForbidden
+	switch {
+	case err != nil:
+	case target.ID == viewer.ID:
+		err = Forbidden(OwnAccountProblem)
+	case !viewer.CanManage(target):
+		err = Forbidden("your role may not change this user")
 	}
 
 	return target, err
 }
+
+// OwnAccountProblem: nobody changes themselves as a user they manage.
+const OwnAccountProblem = "change your own account on /account (update_account_name)"
 
 // Authenticate checks a login: the user with username and password, ok
 // false when either is wrong. An unknown username is checked against a dummy
@@ -279,13 +410,9 @@ func setPassword(ctx context.Context, database store.Store, id string, password 
 	return database.SetPassword(ctx, id, change)
 }
 
-func checkUserInput(viewer store.User, input UserInput) Problems {
+func checkUserInput(input UserInput) Problems {
 	problems := Problems{}
 	checkName(problems, input.Name)
-
-	if !viewer.CanAssign(input.Role) {
-		problems["role"] = "Choose a role."
-	}
 
 	return problems
 }

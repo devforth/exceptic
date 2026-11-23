@@ -11,8 +11,12 @@ type sessionOutput struct {
 	CanAdminister    bool   `json:"can_administer"`
 	AppName          string `json:"app_name"`
 	UnresolvedIssues int    `json:"unresolved_issues"`
-	// ProjectColors: the shown color of every project by name, #rrggbb.
+	// ProjectColors: the shown color of every project the user sees by name, #rrggbb.
 	ProjectColors map[string]string `json:"project_colors"`
+	// AllProjects: the user sees every project, future ones included.
+	AllProjects bool `json:"all_projects"`
+	// AssignableRoles: the roles the user may give (an admin only "user"); empty for a user.
+	AssignableRoles []string `json:"assignable_roles"`
 }
 
 type storageOutput struct {
@@ -60,8 +64,8 @@ func timeIfSet(at time.Time) *time.Time {
 	return &at
 }
 
-func (handler *handlers) getStorage(ctx context.Context, _ Call, _ noInput) (storageOutput, error) {
-	storage, err := handler.services.Projects.Storage(ctx)
+func (handler *handlers) getStorage(ctx context.Context, call Call, _ noInput) (storageOutput, error) {
+	storage, err := handler.services.Projects.Storage(ctx, call.Access())
 	output := storageOutput{
 		UsedBytes: storage.UsedBytes, Used: storage.Used, LimitBytes: storage.LimitBytes, Limit: storage.Limit,
 		Percent: storage.Percent, CleanupStopPercent: storage.CleanupStopPercent,
@@ -81,15 +85,16 @@ func (handler *handlers) getStorage(ctx context.Context, _ Call, _ noInput) (sto
 }
 
 func (handler *handlers) getSession(ctx context.Context, call Call, _ noInput) (sessionOutput, error) {
-	unresolved, err := handler.services.Issues.Unresolved(ctx)
+	unresolved, err := handler.services.Issues.Unresolved(ctx, call.Access())
 
 	if err != nil {
 		return sessionOutput{}, err
 	}
 
 	return sessionOutput{
-		User: userView(call.Viewer), CanAdminister: call.Viewer.CanAdminister(),
+		User: handler.userView(call.Viewer, call.Viewer), CanAdminister: call.Viewer.CanAdminister(),
 		AppName: handler.services.AppName, UnresolvedIssues: unresolved,
-		ProjectColors: handler.services.Projects.ColorsByName(),
+		ProjectColors: handler.services.Projects.ColorsByName(call.Access()), AllProjects: call.Access().All(),
+		AssignableRoles: append([]string{}, call.Viewer.AssignableRoles()...),
 	}, nil
 }

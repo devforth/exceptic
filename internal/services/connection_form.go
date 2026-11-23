@@ -18,18 +18,30 @@ import (
 )
 
 // Save applies the connection form (built by the catalog from a request's
-// input, under the form's field names) to connection and stores it: a new one when its ID
-// is empty (the type comes from the form; an email connection needs the
+// input, under the form's field names) to connection and stores it, choosing
+// among the projects of access (a connection outside it is ErrHidden;
+// what the viewer may not choose or an unconfirmed address a Refusal): a new one when its ID is empty (the type comes from the form; an email connection needs the
 // destination_id of a confirmed address), the stored one otherwise (an
 // empty chat field keeps the stored token).
-func (service *Connections) Save(ctx context.Context, form url.Values, connection store.Connection) (SavedConnection, error) {
+func (service *Connections) Save(ctx context.Context, access store.Access, form url.Values, connection store.Connection) (SavedConnection, error) {
 	isNew := connection.ID == ""
+
+	if !isNew && !Visible(access, connection) {
+		return SavedConnection{}, Hidden("connection", connection.ID)
+	}
 
 	if isNew {
 		connection = store.Connection{Type: strings.TrimSpace(form.Get("type"))}
 	}
 
-	problems := readConnectionForm(form, &connection, service.projects)
+	problems := readConnectionForm(form, &connection, access.Visible(service.projects.List()))
+	// What the viewer may not choose, and what the stored records refuse.
+	forbidden, conflicts := Problems{}, Problems{}
+
+	if connection.AllProjects && !access.All() {
+		forbidden["projects"] = "Only someone with access to all projects can choose all projects."
+	}
+
 	result := SavedConnection{Connection: connection, Problems: problems}
 
 	var chat chatSecret
@@ -38,34 +50,47 @@ func (service *Connections) Save(ctx context.Context, form url.Values, connectio
 		problems["type"] = "This type is not available: " + reason + "."
 	}
 
+	formValid := len(problems) == 0 && len(forbidden) == 0
+
 	switch {
 	case isNew && connection.Type == config.ChannelEmail:
 		// The address must have been confirmed first (Verification.StartEmail, Verification.ConfirmCode).
 		destination, err := emailDestination(ctx, service.store, form.Get("destination_id"))
 
 		if err != nil || !destination.Verified {
-			problems["address"] = "Confirm the email address first."
+			conflicts["address"] = confirmFirst
 		} else {
 			connection.DestinationID, connection.Address, connection.Verified = destination.ID, destination.Address, true
 			chat.Key = destination.Address
 		}
 	case isNew:
-		chat = readChatSecret(form, service.factory, connection.Type, "", len(problems) == 0)
+		chat = readChatSecret(form, service.factory, connection.Type, "", formValid)
 		maps.Copy(problems, chat.Problems)
 	default:
-		chat = readChatSecret(form, service.factory, connection.Type, connection.Secret, len(problems) == 0)
+		chat = readChatSecret(form, service.factory, connection.Type, connection.Secret, formValid)
 		maps.Copy(problems, chat.Problems)
 
 		if connection.Active && !connection.Verified {
-			problems["active"] = "Confirm the email address first."
+			conflicts["active"] = confirmFirst
 		}
 	}
 
 	result.Connection = connection
 
+	switch {
+	case len(forbidden) > 0:
+		maps.Copy(problems, forbidden)
+
+		return result, Refusal{Kind: ErrForbidden, Problems: problems}
+	case len(conflicts) > 0:
+		maps.Copy(problems, conflicts)
+
+		return result, Refusal{Kind: ErrConflict, Problems: problems}
+	}
+
 	// One connection per address or chat; a replaced token must not point
 	// to a chat another connection uses.
-	duplicate, err := service.findDuplicate(ctx, connection.Type, chat.Key, connection.ID)
+	duplicate, err := service.findDuplicate(ctx, access, connection.Type, chat.Key, connection.ID)
 
 	if err != nil {
 		return result, err
@@ -94,6 +119,9 @@ func (service *Connections) Save(ctx context.Context, form url.Values, connectio
 
 	return result, err
 }
+
+// confirmFirst refuses an unconfirmed address what needs a confirmed one.
+const confirmFirst = "Confirm the email address first."
 
 // TestChat sends a test message with the chat settings of the form before
 // they are saved. existing is the stored connection, if any: its empty
@@ -150,8 +178,9 @@ var (
 func anchored(pattern string) *regexp.Regexp { return regexp.MustCompile(`^(?:` + pattern + `)$`) }
 
 // readConnectionForm applies the rule fields (name, projects, levels,
-// active) to connection and returns the field errors.
-func readConnectionForm(form url.Values, connection *store.Connection, projectList config.ProjectList) Problems {
+// active) to connection and returns the field errors; projects are those
+// that may be chosen, others are left out.
+func readConnectionForm(form url.Values, connection *store.Connection, projects config.Projects) Problems {
 	problems := Problems{}
 
 	// An empty name is filled in on save (see Connections.defaultName).
@@ -168,7 +197,7 @@ func readConnectionForm(form url.Values, connection *store.Connection, projectLi
 		for _, value := range form["project"] {
 			projectID, err := strconv.Atoi(value)
 
-			if _, ok := projectList.List().ByID(projectID); err == nil && ok {
+			if _, ok := projects.ByID(projectID); err == nil && ok {
 				connection.ProjectIDs = append(connection.ProjectIDs, projectID)
 			}
 		}

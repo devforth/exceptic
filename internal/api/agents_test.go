@@ -122,7 +122,7 @@ func TestUIPersonalToken(t *testing.T) {
 
 	temporary := server.webUser(store.RoleAdmin, true)
 
-	if response := temporary.call(http.MethodPost, "personal_token", "{}"); response.Code != http.StatusNotFound {
+	if response := temporary.call(http.MethodPost, "personal_token", "{}"); response.Code != http.StatusForbidden {
 		t.Errorf("with a temporary password: %d", response.Code)
 	}
 
@@ -226,16 +226,20 @@ func TestUIAgentsOfOtherUsers(t *testing.T) {
 		t.Errorf("a user may choose: %+v", list)
 	}
 
-	// Anyone else's agents a role may not reach are not found.
-	for label, response := range map[string]*httptest.ResponseRecorder{
-		"user lists the superadmin's":        user.call(http.MethodGet, "list_agents?user_id="+root.id, ""),
-		"admin lists the superadmin's":       admin.call(http.MethodGet, "list_agents?user_id="+root.id, ""),
-		"user disconnects the superadmin's":  user.call(http.MethodPost, "disconnect_agent", `{"grant_id":"`+rootGrant.GrantID+`"}`),
-		"admin disconnects the superadmin's": admin.call(http.MethodPost, "disconnect_agent", `{"grant_id":"`+rootGrant.GrantID+`"}`),
-		"user disconnects nothing":           user.call(http.MethodPost, "disconnect_agent", `{"grant_id":"zzzzzzzz"}`),
+	// Anyone else's agents a role may not reach are forbidden; missing ones not found.
+	for label, test := range map[string]struct {
+		response *httptest.ResponseRecorder
+		status   int
+	}{
+		"user lists the superadmin's":        {user.call(http.MethodGet, "list_agents?user_id="+root.id, ""), http.StatusForbidden},
+		"admin lists the superadmin's":       {admin.call(http.MethodGet, "list_agents?user_id="+root.id, ""), http.StatusForbidden},
+		"user disconnects the superadmin's":  {user.call(http.MethodPost, "disconnect_agent", `{"grant_id":"`+rootGrant.GrantID+`"}`), http.StatusForbidden},
+		"admin disconnects the superadmin's": {admin.call(http.MethodPost, "disconnect_agent", `{"grant_id":"`+rootGrant.GrantID+`"}`), http.StatusForbidden},
+		"user disconnects nothing":           {user.call(http.MethodPost, "disconnect_agent", `{"grant_id":"zzzzzzzz"}`), http.StatusNotFound},
+		"admin lists nobody's":               {admin.call(http.MethodGet, "list_agents?user_id=zzzzzzzz", ""), http.StatusNotFound},
 	} {
-		if response.Code != http.StatusNotFound {
-			t.Errorf("%s: %d %s", label, response.Code, response.Body)
+		if test.response.Code != test.status {
+			t.Errorf("%s: %d %s", label, test.response.Code, test.response.Body)
 		}
 	}
 

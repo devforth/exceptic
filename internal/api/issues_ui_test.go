@@ -148,7 +148,7 @@ func TestUIIssueList(t *testing.T) {
 		t.Errorf("offset 2: %+v", second)
 	}
 
-	if response := user.call(http.MethodGet, "count_issues?project=ghost", ""); response.Code != http.StatusBadRequest {
+	if response := user.call(http.MethodGet, "count_issues?project=ghost", ""); response.Code != http.StatusNotFound {
 		t.Errorf("unknown project: %d", response.Code)
 	}
 
@@ -517,8 +517,8 @@ func TestUIApplyIssueAction(t *testing.T) {
 		t.Errorf("reopened %+v", reopened)
 	}
 
-	// A user cannot delete: it looks as if nothing were there.
-	if code := user.act("delete", frontend[3]); code != http.StatusNotFound {
+	// A user's role cannot delete.
+	if code := user.act("delete", frontend[3]); code != http.StatusForbidden {
 		t.Errorf("delete as a user: %d", code)
 	}
 

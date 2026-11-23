@@ -14,7 +14,7 @@ import (
 	"github.com/devforth/exceptic/internal/server"
 )
 
-// A client that stops sending is answered after BodyReadTimeout, through the
+// A client that stops sending is answered 408 after BodyReadTimeout, through the
 // whole server (its request log wraps the writer), not at the server's
 // longer ReadTimeout, and its part of the read budget is freed.
 func TestStalledBodyTimesOutThroughServer(t *testing.T) {
@@ -55,8 +55,8 @@ func TestStalledBodyTimesOutThroughServer(t *testing.T) {
 
 	_ = response.Body.Close()
 
-	if response.StatusCode != http.StatusBadRequest {
-		t.Errorf("got %d, want 400", response.StatusCode)
+	if response.StatusCode != http.StatusRequestTimeout {
+		t.Errorf("got %d, want 408", response.StatusCode)
 	}
 
 	ingest.handler.reading.mutex.Lock()

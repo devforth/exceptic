@@ -152,7 +152,7 @@ export interface Endpoints {
 			color?: string | null;
 			/** Log levels to store; an empty list stores none. Events of every level are stored. */
 			log_levels?: ('trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal')[] | null;
-			/** Percent of MAX_DATABASE_SIZE the project may hold, in steps of 5; above it the cleanup deletes its own data first. 100: no limit of its own. */
+			/** Percent of MAX_DATABASE_SIZE the project may hold, in steps of 5; above it the cleanup deletes its own data first. 100: no limit of its own. Only someone with every project changes it. */
 			disk_share?: number | null;
 		};
 		out: {
@@ -164,6 +164,7 @@ export interface Endpoints {
 			color?: string;
 			shown_color: string;
 			disk_share: number;
+			disk_share_locked?: string;
 		};
 	};
 	create_user: {
@@ -174,9 +175,16 @@ export interface Endpoints {
 			name?: string;
 			/** The role. */
 			role: 'admin' | 'user';
+			/** Every project, including future ones (only someone who has every project may give it). */
+			all_projects?: boolean | null;
+			/** Project names or IDs the user sees, when all_projects is not true; an empty list: none. */
+			projects?: string[] | null;
 		};
 		out: {
 			user: {
+				all_projects: boolean;
+				project_ids: number[] | null;
+				projects: string[] | null;
 				id: string;
 				username: string;
 				name?: string;
@@ -273,6 +281,8 @@ export interface Endpoints {
 			}[] | null;
 			default_type: string;
 			levels: string[] | null;
+			all_projects: boolean;
+			project_ids: number[] | null;
 			issue_links_available: boolean;
 		};
 	};
@@ -417,6 +427,7 @@ export interface Endpoints {
 			color?: string;
 			shown_color: string;
 			disk_share: number;
+			disk_share_locked?: string;
 		};
 	};
 	get_project_defaults: {
@@ -425,6 +436,7 @@ export interface Endpoints {
 			shown_color: string;
 			log_levels: string[] | null;
 			disk_share: number;
+			disk_share_locked?: string;
 		};
 	};
 	get_project_setup: {
@@ -454,6 +466,9 @@ export interface Endpoints {
 		in: Record<string, never>;
 		out: {
 			user: {
+				all_projects: boolean;
+				project_ids: number[] | null;
+				projects: string[] | null;
 				id: string;
 				username: string;
 				name?: string;
@@ -467,6 +482,8 @@ export interface Endpoints {
 			app_name: string;
 			unresolved_issues: number;
 			project_colors: Record<string, string>;
+			all_projects: boolean;
+			assignable_roles: string[] | null;
 		};
 	};
 	get_storage: {
@@ -503,6 +520,9 @@ export interface Endpoints {
 		};
 		out: {
 			user: {
+				all_projects: boolean;
+				project_ids: number[] | null;
+				projects: string[] | null;
 				id: string;
 				username: string;
 				name?: string;
@@ -513,6 +533,10 @@ export interface Endpoints {
 				last_login_at?: IsoTime | null;
 			};
 			can_manage: boolean;
+			can_take_over: boolean;
+			take_over_reason?: string;
+			access_editable: boolean;
+			access_reason?: string;
 		};
 	};
 	list_agents: {
@@ -772,6 +796,9 @@ export interface Endpoints {
 		out: {
 			items: ({
 				user: {
+					all_projects: boolean;
+					project_ids: number[] | null;
+					projects: string[] | null;
 					id: string;
 					username: string;
 					name?: string;
@@ -782,6 +809,10 @@ export interface Endpoints {
 					last_login_at?: IsoTime | null;
 				};
 				can_manage: boolean;
+				can_take_over: boolean;
+				take_over_reason?: string;
+				access_editable: boolean;
+				access_reason?: string;
 			})[] | null;
 			next_cursor?: string;
 		};
@@ -793,6 +824,9 @@ export interface Endpoints {
 		};
 		out: {
 			user: {
+				all_projects: boolean;
+				project_ids: number[] | null;
+				projects: string[] | null;
 				id: string;
 				username: string;
 				name?: string;
@@ -899,6 +933,9 @@ export interface Endpoints {
 			name: string;
 		};
 		out: {
+			all_projects: boolean;
+			project_ids: number[] | null;
+			projects: string[] | null;
 			id: string;
 			username: string;
 			name?: string;
@@ -968,7 +1005,7 @@ export interface Endpoints {
 			color?: string | null;
 			/** Log levels to store; an empty list stores none. Events of every level are stored. */
 			log_levels?: ('trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal')[] | null;
-			/** Percent of MAX_DATABASE_SIZE the project may hold, in steps of 5; above it the cleanup deletes its own data first. 100: no limit of its own. */
+			/** Percent of MAX_DATABASE_SIZE the project may hold, in steps of 5; above it the cleanup deletes its own data first. 100: no limit of its own. Only someone with every project changes it. */
 			disk_share?: number | null;
 		};
 		out: {
@@ -980,6 +1017,7 @@ export interface Endpoints {
 			color?: string;
 			shown_color: string;
 			disk_share: number;
+			disk_share_locked?: string;
 		};
 	};
 	update_user: {
@@ -990,8 +1028,15 @@ export interface Endpoints {
 			name?: string | null;
 			/** The role. */
 			role?: '' | 'admin' | 'user';
+			/** Every project, including future ones (only someone who has every project may give it). */
+			all_projects?: boolean | null;
+			/** Project names or IDs the user sees, when all_projects is not true; an empty list: none. */
+			projects?: string[] | null;
 		};
 		out: {
+			all_projects: boolean;
+			project_ids: number[] | null;
+			projects: string[] | null;
 			id: string;
 			username: string;
 			name?: string;
@@ -1294,7 +1339,7 @@ export const help = {
 			'Include Open issue link': 'Adds a link to the issue page; offered only when PUBLIC_URL is set. Off by default for chats, which people outside the team may read.',
 			'Incoming webhook URL': 'A Slack incoming webhook; it posts to the channel chosen when it was created. Mattermost and Rocket.Chat webhooks work too. Stored encrypted.',
 			'Levels': 'Levels that are sent; a new connection sends fatal and error. Events of other levels are still stored, they only do not notify.',
-			'Projects': 'Projects whose issues are sent. All projects includes the ones added later.',
+			'Projects': 'Projects whose issues are sent. All projects includes the ones added later. An admin with only some projects chooses among them, and sees only the connections that send for nothing else.',
 			'Slack bot token': 'Optional, instead of the webhook: a bot token (xoxb-…) with the chat:write scope. The bot posts each error and puts the prompt for a coding agent in a thread under it. A new token replaces a saved webhook, and a new webhook without a token replaces a saved bot and its channel. Stored encrypted.',
 			'Telegram bot token': 'The token @BotFather gives for your bot. The bot must be a member of the chat. Stored encrypted.',
 			'Type': 'Email needs a mail server (SMTP_HOST); Telegram and Slack need only the tokens entered below.',
@@ -1302,9 +1347,13 @@ export const help = {
 		'Projects': {
 			'Color': 'Marks the project\'s badge in lists and the header of its emails.',
 			'DSN': 'The address the app\'s Sentry SDK sends errors and logs to. The key in it only allows sending to this project, so it can be in browser code.',
-			'Disk share': 'The part of MAX_DATABASE_SIZE the project may take. When it reaches it, even with the database under its limit, the cleanup deletes the project\'s own data in the usual order, down to 80% of its share, so a flood in one project does not push out the others. A ceiling, not a reservation: shares may add up to more than 100%. At 100% the project has no limit of its own.',
+			'Disk share': 'The part of MAX_DATABASE_SIZE the project may take. When it reaches it, even with the database under its limit, the cleanup deletes the project\'s own data in the usual order, down to 80% of its share, so a flood in one project does not push out the others. A ceiling, not a reservation: shares may add up to more than 100%. At 100% the project has no limit of its own. Only someone with all projects changes it, since it decides how the projects compete for the database.',
 			'History kept': 'The oldest record of each kind still stored. When the database nears its limit, the cleanup deletes the oldest first: logs below error, then error logs, then errors.',
 			'Logs': 'Log levels to store; others are dropped when they arrive. Unchanged, the project follows RECORD_LOG_LEVELS. Errors and messages of every level are stored.',
+		},
+		'Users': {
+			'Projects': 'Projects whose issues, logs and settings the user sees, here and through their coding agents. All projects includes the ones added later; the superadmin always has all. An admin changes only his own projects in this field; the user\'s other projects stay. Only someone with all projects gives all projects or changes a user who has them. A user without projects sees none.',
+			'Role': 'What the user may do. The superadmin gives admin or user; an admin gives user only.',
 		},
 	},
 	settings: {

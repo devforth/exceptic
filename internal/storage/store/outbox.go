@@ -17,12 +17,15 @@ var OutboxStatuses = []string{OutboxPending, OutboxSent, OutboxFailed}
 // OutboxMessage is one message waiting to be sent to one channel. The store
 // keeps the payload opaque; package notify encodes and decodes it.
 type OutboxMessage struct {
-	ID        int64
-	Channel   string // the connection id
-	Kind      string // "notification" or "summary"
-	Payload   []byte
-	Attempts  int
-	CreatedAt time.Time
+	ID      int64
+	Channel string // the connection id
+	Kind    string // "notification" or "summary"
+	// ProjectIDs are the projects the message is about (a summary's, of
+	// every notification it stands for); none in messages stored before.
+	ProjectIDs []int `json:",omitempty"`
+	Payload    []byte
+	Attempts   int
+	CreatedAt  time.Time
 }
 
 // OutboxRecord is an outbox message with what happened to it, as stored and
@@ -43,9 +46,13 @@ func (record OutboxRecord) Retrying() bool {
 // OutboxFilter selects outbox messages, newest first. Zero values mean "any".
 type OutboxFilter struct {
 	Channel string
-	Status  string
-	Limit   int
-	Offset  int
+	// Channels: only these (nil: any; empty: none).
+	Channels []string
+	// Access: only messages about projects all within it (Access.SeesEach).
+	Access Access
+	Status string
+	Limit  int
+	Offset int
 }
 
 // DeliveryHealth sums up the delivery of one connection: whether its last

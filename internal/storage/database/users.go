@@ -54,6 +54,10 @@ func (database *Store) CreateUser(_ context.Context, user store.User, passwordHa
 			return err
 		}
 
+		if user.Access.Limited {
+			user.Access = store.OnlyProjects(user.Access.ProjectIDs...)
+		}
+
 		return database.users.Insert(batch, userRecord{User: user, PasswordHash: passwordHash})
 	})
 
@@ -139,13 +143,53 @@ func (database *Store) changeUser(id string, change func(batch *kv.Batch, user *
 	})
 }
 
-// UpdateUser changes a user's name and role.
-func (database *Store) UpdateUser(_ context.Context, id string, name, role string) error {
+// UpdateUser changes a user's name and role, and their access when given,
+// merged with the stored one (store.Access.Replace).
+func (database *Store) UpdateUser(_ context.Context, id string, change store.UserChange) error {
 	return database.changeUser(id, func(_ *kv.Batch, user *userRecord) error {
-		user.Name, user.Role = name, role
+		if (user.Role != change.Role || user.DisplayName() != change.Name) && !user.CoveredBy(change.By) {
+			return store.ErrTakeOverLocked
+		}
 
-		return nil
+		user.Name, user.Role = change.Name, change.Role
+
+		if change.Access == nil {
+			return nil
+		}
+
+		access, err := user.Access.Replace(change.By, *change.Access)
+		user.Access = access
+
+		return err
 	})
+}
+
+// dropProjectFromUsers removes a deleted project from the users who have
+// it; one left without projects sees none.
+func (database *Store) dropProjectFromUsers(batch *kv.Batch, projectID int) error {
+	return database.users.Primary().Each(batch, func(entry kv.Entry[userRecord]) (bool, error) {
+		if !entry.Record.Access.Limited || !slices.Contains(entry.Record.Access.ProjectIDs, projectID) {
+			return true, nil
+		}
+
+		user := entry.Record
+		user.Access.ProjectIDs = slices.DeleteFunc(slices.Clone(user.Access.ProjectIDs), func(id int) bool { return id == projectID })
+
+		return true, database.users.Save(batch, user)
+	})
+}
+
+// addProjectToUser gives a limited user a project they created.
+func (database *Store) addProjectToUser(batch *kv.Batch, userID string, projectID int) error {
+	user, err := database.user(batch, userID)
+
+	if err != nil || user.ProjectAccess().All() {
+		return err
+	}
+
+	user.Access = store.OnlyProjects(append(slices.Clone(user.Access.ProjectIDs), projectID)...)
+
+	return database.users.Save(batch, user)
 }
 
 // UpdateUserName changes only the name, so a role changed meanwhile stays.

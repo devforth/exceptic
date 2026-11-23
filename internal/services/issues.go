@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/devforth/exceptic/internal/agentprompt"
@@ -24,58 +25,106 @@ func newIssues(logger *slog.Logger, database store.Store) *Issues {
 	return &Issues{logger: logger, store: database}
 }
 
+// Every method that reads project data takes the access of the viewer
+// (store.User.ProjectAccess; every project for the REST API's token) and
+// shows nothing outside it: a record asked for there is ErrHidden (Hidden),
+// a missing one store.ErrNotFound.
+
 // Count counts the issues that match filter (its Limit and Offset are ignored).
-func (issues *Issues) Count(ctx context.Context, filter store.IssueFilter) (int, error) {
+func (issues *Issues) Count(ctx context.Context, access store.Access, filter store.IssueFilter) (int, error) {
+	if !access.Restrict(&filter.ProjectIDs) {
+		return 0, nil
+	}
+
 	return issues.store.CountIssues(ctx, filter)
 }
 
 // Levels returns the levels at least one issue has, in no order.
-func (issues *Issues) Levels(ctx context.Context) ([]string, error) {
-	return issues.store.IssueLevels(ctx)
+func (issues *Issues) Levels(ctx context.Context, access store.Access) ([]string, error) {
+	var projectIDs []int
+
+	if !access.Restrict(&projectIDs) {
+		return nil, nil
+	}
+
+	return issues.store.IssueLevels(ctx, projectIDs)
 }
 
-// Unresolved counts the unresolved issues of every project: the counter
-// next to Issues in the menu.
-func (issues *Issues) Unresolved(ctx context.Context) (int, error) {
-	return issues.store.CountIssues(ctx, store.IssueFilter{Status: store.StatusUnresolved})
+// Unresolved counts the unresolved issues: the counter next to Issues in the menu.
+func (issues *Issues) Unresolved(ctx context.Context, access store.Access) (int, error) {
+	return issues.Count(ctx, access, store.IssueFilter{Status: store.StatusUnresolved})
 }
 
 // List returns one page of the issues that match filter.
-func (issues *Issues) List(ctx context.Context, filter store.IssueFilter) ([]store.Issue, error) {
+func (issues *Issues) List(ctx context.Context, access store.Access, filter store.IssueFilter) ([]store.Issue, error) {
+	if !access.Restrict(&filter.ProjectIDs) {
+		return []store.Issue{}, nil
+	}
+
 	return issues.store.ListIssues(ctx, filter)
 }
 
-// Get reads an issue; store.ErrNotFound when it does not exist.
-func (issues *Issues) Get(ctx context.Context, issueID string) (store.Issue, error) {
-	return issues.store.GetIssue(ctx, issueID)
+// Get reads an issue; store.ErrNotFound when it does not exist, ErrHidden
+// outside access.
+func (issues *Issues) Get(ctx context.Context, access store.Access, issueID string) (store.Issue, error) {
+	issue, err := issues.store.GetIssue(ctx, issueID)
+
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return store.Issue{}, Missing("issue", issueID)
+	case err == nil && !access.Sees(issue.ProjectID):
+		return store.Issue{}, Hidden("issue", issueID)
+	}
+
+	return issue, err
 }
 
-// GetMany reads the issues of ids that exist, in no order.
-func (issues *Issues) GetMany(ctx context.Context, issueIDs []string) ([]store.Issue, error) {
-	return issues.store.GetIssues(ctx, issueIDs)
+// GetMany reads the issues of ids that exist, in no order, and the ids of
+// those outside access.
+func (issues *Issues) GetMany(ctx context.Context, access store.Access, issueIDs []string) (visible []store.Issue, hiddenIDs []string, err error) {
+	found, err := issues.store.GetIssues(ctx, issueIDs)
+
+	for _, issue := range found {
+		if access.Sees(issue.ProjectID) {
+			visible = append(visible, issue)
+		} else {
+			hiddenIDs = append(hiddenIDs, issue.ID)
+		}
+	}
+
+	slices.Sort(hiddenIDs)
+
+	return visible, hiddenIDs, err
 }
 
 // Event reads an event of a project by the ID its SDK reported, in UUID or
-// hex form; store.ErrNotFound when it does not exist.
-func (issues *Issues) Event(ctx context.Context, projectID int, eventID string) (store.Event, error) {
+// hex form; store.ErrNotFound when it does not exist, ErrHidden for a project
+// outside access.
+func (issues *Issues) Event(ctx context.Context, access store.Access, projectID int, eventID string) (store.Event, error) {
+	if !access.Sees(projectID) {
+		return store.Event{}, Hidden("project", strconv.Itoa(projectID))
+	}
+
 	return issues.store.GetEvent(ctx, projectID, sentry.NormalizeEventID(eventID))
 }
 
 // Events lists the events that match filter (an issue's or a trace's), newest first.
-func (issues *Issues) Events(ctx context.Context, filter store.EventFilter) ([]store.EventSummary, error) {
-	return issues.store.ListEvents(ctx, filter)
+func (issues *Issues) Events(ctx context.Context, access store.Access, filter store.EventFilter) ([]store.EventSummary, error) {
+	events, err := issues.store.ListEvents(ctx, filter)
+
+	return slices.DeleteFunc(events, func(event store.EventSummary) bool { return !access.Sees(event.ProjectID) }), err
 }
 
 // SelectedEvent is the event the issue page shows: eventID (from ?event=, in
 // UUID or hex form) when given, otherwise the latest one. An event of another
 // issue is store.ErrNotFound, as a missing one: the page then shows no event
-// rather than another issue's.
+// rather than another issue's. The caller has read issue within access.
 func (issues *Issues) SelectedEvent(ctx context.Context, issue store.Issue, eventID string) (store.Event, error) {
 	if eventID == "" {
 		return issues.store.LatestEvent(ctx, issue.ID)
 	}
 
-	event, err := issues.Event(ctx, issue.ProjectID, eventID)
+	event, err := issues.store.GetEvent(ctx, issue.ProjectID, sentry.NormalizeEventID(eventID))
 
 	if err == nil && event.IssueID != issue.ID {
 		return store.Event{}, store.ErrNotFound
@@ -112,7 +161,8 @@ var ErrUnknownAction = errors.New("unknown action")
 // ApplyAction runs action on the issues for the viewer, who is recorded in
 // the status history; deleting needs CanAdminister. Statuses change in
 // batches, each all or nothing. An issue that no longer exists (deleted
-// from another tab) is skipped, the others are still processed.
+// from another tab) or is outside the viewer's access is skipped, the
+// others are still processed.
 func (issues *Issues) ApplyAction(ctx context.Context, viewer store.User, action string, issueIDs []string) error {
 	status, ok := issueActions[action]
 
@@ -121,16 +171,18 @@ func (issues *Issues) ApplyAction(ctx context.Context, viewer store.User, action
 	}
 
 	if action == ActionDelete && !viewer.CanAdminister() {
-		return ErrForbidden
+		return Forbidden("your role may not delete issues")
 	}
+
+	access := viewer.ProjectAccess()
 
 	for batch := range slices.Chunk(issueIDs, store.MaxIssueBatch) {
 		var err error
 
 		if action == ActionDelete {
-			err = issues.deleteBatch(ctx, batch)
+			err = issues.deleteBatch(ctx, access, batch)
 		} else {
-			err = issues.setStatus(ctx, batch, status, viewer.Actor(store.SourceUI))
+			err = issues.setStatus(ctx, access, batch, status, viewer.Actor(store.SourceUI))
 		}
 
 		if err != nil {
@@ -141,30 +193,40 @@ func (issues *Issues) ApplyAction(ctx context.Context, viewer store.User, action
 	return nil
 }
 
-func (issues *Issues) deleteBatch(ctx context.Context, issueIDs []string) error {
-	_, err := issues.store.DeleteIssues(ctx, issueIDs)
+func (issues *Issues) deleteBatch(ctx context.Context, access store.Access, issueIDs []string) error {
+	visible, _, err := issues.GetMany(ctx, access, issueIDs)
+
+	if err != nil || len(visible) == 0 {
+		return err
+	}
+
+	_, err = issues.store.DeleteIssues(ctx, issueIDsOf(visible))
 
 	return err
+}
+
+func issueIDsOf(list []store.Issue) []string {
+	ids := make([]string, len(list))
+
+	for index, issue := range list {
+		ids[index] = issue.ID
+	}
+
+	return ids
 }
 
 // setStatus changes the issues of a batch that still exist. The batch
 // update is all or nothing, so one deleted meanwhile means another try
 // without it.
-func (issues *Issues) setStatus(ctx context.Context, issueIDs []string, status string, actor store.Actor) error {
+func (issues *Issues) setStatus(ctx context.Context, access store.Access, issueIDs []string, status string, actor store.Actor) error {
 	for {
-		existing, err := issues.store.GetIssues(ctx, issueIDs)
+		existing, _, err := issues.GetMany(ctx, access, issueIDs)
 
 		if err != nil || len(existing) == 0 {
 			return err
 		}
 
-		ids := make([]string, len(existing))
-
-		for index, issue := range existing {
-			ids[index] = issue.ID
-		}
-
-		_, err = issues.store.SetIssuesStatus(ctx, ids, status, actor)
+		_, err = issues.store.SetIssuesStatus(ctx, issueIDsOf(existing), status, actor)
 
 		if !errors.Is(err, store.ErrNotFound) {
 			return err
@@ -173,14 +235,38 @@ func (issues *Issues) setStatus(ctx context.Context, issueIDs []string, status s
 }
 
 // SetStatus sets the status of every issue of ids, recorded with actor, and
-// returns them: all or nothing, one missing ID is store.ErrNotFound.
-func (issues *Issues) SetStatus(ctx context.Context, issueIDs []string, status string, actor store.Actor) ([]store.Issue, error) {
+// returns them: all or nothing. Issues outside access are ErrHidden, checked
+// before missing ones (store.ErrNotFound, naming them); projects never
+// change, so the check before the write holds.
+func (issues *Issues) SetStatus(ctx context.Context, access store.Access, issueIDs []string, status string, actor store.Actor) ([]store.Issue, error) {
+	visible, hiddenIDs, err := issues.GetMany(ctx, access, issueIDs)
+
+	switch {
+	case err != nil:
+		return nil, err
+	case len(hiddenIDs) > 0:
+		return nil, Hidden("issue", hiddenIDs...)
+	}
+
+	found := issueIDsOf(visible)
+	missing := slices.DeleteFunc(slices.Clone(issueIDs), func(id string) bool { return slices.Contains(found, id) })
+
+	if len(missing) > 0 {
+		slices.Sort(missing)
+
+		return nil, Missing("issue", slices.Compact(missing)...)
+	}
+
 	return issues.store.SetIssuesStatus(ctx, issueIDs, status, actor)
 }
 
 // Delete deletes an issue with its events; store.ErrNotFound when it does
 // not exist. It checks no role: the Admin flag of the tool does.
-func (issues *Issues) Delete(ctx context.Context, issueID string) error {
+func (issues *Issues) Delete(ctx context.Context, access store.Access, issueID string) error {
+	if _, err := issues.Get(ctx, access, issueID); err != nil {
+		return err
+	}
+
 	deleted, err := issues.store.DeleteIssues(ctx, []string{issueID})
 
 	if err == nil && deleted == 0 {
@@ -190,19 +276,22 @@ func (issues *Issues) Delete(ctx context.Context, issueID string) error {
 	return err
 }
 
-// History lists the status changes of an issue, newest first.
-func (issues *Issues) History(ctx context.Context, issueID string) ([]store.StatusChange, error) {
-	return issues.store.IssueStatusHistory(ctx, issueID)
+// History lists the status changes of an issue (read through an access),
+// newest first.
+func (issues *Issues) History(ctx context.Context, issue store.Issue) ([]store.StatusChange, error) {
+	return issues.store.IssueStatusHistory(ctx, issue.ID)
 }
 
 // TraceLogs reports whether the event's trace has logs: its trace ID links
 // to them only then.
-func (issues *Issues) TraceLogs(ctx context.Context, event store.Event) (bool, error) {
-	if event.TraceID == "" {
+func (issues *Issues) TraceLogs(ctx context.Context, access store.Access, event store.Event) (bool, error) {
+	filter := store.LogFilter{TraceID: event.TraceID, Limit: 1}
+
+	if event.TraceID == "" || !access.Restrict(&filter.ProjectIDs) {
 		return false, nil
 	}
 
-	logs, err := issues.store.ListLogs(ctx, store.LogFilter{TraceID: event.TraceID, Limit: 1})
+	logs, err := issues.store.ListLogs(ctx, filter)
 
 	return len(logs) > 0, err
 }
@@ -233,15 +322,17 @@ const maxRelatedLogs = 100
 // matches (SDKs that send no spans), it falls back to logs of the same trace
 // within relatedLogsWindow of the error, by the server's time or the device's
 // (parsed): logs sent without sent_at keep the device's.
-func (issues *Issues) RelatedLogs(ctx context.Context, event store.Event, parsed *sentry.Event) ([]store.LogRecord, bool, error) {
-	return issues.RelatedLogsLimit(ctx, event, parsed, maxRelatedLogs)
+func (issues *Issues) RelatedLogs(ctx context.Context, access store.Access, event store.Event, parsed *sentry.Event) ([]store.LogRecord, bool, error) {
+	return issues.RelatedLogsLimit(ctx, access, event, parsed, maxRelatedLogs)
 }
 
 // RelatedLogsLimit is RelatedLogs with at most limit logs, the newest.
-func (issues *Issues) RelatedLogsLimit(ctx context.Context, event store.Event, parsed *sentry.Event, limit int) (logs []store.LogRecord, fromRequest bool, err error) {
+func (issues *Issues) RelatedLogsLimit(ctx context.Context, access store.Access, event store.Event, parsed *sentry.Event, limit int) (logs []store.LogRecord, fromRequest bool, err error) {
 	limit = min(max(limit, 1), maxRelatedLogs)
 
-	if event.TraceID == "" {
+	var projectIDs []int
+
+	if event.TraceID == "" || !access.Restrict(&projectIDs) {
 		return nil, false, nil
 	}
 
@@ -254,7 +345,7 @@ func (issues *Issues) RelatedLogsLimit(ctx context.Context, event store.Event, p
 	}
 
 	if len(spans) > 0 {
-		logs, err = issues.store.ListLogs(ctx, store.LogFilter{TraceID: event.TraceID, SpanIDs: spans, Limit: limit})
+		logs, err = issues.store.ListLogs(ctx, store.LogFilter{ProjectIDs: projectIDs, TraceID: event.TraceID, SpanIDs: spans, Limit: limit})
 		fromRequest = len(logs) > 0
 	}
 
@@ -266,10 +357,11 @@ func (issues *Issues) RelatedLogsLimit(ctx context.Context, event store.Event, p
 		}
 
 		logs, err = issues.store.ListLogs(ctx, store.LogFilter{
-			TraceID: event.TraceID,
-			Since:   earliest.Add(-relatedLogsWindow),
-			Until:   latest.Add(relatedLogsWindow),
-			Limit:   limit,
+			ProjectIDs: projectIDs,
+			TraceID:    event.TraceID,
+			Since:      earliest.Add(-relatedLogsWindow),
+			Until:      latest.Add(relatedLogsWindow),
+			Limit:      limit,
 		})
 	}
 

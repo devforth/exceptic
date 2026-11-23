@@ -100,7 +100,7 @@ func TestToolsFollowTheRole(t *testing.T) {
 	}
 
 	// Made an admin: the next request offers the admin tools.
-	if err := server.database.UpdateUser(context.Background(), userID, "", store.RoleAdmin); err != nil {
+	if err := server.database.UpdateUser(context.Background(), userID, store.UserChange{Role: store.RoleAdmin}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -245,8 +245,8 @@ func TestManageUsers(t *testing.T) {
 		t.Fatalf("updated = %+v", updated)
 	}
 
-	// Nobody changes the superadmin or themselves here; it looks as if they did not exist.
-	if text, isError := server.try("update_user", map[string]any{"user_id": me.ID, "role": "user"}); !isError || text != "not found" {
+	// Nobody changes the superadmin or themselves here.
+	if text, isError := server.try("update_user", map[string]any{"user_id": me.ID, "role": "user"}); !isError || !strings.HasPrefix(text, "forbidden: change your own account") {
 		t.Fatalf("update self: %s", text)
 	}
 
@@ -362,7 +362,7 @@ func TestDeleteIssue(t *testing.T) {
 	id := issues.Items[0].ID
 	server.call("delete_issue", map[string]any{"issue_id": id})
 
-	if text, isError := server.try("get_issue", map[string]any{"issue_id": id}); !isError || text != "not found" {
+	if text, isError := server.try("get_issue", map[string]any{"issue_id": id}); !isError || text != "not found: issue "+id {
 		t.Fatalf("deleted issue: %s", text)
 	}
 }

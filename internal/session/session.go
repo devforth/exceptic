@@ -354,6 +354,9 @@ func (auth *Auth) Disabled(ctx context.Context) bool {
 // changing the password.
 var TooManyAttempts = "Too many wrong passwords. Try again in " + config.HumanDuration(LoginWindow) + "."
 
+// ErrTooManyAttempts: the login limit refused a password change.
+var ErrTooManyAttempts = errors.New(TooManyAttempts)
+
 // LoginResult is the outcome of a login attempt.
 type LoginResult int
 
@@ -441,20 +444,21 @@ func (auth *Auth) failed(client netip.Addr, attempt loginAttempt) {
 // current one, which counts against the same limit as logins (a stolen
 // session must not become a way to guess the password). The viewer's other
 // sessions end; their agents stay connected, since it is the owner who
-// changes it. This browser stays the known device.
+// changes it. This browser stays the known device. ErrTooManyAttempts when
+// the login limit refuses the check.
 func (auth *Auth) ChangePassword(w http.ResponseWriter, r *http.Request, viewer store.User, current, password, confirm string) (services.Problems, error) {
 	client := server.ClientIP(r, auth.trustedProxies)
 	now := auth.now()
 	attempt, allowed := auth.limiter.begin(client, viewer.Username, auth.knownDevice(r, viewer.Username, now), now)
 
 	if !allowed {
-		return services.Problems{"current_password": TooManyAttempts}, nil
+		return nil, ErrTooManyAttempts
 	}
 
 	done, err := auth.waitForCheck(r.Context(), attempt.knownDevice)
 
 	if errors.Is(err, errChecksBusy) {
-		return services.Problems{"current_password": TooManyAttempts}, nil
+		return nil, ErrTooManyAttempts
 	}
 
 	if err != nil {

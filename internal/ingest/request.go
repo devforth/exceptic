@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -270,6 +271,11 @@ func readError(err error) error {
 
 	if errors.As(err, &tooLarge) {
 		return reject(http.StatusRequestEntityTooLarge, "envelope is larger than %d bytes", MaxBodyBytes)
+	}
+
+	// The body did not arrive within BodyReadTimeout.
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		return reject(http.StatusRequestTimeout, "read body: %v", err)
 	}
 
 	return reject(http.StatusBadRequest, "read body: %v", err)

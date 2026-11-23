@@ -73,7 +73,7 @@ func (authorization *Server) internalError(w http.ResponseWriter, r *http.Reques
 	}
 
 	logger.Error("oauth request failed", "path", r.URL.Path, "err", err)
-	http.Error(w, "internal error", http.StatusInternalServerError)
+	server.WriteJSON(w, http.StatusInternalServerError, oauthError("server_error", "internal error"))
 }
 
 // Address is the server's address as agents reach it (PUBLIC_URL, or the
@@ -160,7 +160,7 @@ func (authorization *Server) Protect(next http.Handler) http.Handler {
 	return authorization.guard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		header := r.Header.Get("Authorization")
 		scheme, token, found := strings.Cut(header, " ")
-		challenge := `Bearer resource_metadata="` + authorization.URL(r, "/.well-known/oauth-protected-resource"+authorization.ResourcePath) + `"`
+		challenge := authorization.challenge(r)
 
 		if !found || !strings.EqualFold(scheme, "Bearer") || len(r.Header.Values("Authorization")) != 1 || strings.TrimSpace(token) == "" {
 			unauthorized(w, challenge, "sign in to connect: see the MCP page of the panel")
@@ -179,6 +179,16 @@ func (authorization *Server) Protect(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), grantKey{}, grant)))
 		}
 	}))
+}
+
+// challenge tells an agent where to find how to sign in.
+func (authorization *Server) challenge(r *http.Request) string {
+	return `Bearer resource_metadata="` + authorization.URL(r, "/.well-known/oauth-protected-resource"+authorization.ResourcePath) + `"`
+}
+
+// RefuseToken answers 401 as for an invalid token: a grant whose user is gone.
+func (authorization *Server) RefuseToken(w http.ResponseWriter, r *http.Request) {
+	unauthorized(w, authorization.challenge(r)+`, error="invalid_token"`, "the token is invalid, expired or disconnected")
 }
 
 func unauthorized(w http.ResponseWriter, challenge, message string) {

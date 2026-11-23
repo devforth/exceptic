@@ -22,7 +22,8 @@ func (authorization *Server) guard(next http.Handler) http.Handler {
 		w.Header().Add("Vary", "Origin")
 
 		if !authorization.sameOrigin(r) {
-			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+			server.WriteJSON(w, http.StatusForbidden, oauthError("access_denied", "cross-origin request rejected"))
+
 			return
 		}
 

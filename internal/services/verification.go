@@ -40,9 +40,9 @@ func newVerification(logger *slog.Logger, database store.Store, factory notify.F
 }
 
 // StartEmail takes an entered address: one already connected is refused
-// (Duplicate), a confirmed one is accepted at once, otherwise a code is
+// (Duplicate, not named outside access), a confirmed one is accepted at once, otherwise a code is
 // mailed. An error is a failure of the database.
-func (verification *Verification) StartEmail(ctx context.Context, entered string) (EmailStep, error) {
+func (verification *Verification) StartEmail(ctx context.Context, access store.Access, entered string) (EmailStep, error) {
 	parsed, err := mail.ParseAddress(strings.TrimSpace(entered))
 
 	if err != nil {
@@ -52,7 +52,7 @@ func (verification *Verification) StartEmail(ctx context.Context, entered string
 	address := strings.ToLower(parsed.Address)
 
 	// One connection per address: edit the existing one instead.
-	existing, err := verification.connections.findDuplicate(ctx, config.ChannelEmail, address, "")
+	existing, err := verification.connections.findDuplicate(ctx, access, config.ChannelEmail, address, "")
 
 	if err != nil || existing != nil {
 		return EmailStep{State: EmailInput, Address: address, Duplicate: existing}, err
@@ -174,7 +174,7 @@ func (verification *Verification) sendCode(ctx context.Context, destination stor
 	if err := email.SendVerificationCode(sendCtx, code, verificationCodeLifetime); err != nil {
 		verification.logger.Error("send verification code", "destination_id", destination.ID, "err", err)
 
-		step.Error = "The email could not be sent: " + err.Error()
+		step.Error, step.Unsent = "The email could not be sent: "+err.Error(), true
 	} else {
 		step.Notice = fmt.Sprintf("We sent a %d-digit code to %s. It is valid for %s.",
 			config.VerificationCodeDigits, destination.Address, config.HumanDuration(verificationCodeLifetime))
