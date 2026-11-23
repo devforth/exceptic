@@ -75,3 +75,29 @@ func TestIndentJSON(t *testing.T) {
 		}
 	}
 }
+
+func TestReplaceServiceTokens(t *testing.T) {
+	mark := func(path string) string { return path + "<token>" }
+	testCases := map[string]string{
+		"https://hooks.slack.com/services/T0001/B0002/abcDEF123_-x?a=1": "https://hooks.slack.com/services/<token>?a=1",
+		"https://api.telegram.org/bot123456:AA-bb_cc/sendMessage":       "https://api.telegram.org/bot<token>/sendMessage",
+		"url: /bot123456%3Aabc/getUpdates":                              "url: /bot<token>/getUpdates",
+		"token 123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-x4 set":       "token <token> set",
+		"https://discord.com/api/webhooks/123/abc-DEF_1":                "https://discord.com/api/webhooks/<token>",
+		"https://discordapp.com/api/v10/webhooks/123/abc?wait=true":     "https://discordapp.com/api/v10/webhooks/<token>?wait=true",
+	}
+
+	for input, want := range testCases {
+		if got := ReplaceServiceTokens(input, mark); got != want {
+			t.Errorf("ReplaceServiceTokens(%q) = %q, want %q", input, got, want)
+		}
+	}
+
+	for _, text := range []string{
+		"/services/T1/settings", "robot arm 12:30", "id 123456:short", "/api/webhooks/abc/def", "/api/v1/users/7", "bot:abc", "/services/t1/B1/x",
+	} {
+		if got := ReplaceServiceTokens(text, mark); got != text {
+			t.Errorf("ReplaceServiceTokens(%q) = %q, want it unchanged", text, got)
+		}
+	}
+}

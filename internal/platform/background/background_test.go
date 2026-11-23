@@ -152,6 +152,10 @@ func TestStuckJobDoesNotStopTheLane(t *testing.T) {
 	stop := Start(context.Background(), slog.New(slog.DiscardHandler), lane)
 
 	time.Sleep(250 * time.Millisecond)
+
+	// Counted while the pass is stuck: once released, the job may rightly run again before stop.
+	whileStuck := stuckPasses.Load()
+
 	close(release)
 	stop()
 
@@ -159,7 +163,7 @@ func TestStuckJobDoesNotStopTheLane(t *testing.T) {
 		t.Fatalf("the lane waited for the stuck job: %d passes of the other", passes)
 	}
 
-	if count := stuckPasses.Load(); count != 1 {
+	if count := whileStuck; count != 1 {
 		t.Fatalf("%d passes of the stuck job at once, want 1", count)
 	}
 }

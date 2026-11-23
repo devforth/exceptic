@@ -61,6 +61,11 @@ func samplePayloads(t testing.TB) [][]byte {
 		[]byte(`{"attributes":{"body":{"value":"[[\"authorization\",\"Basic dXNlcjpwYXNz\"]]","type":"string"},"session":{"value":"s","raw":"Bearer abcdefghijkl0123"},"pairs":[["cookie",{"value":1,"x":2}]]},"pretty":"{\n \"a\": 1\n}","two":"{\"a\":1} {\"token\":2}","bad":"{\"token\":1,}","escaped":"{\"\\u0074oken\":\"t\"}"}`),
 		[]byte(`{"message":"login failed {'username': 'root', 'password': 'pw1', 'token': 'abc'}","breadcrumbs":[{"message":"don't retry {'session': 'p\\'w', 'cvv': 123}"}],"logentry":{"message":"{'note': 'say \"hi', 'api_key': \"it's\"} cut {'secret': 'x"}}`),
 		[]byte(`{"items":[{"body":"{'password': 'pw1'} it's 'auth': gone","attributes":{"text":{"value":"\"x\" {'token': 'abc'","type":"string"}}}]}`),
+		[]byte(`{"request":{"cookies":{"theme":{"b":1,"token":"t"},"sid":"s","cookie":"a=1","tz":null,"x":{"value":1}},"headers":{"Cookie":" a=1;theme=dark; b ;;","Set-Cookie":"sid=1"}},"extra":{"cookies":[["theme","dark"],["sid","s"],"lang=en; sid=2",3,null,["a"]],"cookie":{"value":"sid=1","type":"string"},"Cookies":7}}`),
+		[]byte(`{"extra":{"missing":["password","email"],"pairs":[["password","p"],[["token","t"]]],"top":["token",["token","t"]]},"breadcrumbs":[["token","t"],{"data":["secret","s"]}],"exception":[["auth","a"]],"stacktrace":{"frames":[{"in_app":true},["password","p"],{"filename":"x.js","vars":[["secret","s"]]}]}}`),
+		[]byte(`{"extra":{"n":4242424242424242,"m":-4242424242424242,"f":4242424242424242.5,"pan":"4242 4242 4242 4242","pem":"-----BEGIN PRIVATE KEY-----\nMII\n-----END PRIVATE KEY-----","cmd":"curl -u root:pw1 -H 'X-Api-Key: k1'","auth":"Digest a=\"b\""},"pairs":[["x",4242424242424242]],"tags":[["password",4242424242424242]],"request":{"cookies":{"theme":4242424242424242}}}`),
+		[]byte(`{"extra":{"card":{"number":"n","cvv":1,"x":{"value":1}},"billing_card":{"num":{"value":"v","type":"string"},"pan":null},"card":[{"number":1}]},"stacktrace":{"frames":[{"in_app":true,"context_line":"token = sign(key)","pre_context":["password: 'p'",{"token":"t","context_line":"pin: f(x)"}],"post_context":"x"}]},"request":{"cookies":{"theme":{"cookies":{"theme":"dark","sid":"s"}},"lang":["en"],"tz":"x"}}}`),
+		[]byte(`[["token","t"],["page","2"]]`), []byte(`["token","t"]`),
 		[]byte("not json"), []byte("null"), []byte(""), []byte(`["Bearer syntheticcredential"]`), []byte(`"just a string ?token=1"`), []byte("12.50"),
 		[]byte(`{"a":`), []byte(`{"a":1,}`), []byte(`[1,2`),
 	}
@@ -104,7 +109,7 @@ func normalized(payload []byte) string {
 // decode everything, remove credentials, then drop what does not help a fix.
 func referencePrepare(payload []byte) []byte {
 	return referencePass(payload, func(document any) any {
-		document = referenceValue(document)
+		document = referenceValue(document, false)
 
 		if event, ok := document.(map[string]any); ok && event != nil {
 			referenceEventFields(event)
@@ -116,7 +121,7 @@ func referencePrepare(payload []byte) []byte {
 
 // referenceScrub is the tree pass scrubJSON replaced.
 func referenceScrub(payload []byte) []byte {
-	return referencePass(payload, referenceValue)
+	return referencePass(payload, func(document any) any { return referenceValue(document, false) })
 }
 
 func referencePass(payload []byte, change func(any) any) []byte {
@@ -141,20 +146,31 @@ func referencePass(payload []byte, change func(any) any) []byte {
 	return bytes.TrimRight(output.Bytes(), "\n")
 }
 
-func referenceValue(node any) any {
+func referenceValue(node any, inList bool) any {
+	return referenceText(node, scrubText, inList)
+}
+
+// referenceText is referenceValue with its strings through text, plus the
+// rules that depend on a member's name: source lines and a card's number.
+func referenceText(node any, text func(string) string, inList bool) any {
 	switch typed := node.(type) {
 	case map[string]any:
 		for key, child := range typed {
-			if isSensitiveKey(key) {
+			switch {
+			case isCookieKey(key):
+				typed[key] = filteredCookies(child, text)
+			case isSensitiveKey(key):
 				typed[key] = referenceFiltered(child)
-			} else {
-				typed[key] = referenceValue(child)
+			case sourceFields[key]:
+				typed[key] = referenceText(child, scrubSourceText, false)
+			default:
+				typed[key] = referenceText(filteredCardNumber(key, child), text, false)
 			}
 		}
 
 		return typed
 	case []any:
-		if len(typed) == 2 {
+		if inList && len(typed) == 2 {
 			if name, ok := typed[0].(string); ok && isSensitiveKey(name) {
 				typed[1] = referenceFiltered(typed[1])
 
@@ -163,12 +179,18 @@ func referenceValue(node any) any {
 		}
 
 		for index, child := range typed {
-			typed[index] = referenceValue(child)
+			typed[index] = referenceText(child, text, true)
 		}
 
 		return typed
 	case string:
-		return scrubText(typed)
+		return text(typed)
+	case json.Number:
+		if isCardNumber(typed) {
+			return filteredText
+		}
+
+		return node
 	default:
 		return node
 	}
@@ -355,6 +377,12 @@ func TestQuotesInTextStayLinear(t *testing.T) {
 		"apostrophes":       strings.Repeat(`it's `, size/5),
 		"open string":       `"` + strings.Repeat(`\"'`, size/3),
 		"apostrophe values": strings.Repeat(`'a': '\'`, size/8),
+		"collections":       strings.Repeat(`"token": [1, {"a": "]"}], `, size/26),
+		"open collections":  strings.Repeat(`"token": [`, size/10),
+		"backslashes":       `"token": [` + strings.Repeat(`\`, size),
+		"escaped quotes":    `"token": [` + strings.Repeat(`\\\"a`, size/5),
+		"service paths":     strings.Repeat("/services/T1/B1/a bot1:a webhooks/1/a ", size/38),
+		"digits and colons": strings.Repeat("1:", size/2),
 	} {
 		started := time.Now()
 
@@ -362,6 +390,61 @@ func TestQuotesInTextStayLinear(t *testing.T) {
 
 		if took := time.Since(started); took > 10*linear+50*time.Millisecond {
 			t.Errorf("%s: %s, %d bytes of pairs %s", name, took, len(baseline), linear)
+		}
+	}
+}
+
+// Multipart form data is read line by line once.
+func TestMultipartStaysLinear(t *testing.T) {
+	const size = 1 << 20
+
+	baseline := strings.Repeat(`"a": 1, `, size/8)
+
+	started := time.Now()
+
+	scrubQuotedPairs(baseline)
+
+	linear := time.Since(started)
+
+	for name, text := range map[string]string{
+		"parts":        strings.Repeat("--X\nContent-Disposition: form-data; name=\"password\"\n\na\n", size/52),
+		"names":        strings.Repeat("Content-Disposition: form-data; name=password; name=a\n", size/54),
+		"open value":   "Content-Disposition: form-data; name=password\n\n" + strings.Repeat("a\n", size/2),
+		"long headers": "Content-Disposition: form-data; name=password\n" + strings.Repeat("form-data; name=a\n", size/18),
+	} {
+		started := time.Now()
+
+		scrubMultipart(text)
+
+		if took := time.Since(started); took > 10*linear+50*time.Millisecond {
+			t.Errorf("%s: %s, %d bytes of pairs %s", name, took, len(baseline), linear)
+		}
+	}
+}
+
+// Cookie headers and keys are read in time proportional to their size.
+func TestCookiesAndKeysStayLinear(t *testing.T) {
+	const size = 1 << 20
+
+	started := time.Now()
+
+	scrubFreeText(strings.Repeat(`"a": 1, `, size/8))
+
+	linear := time.Since(started)
+
+	for name, run := range map[string]func(){
+		"cookies":      func() { filteredCookieText(strings.Repeat("a=1; ", size/5)) },
+		"empty values": func() { filteredCookieText(strings.Repeat("a ;", size/3)) },
+		"key":          func() { isSensitiveKey(strings.Repeat("aB1_", size/4)) },
+		"secret words": func() { isSensitiveKey(strings.Repeat("token_", size/6)) },
+		"unicode key":  func() { isSensitiveKey(strings.Repeat("\u017fecret_", size/8)) },
+	} {
+		started := time.Now()
+
+		run()
+
+		if took := time.Since(started); took > 10*linear+50*time.Millisecond {
+			t.Errorf("%s: %s, %d bytes of pairs %s", name, took, size, linear)
 		}
 	}
 }
@@ -375,6 +458,7 @@ func TestDeepNestingStaysLinear(t *testing.T) {
 		"objects": strings.Repeat(`{"session":{"a":`, 4500) + "1" + strings.Repeat(`}}`, 4500),
 		"lists":   `{"breadcrumbs":[` + strings.Repeat(`[`, 9000) + strings.Repeat(`]`, 9000) + `]}`,
 		"text":    `{"message":"` + strings.Repeat(`{\"session\":{\"a\":`, 4500) + "1" + strings.Repeat(`}}`, 4500) + `"}`,
+		"cookies": `{"extra":` + strings.Repeat(`{"cookies":{"theme":`, 4500) + `"x"` + strings.Repeat(`}}`, 4500) + `}`,
 	} {
 		// Against the tree pass on the same input, so a slow machine slows both.
 		started := time.Now()
@@ -388,6 +472,98 @@ func TestDeepNestingStaysLinear(t *testing.T) {
 
 		if tokens := time.Since(started); tokens > 10*tree+50*time.Millisecond {
 			t.Errorf("%s: %s, the tree pass %s, for %d bytes", name, tokens, tree, len(payload))
+		}
+	}
+}
+
+// Pairs in free text cost time in proportion to the size: each separator
+// looks back a bounded distance, and the scan goes on after each value.
+func TestKeyValuesInTextStayLinear(t *testing.T) {
+	const size = 1 << 20
+
+	baseline := strings.Repeat(`"a": 1, `, size/8)
+
+	started := time.Now()
+
+	scrubFreeText(baseline)
+
+	linear := time.Since(started)
+
+	for name, text := range map[string]string{
+		"plain pairs":     strings.Repeat("a=a ", size/4),
+		"empty secrets":   strings.Repeat("password= ", size/10),
+		"chained secrets": strings.Repeat("password=", size/9),
+		"colons":          strings.Repeat("token:", size/6),
+		"field colons":    strings.Repeat(", token: ", size/9),
+		"long key":        strings.Repeat("a", size) + "=1",
+		"spaces":          strings.Repeat(" ", size) + "=1",
+		"quoted keys":     strings.Repeat(`'a'=`, size/4),
+		"brackets":        strings.Repeat(`[]=`, size/3),
+		"open brackets":   strings.Repeat(`a]=`, size/3),
+		"escaped values":  strings.Repeat(`password=\"`, size/11),
+		"escaped pairs":   strings.Repeat(`\\\"password\\\":\\\"a\\\", `, size/32),
+		"open escapes":    strings.Repeat(`\"password\":\\\"`, size/18),
+		"escaped keys":    strings.Repeat(`\\\\\\\"`, size/8) + ":1",
+		"collections":     strings.Repeat(`"token"=>[`, size/10),
+		"open quotes":     `password='` + strings.Repeat(`\'`, size/2),
+		"header lines":    strings.Repeat("Authorization: Token t\n", size/23),
+		// A header line in quotes ends at its quote, and a refused value
+		// must not send every pair after it to the end of the text.
+		"quoted headers":  strings.Repeat(`'Authorization: ab' `, size/20),
+		"double quoted":   strings.Repeat(`"Authorization: ab" `, size/20),
+		"filtered bearer": strings.Repeat(`'Authorization: Bearer abcdefghijklmnopq' `, size/42),
+		"quoted cookies":  strings.Repeat(`'Cookie: a' `, size/12),
+		"cookie words":    strings.Repeat(`, cookies: a `, size/13),
+		"prose after":     strings.Repeat(`, token: a1 b `, size/14),
+		"spaced pairs":    strings.Repeat(`password = a1 b `, size/16),
+		"markers":         strings.Repeat(`password=[Filtered]`, size/19),
+	} {
+		started := time.Now()
+
+		scrubKeyValues(text, false) // scrubFreeText adds the regexp of links, whose cost is not this scan's
+
+		if took := time.Since(started); took > 10*linear+50*time.Millisecond {
+			t.Errorf("%s: %s, %d bytes of pairs %s", name, took, len(baseline), linear)
+		}
+	}
+}
+
+// The scans for schemes, command lines, card numbers, private keys, path
+// parameters and URL passwords cost time in proportion to the size; against
+// the regexp of schemes on words, the slowest linear scan.
+func TestCredentialScansStayLinear(t *testing.T) {
+	const size = 1 << 17
+
+	baseline := strings.Repeat("Bearer a ", size/9)
+
+	started := time.Now()
+
+	scrubFreeText(baseline)
+
+	linear := time.Since(started)
+
+	for name, text := range map[string]string{
+		"schemes":         strings.Repeat("Bearer ", size/7),
+		"pairs":           strings.Repeat(`"a": 1, `, size/8),
+		"quoted tokens":   strings.Repeat(`Token "a `, size/9),
+		"digest":          "Digest " + strings.Repeat(`a="b", `, size/8),
+		"basic users":     strings.Repeat("Basic a:", size/8),
+		"command lines":   strings.Repeat("-u a:b ", size/7),
+		"card groups":     strings.Repeat("4242 ", size/5),
+		"digits":          strings.Repeat("4", size),
+		"certificates":    strings.Repeat("-----BEGIN CERTIFICATE-----", size/27),
+		"open labels":     strings.Repeat("-----BEGIN ", size/11),
+		"private keys":    strings.Repeat("-----BEGIN PRIVATE KEY-----a-----END PRIVATE KEY-----", size/53),
+		"path parameters": "/a" + strings.Repeat(";b=c", size/4),
+		"userinfo":        "a://u:" + strings.Repeat("@a/", size/3),
+		"schemes in URLs": strings.Repeat("a://u:p@", size/8),
+	} {
+		started := time.Now()
+
+		scrubFreeText(text)
+
+		if took := time.Since(started); took > 10*linear+50*time.Millisecond {
+			t.Errorf("%s: %s, %d bytes of words after Bearer %s", name, took, len(baseline), linear)
 		}
 	}
 }

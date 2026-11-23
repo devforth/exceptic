@@ -581,14 +581,10 @@ func standsAlone(text string, start, end int) bool {
 	return (start == 0 || !isWordByte(text[start-1])) && (end == len(text) || !isWordByte(text[end]))
 }
 
-// Secrets that apps put into URL paths: a Telegram bot token (in a path or
-// bare), a Slack webhook, and any long run of letters mixed with digits.
+// Any long run of letters mixed with digits in a URL path may be a secret.
 var (
-	telegramPathPattern  = regexp.MustCompile(`bot\d+(?::|%3[Aa])[A-Za-z0-9_-]+`)
-	telegramTokenPattern = regexp.MustCompile(`\d{6,}(?::|%3[Aa])[A-Za-z0-9_-]{30,}`)
-	slackPathPattern     = regexp.MustCompile(`/services/T[A-Z0-9]+/B[A-Z0-9]+/[A-Za-z0-9]+`)
-	tokenRunPattern      = regexp.MustCompile(`[A-Za-z0-9_-]*[A-Za-z0-9]{16,}[A-Za-z0-9_-]*`)
-	alphanumericPattern  = regexp.MustCompile(`[A-Za-z0-9]{16,}`)
+	tokenRunPattern     = regexp.MustCompile(`[A-Za-z0-9_-]*[A-Za-z0-9]{16,}[A-Za-z0-9_-]*`)
+	alphanumericPattern = regexp.MustCompile(`[A-Za-z0-9]{16,}`)
 )
 
 // redactURLPath keeps a URL path for debugging but hides secrets, emails,
@@ -608,13 +604,12 @@ func redactURLPath(path string) string {
 	return redactPath(path)
 }
 
-// redactServiceTokens hides Telegram and Slack tokens anywhere in text: HTTP
-// clients print request paths without a scheme ("with url: /bot…/getUpdates").
+// redactServiceTokens hides the tokens of chat services anywhere in text
+// (textutil.ReplaceServiceTokens).
 func redactServiceTokens(text string) string {
-	text = telegramPathPattern.ReplaceAllString(text, "bot<token>")
-	text = telegramTokenPattern.ReplaceAllString(text, "<token>")
-
-	return slackPathPattern.ReplaceAllString(text, "/services/<token>")
+	return textutil.ReplaceServiceTokens(text, func(path string) string {
+		return path + "<token>"
+	})
 }
 
 // redactPath hides emails, IPs and home directories in a path.

@@ -89,7 +89,7 @@ func newest(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 	}
 
 	return writeList(encoder, items[max(0, len(items)-maxBreadcrumbs):], func(_ int, decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
-		return scrubValue(decoder, encoder)
+		return scrubElement(decoder, encoder)
 	})
 }
 
@@ -99,7 +99,7 @@ func withStacktraces(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error
 	items := func(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 		return scrubValues(decoder, encoder, func(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 			if decoder.PeekKind() != '{' {
-				return scrubValue(decoder, encoder)
+				return scrubElement(decoder, encoder)
 			}
 
 			return scrubObject(decoder, encoder, func(name string, decoder *jsontext.Decoder, encoder *jsontext.Encoder) (bool, error) {
@@ -157,7 +157,7 @@ func stacktrace(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 		return true, member(name, decoder, encoder, func(_ *jsontext.Decoder, encoder *jsontext.Encoder) error {
 			return writeList(encoder, frames, func(index int, decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 				if !hasAppFrames || app[index] || decoder.PeekKind() != '{' {
-					return scrubValue(decoder, encoder)
+					return scrubElement(decoder, encoder)
 				}
 
 				return scrubObject(decoder, encoder, func(name string, decoder *jsontext.Decoder, _ *jsontext.Encoder) (bool, error) {
