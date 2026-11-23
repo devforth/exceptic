@@ -87,10 +87,11 @@ of saving the connection; the rest of the connection form opens once it is verif
 			{/if}
 		</p>
 		{#if progress.step === 'code'}
-			<form class="max-w-xs" onsubmit={confirm}>
+			<form onsubmit={confirm}>
 				<TextField
 					label="Confirmation code"
 					name="code"
+					variant="code"
 					bind:value={code}
 					required
 					maxlength={limits.verificationCode}

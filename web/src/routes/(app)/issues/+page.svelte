@@ -39,7 +39,7 @@
 	const canAdminister = $derived(page.data.session?.can_administer ?? false);
 
 	const columns: IssueColumn[] = $derived([
-		{ key: 'issue', label: 'Issue' },
+		{ key: 'issue', label: 'Issue', fill: true },
 		{ key: 'project', label: 'Project', sort: columnSorts.project },
 		{ key: 'events', label: 'Events', number: true, wideOnly: true, sort: columnSorts.events },
 		{ key: 'firstSeen', label: 'First seen', wideOnly: true, sort: columnSorts.firstSeen },
@@ -136,11 +136,13 @@
 >
 	{#snippet cell(issue: Issue, column: IssueColumn)}
 		{#if column.key === 'issue'}
-			<LevelBadge level={issue.level} href={changed(url, { level: [issue.level] })} />
-			<Button variant="title" href={issueHref(issue)}>{issue.title}</Button>
-			<span class="sr-only">({issue.status})</span>
+			<div class="flex min-w-0 items-center gap-2">
+				<LevelBadge level={issue.level} href={changed(url, { level: [issue.level] })} />
+				<Button variant="title" href={issueHref(issue)} title={issue.title}>{issue.title}</Button>
+				<span class="sr-only">({issue.status})</span>
+			</div>
 			{#if issue.location}
-				<div class="text-xs text-muted">{issue.location}</div>
+				<div class="truncate text-xs text-muted" title={issue.location}>{issue.location}</div>
 			{/if}
 		{:else if column.key === 'project'}
 			<Badge
@@ -163,7 +165,7 @@
 			<span class="flex items-center gap-2">
 				<AgentCopyButton request={issue.mcp_reference ?? ''} />
 				<Button
-					variant="info"
+					variant="accent"
 					icon="view"
 					href={issueHref(issue)}
 					title="Open the issue {issue.title}"

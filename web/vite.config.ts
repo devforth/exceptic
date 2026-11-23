@@ -5,8 +5,9 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vitest/config';
 
 // `pnpm dev` (run by make dev, tools/dev.sh) serves the app and sends the Go server's own
-// addresses (its API, ingest, MCP, OAuth, health) to it. changeOrigin stays off: the Origin check of /api/ui compares with the Host
-// the browser used.
+// addresses (its API, ingest, MCP, OAuth, health) to it with the Host the browser used: the Origin
+// check of /api/ui compares with it, and DSNs and OAuth are built from it. changeOrigin alone does
+// not keep it (Vite 8's proxy sends the target's host), so the header is set again.
 const goServer = process.env.EXCEPTIC_URL ?? 'http://localhost:8000';
 const goAddresses =
 	'^/(api/|mcp(/|\\?|$)|health(\\?|$)|oauth/(token|register|jwks)(\\?|$)|\\.well-known/)';
@@ -27,7 +28,16 @@ export default defineConfig({
 		svelteTesting()
 	],
 	server: {
-		proxy: { [goAddresses]: goServer }
+		proxy: {
+			[goAddresses]: {
+				target: goServer,
+				changeOrigin: false,
+				configure: (proxy) =>
+					proxy.on('proxyReq', (request, incoming) => {
+						if (incoming.headers.host) request.setHeader('host', incoming.headers.host);
+					})
+			}
+		}
 	},
 	// Tests of the client code and of the components in a simulated browser (pnpm test, part
 	// of make web-check).

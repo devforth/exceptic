@@ -7,4 +7,4 @@
 </script>
 
 {@render children()}
-<Toast />
+<Toast position="bottom-right" />

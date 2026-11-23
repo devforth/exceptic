@@ -28,6 +28,8 @@ only its icon, and title names it (tooltip and aria-label).
 		popup?: 'menu' | 'dialog';
 		/** Its action runs: it ignores clicks but keeps the focus (disabled would drop it). */
 		busy?: boolean;
+		/** large: the one main action of a page (Add project). */
+		size?: 'default' | 'large';
 		children?: Snippet;
 	};
 
@@ -44,6 +46,7 @@ only its icon, and title names it (tooltip and aria-label).
 		expanded,
 		popup,
 		busy = false,
+		size = 'default',
 		children
 	}: Props = $props();
 
@@ -66,12 +69,15 @@ only its icon, and title names it (tooltip and aria-label).
 		primary: `${boxed} [--tone:var(--color-accent)] border-accent bg-accent text-accent-text not-disabled:hover:bg-accent-hover`,
 		danger: `${boxed} [--tone:var(--color-error)] border-border bg-surface text-error not-disabled:hover:bg-error-bg`,
 		info: `${boxed} [--tone:var(--color-info)] border-info bg-info-bg text-info not-disabled:hover:bg-info-hover`,
+		// Opens a record beside the blue copy button (the issue list's Open): indigo, filled on hover.
+		accent: `${boxed} [--tone:var(--color-accent)] border-accent bg-accent-bg text-accent not-disabled:hover:bg-accent not-disabled:hover:text-accent-text`,
 		link: 'focus-ring rounded-control text-accent hover:underline focus-visible:underline',
 		// A secondary link, grey (a log's trace).
 		muted: 'focus-ring rounded-control text-muted hover:underline focus-visible:underline',
-		// The name of a table row that opens the record: the text's color, bold.
+		// The name of a table row that opens the record: the text's color, bold, on one line cut
+		// with "…" when its cell is narrower (a fill column).
 		title:
-			'focus-ring rounded-control text-left font-semibold whitespace-normal text-text hover:underline focus-visible:underline',
+			'focus-ring max-w-full min-w-0 justify-start rounded-control text-left font-semibold text-text hover:underline focus-visible:underline',
 		// Quiet: no box until hovered (the menu's toggle).
 		ghost:
 			'focus-ring rounded-control text-muted not-disabled:hover:bg-bg not-disabled:hover:text-text'
@@ -87,13 +93,21 @@ only its icon, and title names it (tooltip and aria-label).
 		variant !== 'link' &&
 			variant !== 'muted' &&
 			variant !== 'title' &&
-			(iconOnly ? 'size-8.5 p-0' : variant === 'info' ? 'h-9 px-3' : 'px-3 py-1.5')
+			(iconOnly
+				? 'size-8.5 p-0'
+				: variant === 'info' || variant === 'accent'
+					? 'h-9 px-3'
+					: size === 'large'
+						? 'px-4.5 py-2.5 text-md font-semibold'
+						: 'px-3 py-1.5')
 	]);
 </script>
 
 {#snippet content()}
 	{#if icon}<Icon name={icon} />{/if}
-	{#if children}<span>{@render children()}</span>{/if}
+	{#if children}<span class={variant === 'title' ? 'truncate' : undefined}>
+			{@render children()}
+		</span>{/if}
 {/snippet}
 
 {#if href && !disabled}

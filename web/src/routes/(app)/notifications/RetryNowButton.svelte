@@ -21,7 +21,7 @@ for when the cause was fixed outside this server.
 			toast.show('The waiting messages are being sent again now.');
 			await invalidateAll();
 		} catch (failure) {
-			toast.show(failure instanceof ApiError ? failure.message : 'Something went wrong.');
+			toast.show(failure instanceof ApiError ? failure.message : 'Something went wrong.', 'error');
 		} finally {
 			busy = false;
 		}

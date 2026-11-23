@@ -118,7 +118,7 @@
 			{#if connection.all_projects}
 				All projects
 			{:else}
-				<span class="inline-flex flex-wrap gap-1">
+				<span class="flex flex-col items-start gap-1">
 					{#each connection.projects ?? [] as project (project)}
 						<Badge tone="project" label={project} />
 					{/each}

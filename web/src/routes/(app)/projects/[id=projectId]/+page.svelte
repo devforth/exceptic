@@ -1,13 +1,9 @@
 <script lang="ts">
 	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { page } from '$app/state';
 	import { post } from '#lib/api/client.ts';
 	import Breadcrumbs from '#lib/components/Breadcrumbs.svelte';
-	import Button from '#lib/components/Button.svelte';
 	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
-	import Notice from '#lib/components/Notice.svelte';
-	import PageHeading from '#lib/components/PageHeading.svelte';
 	import {
 		deleteConfirmation,
 		deleteProject,
@@ -25,14 +21,14 @@
 	const fromEnv = $derived(project.from_env ?? false);
 
 	const initial = $derived({
-		name: project.name,
 		color: project.shown_color,
-		logLevels: project.log_levels ?? []
+		logLevels: project.log_levels ?? [],
+		diskShare: project.disk_share
 	});
 
-	// The badges take a new color from the session, which the reload brings.
-	async function save(values: ProjectFormValues) {
-		await post('update_project', { project: String(id), ...projectInput(values) });
+	// The badges take a new name or color from the session, which the reload brings.
+	async function save(values: ProjectFormValues, name: string) {
+		await post('update_project', { project: String(id), name, ...projectInput(values) });
 		toast.show('Saved.');
 		void invalidateAll();
 	}
@@ -49,27 +45,21 @@
 		{ label: project.name, href: resolve('/(app)/projects/[id=projectId]', { id }) }
 	]}
 />
-<PageHeading title={project.name}>
-	{#snippet actions()}
-		<Button icon="code" href={resolve('/(app)/projects/[id=projectId]/setup', { id })}>
-			Show installation code
-		</Button>
-		{#if !fromEnv}
-			<ConfirmButton icon="delete" confirm={deleteConfirmation(project.name)} action={remove}>
-				Delete project
-			</ConfirmButton>
-		{/if}
-	{/snippet}
-</PageHeading>
-
-{#if page.state.projectAdded}
-	<div class="mb-4">
-		<Notice tone="success">
-			Project added. Put its DSN into the Sentry SDK config of the service.
-		</Notice>
-	</div>
-{/if}
-
 {#key project.id}
-	<ProjectForm {initial} {fromEnv} dsn={project.dsn} submitLabel="Save" {save} />
+	<ProjectForm {id} name={project.name} {initial} storage={data.storage} {save}>
+		{#snippet actions()}
+			{#if !fromEnv}
+				<ConfirmButton icon="delete" confirm={deleteConfirmation(project.name)} action={remove}>
+					Delete project
+				</ConfirmButton>
+			{/if}
+		{/snippet}
+		{#snippet intro()}
+			{#if fromEnv}
+				<p class="-mt-2 text-label text-muted">
+					From PROJECTS: its DSN key comes from there, and it cannot be deleted here.
+				</p>
+			{/if}
+		{/snippet}
+	</ProjectForm>
 {/key}

@@ -112,7 +112,10 @@ there is no room below), so a table's scroll box does not cut it.
 				await item.action();
 			} catch (failure) {
 				// Without a confirmation there is no dialog to show it in.
-				toast.show(failure instanceof ApiError ? failure.message : 'Something went wrong.');
+				toast.show(
+					failure instanceof ApiError ? failure.message : 'Something went wrong.',
+					'error'
+				);
 			}
 		}
 	}
@@ -193,8 +196,8 @@ there is no room below), so a table's scroll box does not cut it.
 				<hr class="my-1 border-border" />
 			{/if}
 			{@const tone = item.danger
-				? 'text-error hover:bg-error-bg focus:bg-error-bg'
-				: 'text-text hover:bg-selected focus:bg-selected'}
+				? 'text-error hover:bg-error-bg focus-visible:bg-error-bg'
+				: 'text-text hover:bg-selected focus-visible:bg-selected'}
 			{#if item.disabled}
 				{@render disabledItem(item, index)}
 			{:else if item.href}

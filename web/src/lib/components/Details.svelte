@@ -5,24 +5,29 @@ A part that opens and closes, its heading the toggle.
   sections of the issue page.
 - `form`: a card in a form with its title, Hint, and what is set inside on the line under it
   (summary); it opens when a value inside is refused (invalid).
+- `disclosure`: a card of optional settings: its title, a line under it on what is inside
+  (summary), and a body split from it by a line (Advanced settings); FormGroup parts the body.
 - `inline`: a small disclosure inside other content (a stack trace, a context, local variables).
+`open` starts it open.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import Hint from './Hint.svelte';
 	import Icon from './Icon.svelte';
+	import { cardClasses } from './surface.ts';
 
 	type Props = {
 		title: string;
-		variant?: 'section' | 'form' | 'inline';
+		variant?: 'section' | 'form' | 'disclosure' | 'inline';
 		/** section: the number of rows inside, beside the title. */
 		count?: number;
 		/** form: the help text of the title. */
 		hint?: string;
-		/** section: a detail after the title; form: the values set inside. */
+		/** section: a detail after the title; form: the values set inside; disclosure: what is inside. */
 		summary?: Snippet;
 		/** form: a value inside was refused, so it opens. */
 		invalid?: boolean;
+		open?: boolean;
 		children: Snippet;
 	};
 
@@ -33,10 +38,13 @@ A part that opens and closes, its heading the toggle.
 		hint,
 		summary,
 		invalid = false,
+		open: startOpen = false,
 		children
 	}: Props = $props();
 
-	let open = $state(false);
+	// It starts as asked, then the user opens and closes it.
+	// svelte-ignore state_referenced_locally
+	let open = $state(startOpen);
 
 	$effect(() => {
 		if (invalid) open = true;
@@ -45,10 +53,7 @@ A part that opens and closes, its heading the toggle.
 	const card = $derived(variant !== 'inline');
 </script>
 
-<details
-	bind:open
-	class={card ? 'rounded-card bg-surface shadow-card forced-colors:border' : 'my-1 text-sm'}
->
+<details bind:open class={card ? cardClasses : 'my-1 text-sm'}>
 	<summary
 		class={[
 			'cursor-pointer list-none marker:hidden [&::-webkit-details-marker]:hidden',
@@ -73,6 +78,11 @@ A part that opens and closes, its heading the toggle.
 				{#if summary}
 					<span class="min-w-0 flex-1 truncate text-xs text-muted">{@render summary()}</span>
 				{/if}
+			{:else if variant === 'disclosure'}
+				<span class="flex basis-full flex-col gap-0.5 py-0.5">
+					<span class="text-md font-semibold">{title}</span>
+					{#if summary}<span class="text-label text-muted">{@render summary()}</span>{/if}
+				</span>
 			{:else}
 				<span class="flex items-center gap-1.5 font-semibold">
 					{title}
@@ -92,5 +102,13 @@ A part that opens and closes, its heading the toggle.
 			</span>
 		{/if}
 	</summary>
-	<div class={card ? 'flex flex-col gap-2 px-5 pb-5' : 'mt-1 pl-5'}>{@render children()}</div>
+	<div
+		class={variant === 'disclosure'
+			? 'flex flex-col gap-5.5 border-t border-border p-4.5'
+			: card
+				? 'flex flex-col gap-2 px-5 pb-5'
+				: 'mt-1 pl-5'}
+	>
+		{@render children()}
+	</div>
 </details>

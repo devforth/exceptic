@@ -9,6 +9,7 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 	import { resolve } from '$app/paths';
 	import { help, levels, limits } from '#lib/api/catalog.gen.ts';
 	import { post, type Out } from '#lib/api/client.ts';
+	import Badge from '#lib/components/Badge.svelte';
 	import Button from '#lib/components/Button.svelte';
 	import Choice from '#lib/components/Choice.svelte';
 	import ChoiceGroup from '#lib/components/ChoiceGroup.svelte';
@@ -376,10 +377,12 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 				{#snippet summary()}
 					{#if allProjects}
 						All projects
-					{:else if chosenProjects.length > 0}
-						{chosenProjects.map((project) => project.name).join(', ')}
 					{:else}
-						<span class="text-muted">none</span>
+						{#each chosenProjects as project (project.id)}
+							<Badge tone="project" label={project.name} />
+						{:else}
+							<span class="text-muted">none</span>
+						{/each}
 					{/if}
 				{/snippet}
 				<ChoiceGroup legend="Projects that are sent" hideLegend inline error={form.fields.projects}>

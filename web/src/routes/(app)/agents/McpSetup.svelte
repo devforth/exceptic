@@ -46,7 +46,10 @@ component: gone after a reload or leaving the page, never in the address or stor
 		try {
 			await generate();
 		} catch (failure) {
-			toast.show(failure instanceof ApiError ? failure.message : 'Could not generate the token.');
+			toast.show(
+				failure instanceof ApiError ? failure.message : 'Could not generate the token.',
+				'error'
+			);
 		} finally {
 			generating = false;
 		}

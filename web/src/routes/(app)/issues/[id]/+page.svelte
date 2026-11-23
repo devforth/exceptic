@@ -72,7 +72,10 @@
 
 			more = { of: details, rows: [...events, ...(next.items ?? [])], cursor: next.next_cursor };
 		} catch (failure) {
-			toast.show(failure instanceof ApiError ? failure.message : 'Could not load more events.');
+			toast.show(
+				failure instanceof ApiError ? failure.message : 'Could not load more events.',
+				'error'
+			);
 		} finally {
 			loadingMore = false;
 		}

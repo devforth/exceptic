@@ -30,7 +30,8 @@ Copies text and says so in the toast. Without a label it is an icon; title names
 
 		const ok = await copyText(text).finally(() => (busy = false));
 
-		toast.show(ok ? copied : 'Could not copy. Select the text and copy it with Ctrl+C or ⌘C.');
+		if (ok) toast.show(copied, 'info');
+		else toast.show('Could not copy. Select the text and copy it with Ctrl+C or ⌘C.', 'error');
 
 		if (ok) {
 			done = true;

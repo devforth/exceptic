@@ -19,8 +19,9 @@
 	import { withQuery } from '#lib/nav.ts';
 	import { deleteConfirmation, deleteProject, usageSegments } from '#lib/projects.ts';
 	import { FormState } from '#lib/form.svelte.ts';
+	import { sharePercent } from '#lib/format.ts';
 	import { toast } from '#lib/toast.svelte.ts';
-	import ColorField from './ColorField.svelte';
+	import ColorField from '#lib/components/ColorField.svelte';
 	import ProjectNameField from './ProjectNameField.svelte';
 	import type { PageProps } from './$types';
 
@@ -89,7 +90,7 @@
 		const items: MenuItem[] = [];
 
 		if (canAdminister) {
-			items.push({ label: 'Name and color', icon: 'edit', action: () => startEdit(project) });
+			items.push({ label: 'Rename', icon: 'edit', action: () => startEdit(project) });
 		}
 
 		items.push({
@@ -138,6 +139,7 @@
 
 <PageHeading title="Projects">
 	{#snippet actions()}
+		<Button icon="history" href={resolve('/(app)/projects/cleanups')}>Cleanup history</Button>
 		{#if canAdminister}
 			<Button variant="primary" icon="add" href={resolve('/(app)/projects/new')}>
 				Add project
@@ -148,8 +150,10 @@
 
 <Card title="Storage">
 	<p>
-		Database: <b>{storage.used}</b>{#if storage.limit}
-			of {storage.limit} <span class="text-muted">({storage.percent ?? 0}%)</span>{/if}
+		Database: <b>{storage.used}</b>{#if storage.limit}{` of ${storage.limit}`}
+			<span class="text-muted">
+				({sharePercent(storage.used_bytes, storage.limit_bytes ?? 0)})
+			</span>{/if}
 	</p>
 	{#if segments.length}
 		<UsageBar
@@ -182,7 +186,6 @@
 		<code>MAX_DATABASE_SIZE</code>
 		<Hint text={help.settings.MAX_DATABASE_SIZE} />
 	</p>
-	<p><Button variant="link" href={resolve('/(app)/projects/cleanups')}>Cleanup history</Button></p>
 </Card>
 
 <p class="mb-4 text-muted">

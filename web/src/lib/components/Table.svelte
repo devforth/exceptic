@@ -76,6 +76,7 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 			'text-left align-top',
 			column.number && 'text-right whitespace-nowrap tabular-nums',
 			column.actions && 'w-[1%] whitespace-nowrap',
+			column.fill && 'w-full max-w-0',
 			column.wideOnly && 'max-table:hidden'
 		];
 	}

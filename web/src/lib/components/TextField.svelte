@@ -3,13 +3,16 @@
 A labelled text field of a form, with its Hint, a note after the label ("optional"), a description
 under the field and the error the server gave it. The limits (maxlength, pattern, …) come from the
 generated ones of the server, so the browser checks what the server checks. `saved`: a stored
-secret, its mask in the placeholder; the field may stay empty to keep it. `action`: a button
-beside the field (Verify, Find chat ID).
+secret, its mask in the placeholder and in a description for screen readers (a placeholder is not
+reliably read, and goes once typing starts); the field may stay empty to keep it. `action`: a
+button beside the field (Verify, Find chat ID). `variant="hero"`: the one large, centered field
+of a page, its label only for screen readers; `variant="code"`: a short code (a confirmation
+code), narrow and monospace.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { HTMLInputAttributes } from 'svelte/elements';
-	import { fieldClasses } from './field.ts';
+	import { fieldClasses, heroFieldClasses } from './field.ts';
 	import Hint from './Hint.svelte';
 
 	type Props = {
@@ -33,6 +36,9 @@ beside the field (Verify, Find chat ID).
 		/** The mask of a stored secret. */
 		saved?: string;
 		action?: Snippet;
+		variant?: 'default' | 'hero' | 'code';
+		/** Takes the focus when shown. */
+		autofocus?: boolean;
 	};
 
 	let {
@@ -52,14 +58,23 @@ beside the field (Verify, Find chat ID).
 		description,
 		error,
 		saved,
-		action
+		action,
+		variant = 'default',
+		autofocus = false
 	}: Props = $props();
+
+	const hero = $derived(variant === 'hero');
+
+	function focus(input: HTMLInputElement) {
+		if (autofocus) input.focus();
+	}
 
 	const id = $props.id();
 
 	const described = $derived(
-		[description && `${id}-description`, error && `${id}-error`].filter(Boolean).join(' ') ||
-			undefined
+		[description && `${id}-description`, saved && `${id}-saved`, error && `${id}-error`]
+			.filter(Boolean)
+			.join(' ') || undefined
 	);
 </script>
 
@@ -78,9 +93,14 @@ beside the field (Verify, Find chat ID).
 		{autocomplete}
 		aria-invalid={error ? 'true' : undefined}
 		aria-describedby={described}
+		{@attach focus}
 		class={[
-			fieldClasses,
-			'w-full min-w-0 text-sm',
+			hero
+				? heroFieldClasses
+				: [
+						fieldClasses,
+						variant === 'code' ? 'w-36 font-mono text-sm tracking-widest' : 'w-full min-w-0 text-sm'
+					],
 			readonly ? 'bg-code-bg' : 'bg-surface',
 			error && 'border-error focus-visible:border-error'
 		]}
@@ -88,7 +108,7 @@ beside the field (Verify, Find chat ID).
 {/snippet}
 
 <div class="flex flex-col gap-1">
-	<span class="flex items-center gap-1.5 text-label text-muted">
+	<span class={hero ? 'sr-only' : 'flex items-center gap-1.5 text-label text-muted'}>
 		<label for={id}>{label}</label>
 		{#if note}<span class="text-xs">({note})</span>{/if}
 		{#if hint}<Hint text={hint} />{/if}
@@ -103,6 +123,9 @@ beside the field (Verify, Find chat ID).
 	{/if}
 	{#if description}
 		<p id="{id}-description" class="text-xs text-muted">{description}</p>
+	{/if}
+	{#if saved}
+		<span id="{id}-saved" class="sr-only">Saved: {saved}. Leave it empty to keep it.</span>
 	{/if}
 	{#if error}
 		<p id="{id}-error" class="text-xs text-error">{error}</p>

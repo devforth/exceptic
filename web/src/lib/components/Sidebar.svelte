@@ -64,7 +64,7 @@ account and Log out. It collapses to icons (the choice is kept in this browser);
 			await send('logout');
 			location.assign(resolve('/login'));
 		} catch {
-			toast.show('Could not log out: try again.');
+			toast.show('Could not log out: try again.', 'error');
 		}
 	}
 </script>

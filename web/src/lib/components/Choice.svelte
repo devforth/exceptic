@@ -16,7 +16,8 @@ as a badge) and a muted description or a Hint beside it; a disabled one says why
 		value?: string;
 		label?: string;
 		description?: string;
-		/** A "?" after the label, outside it, so a click on it does not toggle the option. */
+		/** A "?" after the label, outside it, so a click on it does not toggle the option; it
+		 * describes the option. */
 		hint?: string;
 		disabled?: boolean;
 		/** Why it is disabled, e.g. "set SMTP_HOST". */
@@ -37,6 +38,8 @@ as a badge) and a muted description or a Hint beside it; a disabled one says why
 		reason,
 		children
 	}: Props = $props();
+
+	const id = $props.id();
 </script>
 
 {#snippet option()}
@@ -52,6 +55,7 @@ as a badge) and a muted description or a Hint beside it; a disabled one says why
 			{value}
 			{checked}
 			{disabled}
+			aria-describedby={hint ? `${id}-hint` : undefined}
 			class="mt-[3px] size-4 shrink-0 accent-accent focus-ring"
 			onchange={(event) => onchange(event.currentTarget.checked)}
 		/>
@@ -66,7 +70,7 @@ as a badge) and a muted description or a Hint beside it; a disabled one says why
 {#if hint}
 	<span class="flex items-start gap-1.5">
 		{@render option()}
-		<span class="mt-[3px] flex"><Hint text={hint} /></span>
+		<span class="mt-[3px] flex"><Hint text={hint} id="{id}-hint" /></span>
 	</span>
 {:else}
 	{@render option()}

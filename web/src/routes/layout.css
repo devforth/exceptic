@@ -11,6 +11,8 @@
 	--color-border: #e3e3e8;
 	--color-accent: #4f46e5;
 	--color-accent-text: #ffffff;
+	/* On a project's color (a chosen swatch's check): white in both themes. */
+	--color-on-project: #ffffff;
 	--color-code-bg: #f1f1f4;
 	--color-current-line: #fff3c4;
 	--color-error: #c62828;
@@ -31,6 +33,7 @@
 	--color-focus: color-mix(in srgb, var(--color-accent) 45%, transparent);
 	--color-hover: color-mix(in srgb, var(--color-text) 6%, var(--color-surface));
 	--color-accent-hover: color-mix(in srgb, var(--color-accent) 86%, var(--color-text));
+	--color-accent-bg: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface));
 	--color-info-hover: color-mix(in srgb, var(--color-info) 22%, var(--color-info-bg));
 	/* A shade deeper than error-bg, so an error badge shows on red rows. */
 	--color-error-badge: color-mix(in srgb, var(--color-error-bg) 90%, var(--color-error));
@@ -52,7 +55,9 @@
 	--text-sm: 14px;
 	--text-md: 15px;
 	--text-h2: 16px;
+	--text-lg: 18px;
 	--text-h1: 22px;
+	--text-hero: 26px;
 	--text-display: 64px;
 
 	--radius-*: initial;
@@ -69,6 +74,17 @@
 	--shadow-pop: var(--pop-shadow);
 	--shadow-card: var(--card-shadow);
 	--shadow-toast: 0 4px 20px rgb(0 0 0 / 0.15);
+	/* A toast's time bar: empties over its duration (set on the element). */
+	--animate-toast-time: toast-time linear forwards;
+
+	@keyframes toast-time {
+		from {
+			transform: scaleX(1);
+		}
+		to {
+			transform: scaleX(0);
+		}
+	}
 
 	--container-page: 1200px;
 

@@ -70,3 +70,41 @@ export function readableLog(text: string): string {
 		)
 		.join('\n\n');
 }
+
+const sizeUnits = [
+	{ suffix: 'TB', bytes: 2 ** 40 },
+	{ suffix: 'GB', bytes: 2 ** 30 },
+	{ suffix: 'MB', bytes: 2 ** 20 },
+	{ suffix: 'KB', bytes: 2 ** 10 }
+];
+
+/** A byte count as the server writes sizes (config.FormatSize): "2.0 GB", "512 B". */
+export function formatSize(bytes: number): string {
+	const unit = sizeUnits.find((entry) => bytes >= entry.bytes);
+
+	return unit ? `${(bytes / unit.bytes).toFixed(1)} ${unit.suffix}` : `${Math.round(bytes)} B`;
+}
+
+/** A day as "10 Nov": in UTC, or in the viewer's time zone when `local`. */
+export function shortDate(iso: string, local = false): string {
+	return new Date(iso).toLocaleDateString('en-GB', {
+		day: 'numeric',
+		month: 'short',
+		timeZone: local ? undefined : 'UTC'
+	});
+}
+
+/**
+ * part of whole in whole percent: "<1%" for a part above nothing that rounds to 0, ">99%" for
+ * one under the whole that rounds to 100; nothing without a whole.
+ */
+export function sharePercent(part: number, whole: number): string {
+	if (whole <= 0) return '';
+
+	const exact = (part * 100) / whole;
+
+	if (part > 0 && exact < 1) return '<1%';
+	if (part < whole && exact > 99) return '>99%';
+
+	return `${Math.round(exact)}%`;
+}

@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { projectPalette } from '#lib/api/catalog.gen.ts';
 import {
 	deleteConfirmation,
 	deleteProject,
+	freeColor,
+	keptFacts,
 	paletteName,
 	projectInput,
 	usageSegments
@@ -39,13 +42,57 @@ describe('deleting a project', () => {
 });
 
 describe('projectInput', () => {
-	const values = { name: ' mobile ', color: '#123456', logLevels: [] };
-
 	it('sends the whole form, empty level lists included', () => {
-		expect(projectInput(values)).toEqual({
-			name: 'mobile',
+		expect(projectInput({ color: '#123456', logLevels: [], diskShare: 40 })).toEqual({
 			color: '#123456',
-			log_levels: []
+			log_levels: [],
+			disk_share: 40
+		});
+	});
+});
+
+describe('freeColor', () => {
+	it('takes the first palette color no project shows', () => {
+		expect(freeColor([projectPalette[0].color.toUpperCase()], '#000000')).toBe(
+			projectPalette[1].color
+		);
+	});
+
+	it('falls back when every one is taken', () => {
+		expect(
+			freeColor(
+				projectPalette.map((entry) => entry.color),
+				'#123456'
+			)
+		).toBe('#123456');
+	});
+});
+
+describe('keptFacts', () => {
+	// Local times: days are calendar days of the viewer's time zone.
+	const now = new Date(2026, 10, 23, 0, 10).getTime();
+
+	it('counts calendar days back to the oldest record of each kind', () => {
+		expect(
+			keptFacts(
+				{
+					logs_below_error: new Date(2026, 10, 20, 23, 50).toISOString(),
+					errors: new Date(2026, 10, 22, 0, 5).toISOString()
+				},
+				now
+			)
+		).toEqual([
+			{ label: 'Logs below error', value: '3 days', detail: 'since 20 Nov' },
+			{ label: 'Error logs', value: 'none stored' },
+			{ label: 'Errors', value: '1 day', detail: 'since 22 Nov' }
+		]);
+	});
+
+	it('says today for a record of the same day', () => {
+		expect(keptFacts({ errors: new Date(2026, 10, 23, 0, 1).toISOString() }, now)[2]).toEqual({
+			label: 'Errors',
+			value: 'today',
+			detail: 'since 23 Nov'
 		});
 	});
 });

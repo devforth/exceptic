@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { cleanLog, clockTime, exactTime, readableLog, timeAgo } from './format.ts';
+import {
+	sharePercent,
+	cleanLog,
+	clockTime,
+	exactTime,
+	formatSize,
+	readableLog,
+	shortDate,
+	timeAgo
+} from './format.ts';
 
 const now = Date.parse('2026-11-20T12:00:00Z');
 
@@ -33,5 +42,37 @@ describe('log lines', () => {
 		);
 		expect(readableLog('plain text')).toBe('plain text');
 		expect(readableLog('[1,2]')).toBe('[1,2]');
+	});
+});
+
+describe('formatSize', () => {
+	it('writes sizes as the server does', () => {
+		expect(formatSize(2 * 2 ** 30)).toBe('2.0 GB');
+		expect(formatSize(0.4 * 2 * 2 ** 30)).toBe('819.2 MB');
+		expect(formatSize(512)).toBe('512 B');
+	});
+});
+
+describe('shortDate', () => {
+	it('writes the UTC day and month', () => {
+		expect(shortDate('2026-11-10T23:30:00Z')).toBe('10 Nov');
+	});
+});
+
+describe('sharePercent', () => {
+	it('says <1% for a part above nothing and 0% only for nothing', () => {
+		expect(sharePercent(0, 2e9)).toBe('0%');
+		expect(sharePercent(2.8e6, 2e9)).toBe('<1%');
+		expect(sharePercent(1e9, 2e9)).toBe('50%');
+	});
+
+	it('never shows 100% before the whole is reached, nor more than it is', () => {
+		expect(sharePercent(1.999e9, 2e9)).toBe('>99%');
+		expect(sharePercent(2e9, 2e9)).toBe('100%');
+		expect(sharePercent(2.5e9, 2e9)).toBe('125%');
+	});
+
+	it('shows nothing without a whole', () => {
+		expect(sharePercent(10, 0)).toBe('');
 	});
 });

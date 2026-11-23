@@ -1259,6 +1259,9 @@ export const cleanupRules = {
 	oldEventsPerIssue: 20,
 } as const;
 
+/** A project's disk share of MAX_DATABASE_SIZE, in percent. */
+export const diskShare = { min: 5, max: 100, step: 5 } as const;
+
 /** What each role may do. */
 export const roleSummaries = {
 	admin: 'projects, notifications, users and deleting issues',
@@ -1286,6 +1289,7 @@ export const help = {
 			'Color': 'Marks the project\'s badge in lists and the header of its emails.',
 			'DSN': 'The address the app\'s Sentry SDK sends errors and logs to. The key in it only allows sending to this project, so it can be in browser code.',
 			'Disk share': 'The part of MAX_DATABASE_SIZE the project may take. When it reaches it, the cleanup deletes the project\'s own data first, in the usual order, so a flood in one project does not push out the others. A ceiling, not a reservation: shares may add up to more than 100%. At 100% the project has no limit of its own.',
+			'History kept': 'The oldest record of each kind still stored. When the database nears its limit, the cleanup deletes the oldest first: logs below error, then error logs, then errors.',
 			'Logs': 'Log levels to store; others are dropped when they arrive. Unchanged, the project follows RECORD_LOG_LEVELS. Errors and messages of every level are stored.',
 		},
 	},

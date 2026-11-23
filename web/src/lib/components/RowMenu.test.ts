@@ -123,7 +123,7 @@ describe('RowMenu with a disabled item', () => {
 			label: 'Actions for backend',
 			items: [
 				{ label: 'Rename it', icon: 'edit', disabled: 'Remove it from PROJECTS first.' },
-				{ label: 'Name and color', icon: 'edit', action: rename }
+				{ label: 'Rename', icon: 'edit', action: rename }
 			]
 		});
 		await userEvent.click(screen.getByRole('button', { name: 'Actions for backend' }));
@@ -139,6 +139,6 @@ describe('RowMenu with a disabled item', () => {
 		expect(menu()).not.toBeNull();
 
 		await userEvent.keyboard('{ArrowDown}');
-		expect(document.activeElement?.textContent?.trim()).toBe('Name and color');
+		expect(document.activeElement?.textContent?.trim()).toBe('Rename');
 	});
 });

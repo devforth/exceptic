@@ -5,11 +5,6 @@ declare global {
 		interface PageData {
 			session?: import('#lib/api/client.ts').Out<'get_session'>;
 		}
-
-		/** What a navigation hands the next page, e.g. that it shows a project just added. */
-		interface PageState {
-			projectAdded?: boolean;
-		}
 	}
 }
 

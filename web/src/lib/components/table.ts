@@ -8,6 +8,8 @@ export type TableColumn<Key extends string = string> = {
 	wideOnly?: boolean;
 	/** The row's buttons: as narrow as they are. */
 	actions?: boolean;
+	/** Takes the width the others leave; text inside it that is cut short (truncate) never widens the table. */
+	fill?: boolean;
 	/** The cell names its row (th scope=row): the key of a key–value table. */
 	rowHeader?: boolean;
 	/** Its heading sorts the list. */

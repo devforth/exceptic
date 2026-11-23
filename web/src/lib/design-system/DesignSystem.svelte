@@ -18,16 +18,19 @@ Every component with its variants, on sample data. Served only by the dev server
 	import Choice from '#lib/components/Choice.svelte';
 	import ChoiceGroup from '#lib/components/ChoiceGroup.svelte';
 	import CodeBlock from '#lib/components/CodeBlock.svelte';
+	import ColorField from '#lib/components/ColorField.svelte';
 	import type { Confirmation } from '#lib/components/confirm.ts';
 	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
 	import CopyButton from '#lib/components/CopyButton.svelte';
 	import CopyField from '#lib/components/CopyField.svelte';
 	import DateRange from '#lib/components/DateRange.svelte';
 	import Details from '#lib/components/Details.svelte';
+	import EditableTitle from '#lib/components/EditableTitle.svelte';
 	import Dialog from '#lib/components/Dialog.svelte';
 	import FormDialog from '#lib/components/FormDialog.svelte';
 	import Facts from '#lib/components/Facts.svelte';
 	import FilterBar from '#lib/components/FilterBar.svelte';
+	import FormGroup from '#lib/components/FormGroup.svelte';
 	import EmptyState from '#lib/components/EmptyState.svelte';
 	import Hint from '#lib/components/Hint.svelte';
 	import Icon from '#lib/components/Icon.svelte';
@@ -50,6 +53,7 @@ Every component with its variants, on sample data. Served only by the dev server
 	import RowMenu from '#lib/components/RowMenu.svelte';
 	import SearchField from '#lib/components/SearchField.svelte';
 	import SecretReveal from '#lib/components/SecretReveal.svelte';
+	import Slider from '#lib/components/Slider.svelte';
 	import Select from '#lib/components/Select.svelte';
 	import StatusBadge from '#lib/components/StatusBadge.svelte';
 	import type { StatusTone } from '#lib/components/status.ts';
@@ -168,6 +172,21 @@ Every component with its variants, on sample data. Served only by the dev server
 	];
 
 	type Breadcrumb = { time: string; category: string; message: string };
+	type TitledColumn = TableColumn<'title' | 'events'>;
+	const titledColumns: TitledColumn[] = [
+		{ key: 'title', label: 'Issue', fill: true },
+		{ key: 'events', label: 'Events', number: true }
+	];
+	const titledRows = [
+		{ id: 1, title: 'TypeError: x is undefined', events: 12 },
+		{
+			id: 2,
+			title:
+				"ValueError: login failed {'username': 'root', 'password': '[Filtered]', 'token': '[Filtered]'} while refreshing the session of the checkout service",
+			events: 3
+		}
+	];
+
 	type BreadcrumbColumn = TableColumn<keyof Breadcrumb>;
 
 	const breadcrumbs: Breadcrumb[] = Array.from({ length: 30 }, (_, index) => ({
@@ -206,6 +225,11 @@ Every component with its variants, on sample data. Served only by the dev server
 	let sampleEventLevels: string[] = $state(['fatal', 'error']);
 	let sampleLogLevels: string[] = $state([]);
 	let sampleName = $state('backend');
+	let sampleColor = $state('#15803d');
+	let sampleShare = $state(40);
+	let sampleTitle = $state('backend');
+	let sampleTitleValue = $state('backend');
+	let sampleTitleError = $state('');
 	let sampleStatus = $state('');
 	let sampleSelected: ReadonlySet<string | number> = $state(new Set([2]));
 	let sampleTab = $state('claude');
@@ -262,6 +286,12 @@ Every component with its variants, on sample data. Served only by the dev server
 		{ label: 'First seen', value: '3 days ago' },
 		{ label: 'Release', value: 'backend@1.4.2' },
 		{ label: 'Environment', value: 'production' }
+	];
+
+	const sampleKept: SampleFact[] = [
+		{ label: 'Logs below error', value: 'since 20 Nov · 3 days' },
+		{ label: 'Error logs', value: 'none stored' },
+		{ label: 'Errors', value: 'since 23 Nov · today' }
 	];
 
 	const statusOptions = [
@@ -362,6 +392,9 @@ Every component with its variants, on sample data. Served only by the dev server
 				<Button {variant} disabled>Disabled</Button>
 			</Row>
 		{/each}
+		<Row caption="size large: the one main action of a page">
+			<Button variant="primary" size="large">Add project</Button>
+		</Row>
 		<Row caption="busy: its action runs (clicks ignored, the focus stays)">
 			<Button variant="primary" busy>Saving</Button>
 			<Button variant="danger" busy>Deleting</Button>
@@ -371,6 +404,7 @@ Every component with its variants, on sample data. Served only by the dev server
 				Find chat ID
 			</Button>
 			<Button variant="info" icon="externalLink" disabled>Find chat ID</Button>
+			<Button variant="accent" icon="view" href="#buttons" title="Open the issue" />
 		</Row>
 	</Section>
 
@@ -379,6 +413,9 @@ Every component with its variants, on sample data. Served only by the dev server
 			<CopyButton text="Copied text" title="Copy the sample" label="Copy for agent" />
 			<CopyButton text="http://key@localhost:8000/1" title="Copy DSN" copied="DSN copied." />
 			<Button onclick={() => toast.show('A message in the toast.')}>Show a toast</Button>
+			<Button onclick={() => toast.show('Something went wrong.', 'error')}>
+				Show an error toast
+			</Button>
 		</Row>
 		<Row caption="AgentCopyButton: the MCP request of an issue (Copy for agent)">
 			<AgentCopyButton request={'Exceptic MCP: get_issue {"issue_id":"k3x9q2mf"}'} />
@@ -560,9 +597,52 @@ Every component with its variants, on sample data. Served only by the dev server
 					name="connection_name"
 					description="Optional: left empty, it is filled in when saved."
 				/>
+				<TextField
+					label="Confirmation code"
+					name="code"
+					variant="code"
+					placeholder="123456"
+					autocomplete="one-time-code"
+				>
+					{#snippet action()}<Button variant="primary">Confirm</Button>{/snippet}
+				</TextField>
 				<TextField label="Email address" name="address" type="email" placeholder="team@example.com">
 					{#snippet action()}<Button variant="primary">Verify</Button>{/snippet}
 				</TextField>
+			</Card>
+			<Card>
+				<Row
+					caption="variant hero: the one large field of a page, its label for screen readers"
+					wide
+				>
+					<TextField
+						label="Project name"
+						name="hero_name"
+						placeholder="Project name, e.g. backend"
+						variant="hero"
+					/>
+				</Row>
+				<Slider
+					label="Slider: a scale with marks under the thumb and the value beside it"
+					bind:value={sampleShare}
+					step={5}
+					least={5}
+					marks={[0, 50, 100]}
+					unit="%"
+					hint="The thumb stops at 5."
+				>
+					{#snippet output()}<b>{sampleShare}%</b>
+						<span class="text-muted">· up to 819.2 MB</span>{/snippet}
+				</Slider>
+				<Slider label="Refused" value={50} error="Choose 5 to 100 in steps of 5." />
+			</Card>
+			<Card>
+				<ColorField bind:value={sampleColor} name={sampleName} hint="The badge's color." />
+				<ColorField
+					value="#123456"
+					name="custom"
+					error="A color of its own: the rainbow swatch shows it."
+				/>
 			</Card>
 			<Card>
 				<RoleChoices bind:value={sampleRole} />
@@ -667,6 +747,19 @@ Every component with its variants, on sample data. Served only by the dev server
 			{#snippet summary()}<span class="text-muted">none</span>{/snippet}
 			<p class="text-error">Choose at least one project (invalid: it opens).</p>
 		</Details>
+		<Details title="Disk share" variant="form" open>
+			{#snippet summary()}<span class="text-muted">up to 40% · 819.2 MB</span>{/snippet}
+			<p>open: a form section that starts open.</p>
+		</Details>
+		<Details title="Advanced settings" variant="disclosure">
+			{#snippet summary()}Color, logs to record, disk share. Defaults work for most projects.{/snippet}
+			<FormGroup title="Color" hint="The badge's color.">
+				<p>disclosure: optional settings, parted by FormGroup.</p>
+			</FormGroup>
+			<FormGroup title="Logs to record">
+				<p>A dashed line above every part but the first.</p>
+			</FormGroup>
+		</Details>
 		<Row caption="inline: a small disclosure inside other content" wide>
 			<Details title="app" variant="inline">
 				<CodeBlock code={sampleJson} />
@@ -675,6 +768,21 @@ Every component with its variants, on sample data. Served only by the dev server
 		<Row caption="Facts: a label over each value" wide>
 			<Facts facts={sampleFacts}>
 				{#snippet value(fact: SampleFact)}{fact.value}{/snippet}
+			</Facts>
+		</Row>
+		<Row caption="Facts boxed: cells of a framed grid" wide>
+			<Facts facts={sampleFacts} boxed>
+				{#snippet value(fact: SampleFact)}<b>{fact.value}</b>{/snippet}
+			</Facts>
+		</Row>
+		<Row caption="Facts with a title and hint" wide>
+			<Facts
+				facts={sampleKept}
+				boxed
+				title="History kept"
+				hint="The oldest record of each kind still stored."
+			>
+				{#snippet value(fact: SampleFact)}<b>{fact.value}</b>{/snippet}
 			</Facts>
 		</Row>
 	</Section>
@@ -851,6 +959,25 @@ Every component with its variants, on sample data. Served only by the dev server
 			</Table>
 		</Row>
 		<Row
+			caption="fill column: a long title on one line, cut with … (full text in the tooltip)"
+			wide
+		>
+			<Table
+				columns={titledColumns}
+				rows={titledRows}
+				rowKey={(row: (typeof titledRows)[number]) => row.id}
+				label="Issues"
+			>
+				{#snippet cell(row: (typeof titledRows)[number], column: TitledColumn)}
+					{#if column.key === 'title'}
+						<Button variant="title" href="#tables" title={row.title}>{row.title}</Button>
+					{:else}
+						{row.events}
+					{/if}
+				{/snippet}
+			</Table>
+		</Row>
+		<Row
 			caption="sort (a heading links to its order, then the reverse), selected (checkboxes), rowTone, rowTitle, selectedKey"
 			wide
 		>
@@ -924,6 +1051,26 @@ Every component with its variants, on sample data. Served only by the dev server
 				<Button>Resolve</Button>
 			{/snippet}
 		</PageHeading>
+		<form
+			onsubmit={(event) => {
+				event.preventDefault();
+				sampleTitleError =
+					sampleTitleValue === 'taken' ? 'Type anything but "taken": this one is refused.' : '';
+				if (!sampleTitleError) sampleTitle = sampleTitleValue;
+			}}
+		>
+			<PageHeading title={sampleTitle} tabTitle={false}>
+				{#snippet heading()}
+					<EditableTitle
+						title={sampleTitle}
+						bind:value={sampleTitleValue}
+						label="Project name"
+						error={sampleTitleError}
+					/>
+				{/snippet}
+				{#snippet actions()}<Button variant="primary" type="submit">Save</Button>{/snippet}
+			</PageHeading>
+		</form>
 		<PageHeading title="Projects" tabTitle={false}>
 			{#snippet actions()}
 				<Button variant="primary" icon="add" href="#page-heading">Add project</Button>

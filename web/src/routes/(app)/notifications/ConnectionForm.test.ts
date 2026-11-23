@@ -86,7 +86,7 @@ describe('ConnectionForm', () => {
 		expect(options.querySelectorAll('[role="img"]')).toHaveLength(2);
 	});
 
-	it('lists the projects by name once All projects is off, and sums them up in the heading', async () => {
+	it('lists the projects by name once All projects is off, and shows them as badges in the heading', async () => {
 		const user = userEvent.setup();
 		const { container } = render(ConnectionForm, { defaults: defaults(false), projects });
 
@@ -95,8 +95,32 @@ describe('ConnectionForm', () => {
 		await user.click(screen.getByRole('checkbox', { name: 'frontend' }));
 		await user.click(screen.getByRole('checkbox', { name: 'backend' }));
 
-		expect(container.querySelector('summary')?.textContent).toContain('backend, frontend');
-		expect(container.querySelector('.text-project-text')).toBeNull();
+		const summary = container.querySelector('summary');
+		const badges = [...(summary?.querySelectorAll('[data-project]') ?? [])];
+
+		expect(badges.map((badge) => badge.textContent?.trim())).toEqual(['backend', 'frontend']);
+		expect(
+			screen.getByRole('group', { name: 'Projects that are sent' }).querySelector('[data-project]')
+		).toBeNull();
+
+		await user.click(screen.getByRole('checkbox', { name: 'frontend' }));
+		await user.click(screen.getByRole('checkbox', { name: 'backend' }));
+		expect(summary?.querySelector('[data-project]')).toBeNull();
+		expect(
+			[...(summary?.querySelectorAll('span.text-muted') ?? [])].some(
+				(s) => s.textContent === 'none'
+			)
+		).toBe(true);
+	});
+
+	it('hides the empty list under All projects, so it adds no gap', () => {
+		render(ConnectionForm, { defaults: defaults(true), projects });
+
+		const group = screen.getByRole('group', { name: 'Projects that are sent' });
+		const empty = [...group.querySelectorAll('div')].filter((div) => div.childElementCount === 0);
+
+		expect(empty.length).toBeGreaterThan(0);
+		for (const div of empty) expect(div.className).toContain('empty:hidden');
 	});
 
 	it('checks the chat fields with the server patterns and links getUpdates for a valid token', async () => {

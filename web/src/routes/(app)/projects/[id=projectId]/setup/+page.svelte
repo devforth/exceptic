@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { invalidate } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import BackButton from '#lib/components/BackButton.svelte';
 	import Breadcrumbs from '#lib/components/Breadcrumbs.svelte';
 	import Button from '#lib/components/Button.svelte';
 	import CodeBlock from '#lib/components/CodeBlock.svelte';
@@ -45,6 +46,9 @@
 
 <Breadcrumbs items={crumbs} />
 <PageHeading title="Connect {setup.name}">
+	{#snippet leading()}
+		<BackButton fallback={crumbs[crumbs.length - 2].href} />
+	{/snippet}
 	{#snippet actions()}
 		{#if platform}
 			<CopyButton
