@@ -70,21 +70,18 @@
 			});
 		}
 
-		items.push(
-			{ label: 'Delivery log', icon: 'logs', href: log(connection) },
-			{
-				label: 'Delete',
-				icon: 'delete',
-				danger: true,
-				separatorBefore: true,
-				confirm: deleteConfirmation(connection.name),
-				action: async () => {
-					await deleteConnection(connection.id);
-					// The delete is done: a failed reload of the list is not a failed delete.
-					void invalidateAll();
-				}
+		items.push({
+			label: 'Delete',
+			icon: 'delete',
+			danger: true,
+			separatorBefore: true,
+			confirm: deleteConfirmation(connection.name),
+			action: async () => {
+				await deleteConnection(connection.id);
+				// The delete is done: a failed reload of the list is not a failed delete.
+				void invalidateAll();
 			}
-		);
+		});
 
 		return items;
 	}
