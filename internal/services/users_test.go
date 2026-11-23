@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/devforth/exceptic/internal/storage/store"
 )
@@ -41,5 +42,30 @@ func TestUsersRefuseMalformedIDsBeforeLookup(t *testing.T) {
 
 	if counter.lookups != 0 {
 		t.Errorf("%d lookups of malformed ids, want none", counter.lookups)
+	}
+}
+
+// A user stored without a valid password hash (as a password-less sign-in
+// would store one) is opened by no password, the dummy hash's included.
+func TestAuthenticateWithoutPasswordHash(t *testing.T) {
+	iterations := PasswordIterations
+	PasswordIterations = 1000
+
+	t.Cleanup(func() { PasswordIterations = iterations })
+
+	ctx := context.Background()
+	database := openStore(t)
+	users := NewUsers(slog.New(slog.DiscardHandler), database)
+
+	for username, hash := range map[string]string{"sso": "", "broken": "x"} {
+		if _, err := database.CreateUser(ctx, store.User{Username: username, Name: username, Role: store.RoleUser, CreatedAt: time.Now()}, hash); err != nil {
+			t.Fatal(err)
+		}
+
+		for _, password := range []string{"unknown user", "", hash} {
+			if _, ok, err := users.Authenticate(ctx, username, password); ok || err != nil {
+				t.Errorf("user %q with hash %q: password %q logs in (err %v)", username, hash, password, err)
+			}
+		}
 	}
 }

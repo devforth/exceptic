@@ -199,7 +199,8 @@ func (users *Users) manageable(ctx context.Context, viewer store.User, id string
 
 // Authenticate checks a login: the user with username and password, ok
 // false when either is wrong. An unknown username is checked against a dummy
-// hash, so the response time does not tell which usernames exist.
+// hash, so the response time does not tell which usernames exist; so is a
+// user without a password hash, whom no password opens.
 func (users *Users) Authenticate(ctx context.Context, username, password string) (store.User, bool, error) {
 	user, hash, err := users.store.FindLogin(ctx, strings.TrimSpace(username))
 
@@ -207,7 +208,7 @@ func (users *Users) Authenticate(ctx context.Context, username, password string)
 		return store.User{}, false, err
 	}
 
-	if !checkPassword(cmp.Or(hash, dummyPasswordHash()), password) || user.ID == "" {
+	if !checkPassword(cmp.Or(hash, dummyPasswordHash()), password) || user.ID == "" || hash == "" {
 		return store.User{}, false, nil
 	}
 
