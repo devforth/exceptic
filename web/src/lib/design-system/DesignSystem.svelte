@@ -555,6 +555,14 @@ Every component with its variants, on sample data. Served only by the dev server
 				/>
 				<TextField label="Username" name="username" value="developer" readonly />
 				<TextField label="Bot token" name="bot_token" type="password" saved="1234…wxyz" />
+				<TextField
+					label="Connection name"
+					name="connection_name"
+					description="Optional: left empty, it is filled in when saved."
+				/>
+				<TextField label="Email address" name="address" type="email" placeholder="team@example.com">
+					{#snippet action()}<Button variant="primary">Verify</Button>{/snippet}
+				</TextField>
 			</Card>
 			<Card>
 				<RoleChoices bind:value={sampleRole} />
@@ -572,6 +580,31 @@ Every component with its variants, on sample data. Served only by the dev server
 						onchange={() => {}}
 						disabled
 						reason="set SECRET_KEY"
+					/>
+				</ChoiceGroup>
+				<ChoiceGroup legend="Type (card)" hint="Options in a column inside a card." card>
+					<Choice type="radio" label="Email" checked={sampleEmail} onchange={() => {}} />
+					<Choice type="radio" label="Telegram" checked={!sampleEmail} onchange={() => {}} />
+				</ChoiceGroup>
+				<ChoiceGroup legend="Projects (lead, hidden legend)" hideLegend inline>
+					{#snippet lead()}
+						<Choice
+							type="checkbox"
+							label="All projects, including ones added later"
+							checked={false}
+							onchange={() => {}}
+						/>
+					{/snippet}
+					<Choice type="checkbox" label="backend" checked onchange={() => {}} />
+					<Choice type="checkbox" label="frontend" checked={false} onchange={() => {}} />
+				</ChoiceGroup>
+				<ChoiceGroup legend="Options (hints beside)" hideLegend inline>
+					<Choice
+						type="checkbox"
+						label="Active: send notifications"
+						hint="Off: nothing is sent."
+						checked={sampleEmail}
+						onchange={(checked: boolean) => (sampleEmail = checked)}
 					/>
 				</ChoiceGroup>
 				<Row caption="Select with its option of no choice; Hint">
@@ -597,6 +630,13 @@ Every component with its variants, on sample data. Served only by the dev server
 					legend="Log levels"
 					selected={sampleLogLevels}
 					onchange={(chosen: string[]) => (sampleLogLevels = chosen)}
+				/>
+				<LevelChoices
+					kind="event"
+					legend="Error levels in a column"
+					inline={false}
+					selected={sampleEventLevels}
+					onchange={(chosen: string[]) => (sampleEventLevels = chosen)}
 				/>
 				<Row caption="LevelSummary: the chosen levels, highest first, or none">
 					<LevelSummary kind="event" chosen={sampleEventLevels} />

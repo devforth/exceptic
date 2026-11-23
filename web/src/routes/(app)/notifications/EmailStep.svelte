@@ -59,21 +59,23 @@ of saving the connection; the rest of the connection form opens once it is verif
 
 <div class="flex flex-col gap-2">
 	{#if progress.step === 'input'}
-		<form class="flex items-end gap-2" onsubmit={verify}>
-			<div class="min-w-0 flex-1">
-				<TextField
-					label="Email address"
-					name="email"
-					type="email"
-					bind:value={typed}
-					required
-					placeholder="team@example.com"
-					autocomplete="email"
-					hint={help.fields.Notifications['Email address']}
-					error={request.fields.email ?? error}
-				/>
-			</div>
-			<Button type="submit" variant="primary" busy={request.busy}>Verify</Button>
+		<form onsubmit={verify}>
+			<TextField
+				label="Email address"
+				name="email"
+				type="email"
+				bind:value={typed}
+				required
+				placeholder="team@example.com"
+				autocomplete="email"
+				hint={help.fields.Notifications['Email address']}
+				description="We send a confirmation code to this address. Addresses confirmed before need no new code."
+				error={request.fields.email ?? error}
+			>
+				{#snippet action()}
+					<Button type="submit" variant="primary" busy={request.busy}>Verify</Button>
+				{/snippet}
+			</TextField>
 		</form>
 	{:else}
 		<p class="flex flex-wrap items-center gap-2">
@@ -85,20 +87,21 @@ of saving the connection; the rest of the connection form opens once it is verif
 			{/if}
 		</p>
 		{#if progress.step === 'code'}
-			<form class="flex items-end gap-2" onsubmit={confirm}>
-				<div class="w-48">
-					<TextField
-						label="Confirmation code"
-						name="code"
-						bind:value={code}
-						required
-						maxlength={limits.verificationCode}
-						placeholder="123456"
-						autocomplete="one-time-code"
-						error={request.fields.code}
-					/>
-				</div>
-				<Button type="submit" variant="primary" busy={request.busy}>Confirm</Button>
+			<form class="max-w-xs" onsubmit={confirm}>
+				<TextField
+					label="Confirmation code"
+					name="code"
+					bind:value={code}
+					required
+					maxlength={limits.verificationCode}
+					placeholder="123456"
+					autocomplete="one-time-code"
+					error={request.fields.code}
+				>
+					{#snippet action()}
+						<Button type="submit" variant="primary" busy={request.busy}>Confirm</Button>
+					{/snippet}
+				</TextField>
 			</form>
 		{/if}
 		<span class="flex flex-wrap gap-4 text-sm">

@@ -30,7 +30,13 @@ describe('EmailStep', () => {
 			});
 		render(EmailStep, { typed: '', progress: { step: 'input', address: '', notice: '' } });
 
-		await user.type(screen.getByLabelText(/^Email address/), 'Ops@Example.com{Enter}');
+		const address = screen.getByLabelText(/^Email address/);
+		const note = document.getElementById(address.getAttribute('aria-describedby') ?? '');
+
+		expect(note?.textContent).toBe(
+			'We send a confirmation code to this address. Addresses confirmed before need no new code.'
+		);
+		await user.type(address, 'Ops@Example.com{Enter}');
 		await waitFor(() => expect(screen.getByText('We sent a code.')).toBeTruthy());
 		expect(api.post).toHaveBeenLastCalledWith('start_email_verification', {
 			email: 'Ops@Example.com'

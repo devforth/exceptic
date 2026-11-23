@@ -53,7 +53,7 @@
 {/key}
 
 {#if connection.retrying > 0 || (connection.type === 'email' && connection.confirmed)}
-	<div class="mt-6 flex max-w-3xl flex-col gap-3 border-t border-border pt-4">
+	<div class="mt-6 flex flex-col gap-3 border-t border-border pt-4">
 		<div class="flex flex-wrap gap-2">
 			{#if connection.retrying > 0}
 				<RetryNowButton connectionId={connection.id} waiting={connection.retrying} />

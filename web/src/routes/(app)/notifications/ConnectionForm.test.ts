@@ -51,6 +51,54 @@ describe('ConnectionForm', () => {
 		expect(screen.getByRole('checkbox', { name: /Include Open issue link/ })).toBeTruthy();
 	});
 
+	it('lays the sections out as the design: type card, project names, levels in a column', () => {
+		const { container } = render(ConnectionForm, { defaults: defaults(true), projects });
+		const typeGroup = screen.getByRole('group', { name: /^Type/ });
+
+		// The options of the type stand in a column inside the card.
+		expect(typeGroup.querySelector('div')?.className).toContain('flex-col');
+		expect(screen.getByRole('group', { name: /^Type/ }).className).toContain('shadow-card');
+
+		// No visible legend inside the sections: the heading names them.
+		const projectsGroup = screen.getByRole('group', { name: 'Projects that are sent' });
+
+		expect(projectsGroup.querySelector('legend')?.className).toContain('sr-only');
+		expect(
+			screen.getByRole('group', { name: 'Levels that are sent' }).querySelector('div')?.className
+		).toContain('flex-col');
+		expect(
+			screen
+				.getByRole('group', { name: 'Levels that are sent' })
+				.querySelector('legend')
+				?.className.includes('sr-only')
+		).toBe(true);
+
+		// The heading says what is chosen; the name's note stands under its field.
+		const summaries = [...container.querySelectorAll('summary')].map((s) => s.textContent);
+
+		expect(summaries[0]).toContain('All projects');
+		expect(screen.getByText('Optional: left empty, it is filled in when saved.')).toBeTruthy();
+
+		// The options sit in one row, each with its hint, and no visible heading.
+		const options = screen.getByRole('group', { name: 'Options' });
+
+		expect(options.querySelector('legend')?.className).toContain('sr-only');
+		expect(options.querySelectorAll('[role="img"]')).toHaveLength(2);
+	});
+
+	it('lists the projects by name once All projects is off, and sums them up in the heading', async () => {
+		const user = userEvent.setup();
+		const { container } = render(ConnectionForm, { defaults: defaults(false), projects });
+
+		await user.click(screen.getByRole('radio', { name: 'Telegram' }));
+		await user.click(screen.getByRole('checkbox', { name: /All projects/ }));
+		await user.click(screen.getByRole('checkbox', { name: 'frontend' }));
+		await user.click(screen.getByRole('checkbox', { name: 'backend' }));
+
+		expect(container.querySelector('summary')?.textContent).toContain('backend, frontend');
+		expect(container.querySelector('.text-project-text')).toBeNull();
+	});
+
 	it('checks the chat fields with the server patterns and links getUpdates for a valid token', async () => {
 		const user = userEvent.setup();
 
@@ -140,7 +188,7 @@ describe('ConnectionForm', () => {
 
 		expect(webhook.value).toBe('');
 		expect(webhook.required).toBe(false);
-		expect(screen.getByText('https://hoo…/x')).toBeTruthy();
+		expect(webhook.placeholder).toBe('saved: https://hoo…/x — leave empty to keep');
 		expect(screen.getByRole('button', { name: 'Send test message' })).toHaveProperty(
 			'disabled',
 			false

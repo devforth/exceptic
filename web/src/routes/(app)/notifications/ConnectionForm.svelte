@@ -9,7 +9,6 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 	import { resolve } from '$app/paths';
 	import { help, levels, limits } from '#lib/api/catalog.gen.ts';
 	import { post, type Out } from '#lib/api/client.ts';
-	import Badge from '#lib/components/Badge.svelte';
 	import Button from '#lib/components/Button.svelte';
 	import Choice from '#lib/components/Choice.svelte';
 	import ChoiceGroup from '#lib/components/ChoiceGroup.svelte';
@@ -197,14 +196,9 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 	}
 </script>
 
-<div class="flex max-w-3xl flex-col gap-4">
+<div class="flex flex-col gap-3">
 	{#if isNew}
-		<ChoiceGroup
-			legend="Type"
-			hint={help.fields.Notifications.Type}
-			error={form.fields.type}
-			inline
-		>
+		<ChoiceGroup legend="Type" hint={help.fields.Notifications.Type} error={form.fields.type} card>
 			{#each typeChoices as choice (choice.type)}
 				<Choice
 					type="radio"
@@ -248,35 +242,34 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 		</Notice>
 	{/if}
 
-	<form id="connection-form" class="flex flex-col gap-4" onsubmit={save}>
+	<form id="connection-form" class="flex flex-col gap-3" onsubmit={save}>
 		{#if type === 'telegram'}
-			<div class="flex items-end gap-2">
-				<div class="min-w-0 flex-1">
-					<TextField
-						label="Bot token"
-						name="bot_token"
-						type="password"
-						autocomplete="new-password"
-						bind:value={botToken}
-						required
-						pattern={limits.telegramToken}
-						placeholder="123456:ABC-DEF…"
-						saved={saved.bot_token}
-						hint={help.fields.Notifications['Telegram bot token']}
-						error={form.fields.bot_token}
-					/>
-				</div>
-				<Button
-					variant="info"
-					icon="externalLink"
-					href={updatesURL}
-					disabled={!updatesURL}
-					external
-					title="Opens the bot's getUpdates: write to the chat first, the chat ID is in the answer"
-				>
-					Find chat ID
-				</Button>
-			</div>
+			<TextField
+				label="Bot token"
+				name="bot_token"
+				type="password"
+				autocomplete="new-password"
+				bind:value={botToken}
+				required
+				pattern={limits.telegramToken}
+				placeholder="123456:ABC-DEF…"
+				saved={saved.bot_token}
+				hint={help.fields.Notifications['Telegram bot token']}
+				error={form.fields.bot_token}
+			>
+				{#snippet action()}
+					<Button
+						variant="info"
+						icon="externalLink"
+						href={updatesURL}
+						disabled={!updatesURL}
+						external
+						title="Opens the bot's getUpdates: write to the chat first, the chat ID is in the answer"
+					>
+						Find chat ID
+					</Button>
+				{/snippet}
+			</TextField>
 			<TextField
 				label="Chat ID"
 				name="chat_id"
@@ -293,7 +286,7 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 				<a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer">@BotFather</a>
 				(send <code>/newbot</code>, it replies with the token) and add the bot to the chat. Then
 				write a message in the chat and press <b>Find chat ID</b>: the ID is
-				<code>chat.id</code> in the answer.
+				<code>chat.id</code> in the answer (<code>getUpdates</code>).
 				<a
 					href="https://core.telegram.org/bots/tutorial#obtain-your-bot-token"
 					target="_blank"
@@ -324,7 +317,7 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 					rel="noopener noreferrer"
 				>
 					Slack's guide
-				</a>.
+				</a>. Mattermost and Rocket.Chat webhooks work too.
 			</p>
 			<TextField
 				label="Bot token"
@@ -355,21 +348,22 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 					your Slack app
 				</a>
 				→ OAuth &amp; Permissions → Bot Token Scopes: <code>chat:write</code> → Install to Workspace
-				→ Bot User OAuth Token. Invite the bot to the channel (<code>/invite @app</code>). Tokens
-				and webhooks are stored encrypted.
+				→ Bot User OAuth Token. Invite the bot to the channel (<code>/invite @app</code>); the
+				channel ID is at the bottom of the channel details. Tokens and webhooks are stored
+				encrypted.
 			</p>
 		{/if}
 
 		{#if form.duplicate}<DuplicateNotice duplicate={form.duplicate} />{/if}
 
-		<fieldset class="flex min-w-0 flex-col gap-4 disabled:*:not-last:opacity-50" disabled={locked}>
+		<fieldset class="flex min-w-0 flex-col gap-3 disabled:*:not-last:opacity-50" disabled={locked}>
 			<TextField
 				label="Name"
 				name="name"
 				bind:value={name}
 				maxlength={limits.connectionName}
 				placeholder={namePlaceholder(type, typedAddress, chosenType?.name_placeholder ?? '')}
-				note="optional: left empty, it is filled in when saved"
+				description="Optional: left empty, it is filled in when saved."
 				error={form.fields.name}
 			/>
 
@@ -382,32 +376,31 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 				{#snippet summary()}
 					{#if allProjects}
 						All projects
+					{:else if chosenProjects.length > 0}
+						{chosenProjects.map((project) => project.name).join(', ')}
 					{:else}
-						{#each chosenProjects as project (project.id)}
-							<Badge tone="project" label={project.name} />
-						{:else}
-							<span class="text-muted">none</span>
-						{/each}
+						<span class="text-muted">none</span>
 					{/if}
 				{/snippet}
-				<ChoiceGroup legend="Projects that are sent" error={form.fields.projects}>
-					<Choice
-						type="checkbox"
-						label="All projects, including ones added later"
-						checked={allProjects}
-						onchange={(checked: boolean) => (allProjects = checked)}
-					/>
+				<ChoiceGroup legend="Projects that are sent" hideLegend inline error={form.fields.projects}>
+					{#snippet lead()}
+						<Choice
+							type="checkbox"
+							label="All projects, including ones added later"
+							checked={allProjects}
+							onchange={(checked: boolean) => (allProjects = checked)}
+						/>
+					{/snippet}
 					{#if !allProjects}
 						{#each projects as project (project.id)}
 							<Choice
 								type="checkbox"
 								value={String(project.id)}
+								label={project.name}
 								checked={projectIds.includes(String(project.id))}
 								onchange={(checked: boolean) =>
 									(projectIds = toggled(projectIdsAll, projectIds, String(project.id), checked))}
-							>
-								<Badge tone="project" label={project.name} />
-							</Choice>
+							/>
 						{/each}
 					{/if}
 				</ChoiceGroup>
@@ -423,17 +416,19 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 				<LevelChoices
 					kind="event"
 					legend="Levels that are sent"
+					hideLegend
+					inline={false}
 					selected={chosenLevels}
 					onchange={(chosen: string[]) => (chosenLevels = chosen)}
 					error={form.fields.levels}
 				/>
 			</Details>
 
-			<ChoiceGroup legend="Options" error={form.fields.active}>
+			<ChoiceGroup legend="Options" hideLegend inline error={form.fields.active}>
 				<Choice
 					type="checkbox"
 					label="Active: send notifications"
-					description={help.fields.Notifications.Active}
+					hint={help.fields.Notifications.Active}
 					checked={active}
 					onchange={(checked: boolean) => (active = checked)}
 				/>
@@ -441,7 +436,7 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 					<Choice
 						type="checkbox"
 						label="Include Open issue link"
-						description={help.fields.Notifications['Include Open issue link']}
+						hint={help.fields.Notifications['Include Open issue link']}
 						checked={includeIssueLink}
 						onchange={(checked: boolean) => {
 							includeIssueLink = checked;
