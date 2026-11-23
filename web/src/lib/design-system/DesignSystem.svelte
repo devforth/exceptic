@@ -109,6 +109,7 @@ Every component with its variants, on sample data. Served only by the dev server
 		'danger',
 		'info',
 		'link',
+		'muted',
 		'title',
 		'ghost'
 	];

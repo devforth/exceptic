@@ -146,7 +146,7 @@
 				{/if}
 				{#if log.trace_id}
 					<Button
-						variant="link"
+						variant="muted"
 						href={withQuery(resolve('/(app)/logs'), { trace_id: log.trace_id })}
 					>
 						trace {log.trace_id.slice(0, 8)}
