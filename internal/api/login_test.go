@@ -10,12 +10,14 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/devforth/exceptic/internal/api"
 	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/services"
 	"github.com/devforth/exceptic/internal/session"
 	"github.com/devforth/exceptic/internal/storage/database"
+	"github.com/devforth/exceptic/internal/storage/store"
 	"github.com/devforth/exceptic/internal/storage/storetest"
 )
 
@@ -211,6 +213,80 @@ func TestUILogin(t *testing.T) {
 	// The login is the web app's: not a request of the REST API.
 	if response := server.do(http.MethodPost, "/api/v1/login", `{"username":"admin","password":"x"}`); response.Code != http.StatusNotFound {
 		t.Errorf("REST login: %d", response.Code)
+	}
+}
+
+// A user stored without a password hash (a password-less sign-in would
+// store one) is opened by no password, not by the dummy hash's.
+func TestUILoginWithoutPasswordHash(t *testing.T) {
+	database := storetest.Open(t)
+
+	if _, err := database.CreateUser(context.Background(), store.User{Username: "sso", Name: "sso", Role: store.RoleUser, CreatedAt: time.Now()}, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	server := startLoginServer(t, database, "admin", adminPassword)
+
+	for _, password := range []string{"unknown user", ""} {
+		if response := server.browser().login("sso", password); response.Code != http.StatusUnauthorized || errorOf(t, response).Error != "Wrong username or password." {
+			t.Errorf("password %q: %d %s, want 401", password, response.Code, response.Body)
+		}
+	}
+}
+
+// An insider's own logins and password checks do not clear the guesses
+// their network made at other usernames: one network gets
+// MaxLoginFailures wrong passwords per window, however often it succeeds
+// in between.
+func TestUILoginLimitNotResetByInsider(t *testing.T) {
+	const password = "mallory password 1"
+
+	resets := map[string]func(server *restServer, attacker *browser){
+		"login": func(server *restServer, _ *browser) {
+			server.browser(from(7)...).login("mallory", password)
+		},
+		// The current password is right, the new one mismatched: nothing changes.
+		"change_password": func(server *restServer, attacker *browser) {
+			response := attacker.call(http.MethodPost, "change_password",
+				map[string]string{"current_password": password, "password": "new password 123", "confirm_password": "other password 123"})
+
+			if response.Code != http.StatusBadRequest {
+				server.t.Errorf("mismatched change: %d %s", response.Code, response.Body)
+			}
+		},
+	}
+
+	for name, reset := range resets {
+		t.Run(name, func(t *testing.T) {
+			server := startLoginServer(t, storetest.Open(t), "mallory", password, behindProxy)
+			// Without the device cookie its checks count against the network.
+			attacker := server.browser(from(7)...).loggedIn("mallory", password)
+			delete(attacker.cookies, "exceptic_device")
+
+			wrong := 0
+			guess := func(victim int) int {
+				response := server.browser(from(7)...).login(fmt.Sprintf("victim%d", victim), "guess guess guess")
+
+				if response.Code == http.StatusUnauthorized {
+					wrong++
+				}
+
+				return response.Code
+			}
+
+			// Spread over victims, so no username reaches its own limit.
+			for cycle := range 5 {
+				for index := range session.MaxLoginFailures - 1 {
+					guess(cycle + index)
+				}
+
+				reset(server, attacker)
+			}
+
+			if code := guess(100); code != http.StatusTooManyRequests || wrong > session.MaxLoginFailures {
+				t.Fatalf("the last guess answered %d after %d wrong passwords from one network, want 429 after at most %d", code, wrong, session.MaxLoginFailures)
+			}
+		})
 	}
 }
 

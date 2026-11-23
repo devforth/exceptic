@@ -470,6 +470,30 @@ func TestSucceededClearsCounts(t *testing.T) {
 	}
 }
 
+// The right password of one user takes only itself off a network's count
+// that holds guesses at other usernames: an insider cannot clear them.
+func TestSucceededKeepsOthersGuesses(t *testing.T) {
+	limiter := newLoginLimiter(slog.New(slog.DiscardHandler))
+	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	guesses := 0
+
+	for cycle := range 5 {
+		for index := range MaxLoginFailures - 1 {
+			if _, allowed := limiter.begin(network(7), fmt.Sprintf("victim%d", cycle+index), false, now); allowed {
+				guesses++
+			}
+		}
+
+		if own, allowed := limiter.begin(network(7), "mallory", false, now); allowed {
+			limiter.succeeded(own)
+		}
+	}
+
+	if guesses > MaxLoginFailures {
+		t.Fatalf("one network made %d guesses in a window, want at most %d", guesses, MaxLoginFailures)
+	}
+}
+
 // A full address counter refuses a new network and still counts known ones.
 func TestFullAddressCounter(t *testing.T) {
 	limiter := newLoginLimiter(slog.New(slog.DiscardHandler))

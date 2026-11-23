@@ -73,6 +73,18 @@ type loginLimiter struct {
 type loginWindowState struct {
 	start time.Time
 	count int
+	// A network's attempts: at username alone, or also at others.
+	username string
+	others   bool
+}
+
+// attemptAt notes the username of a network's attempt just counted.
+func (state *loginWindowState) attemptAt(username string) {
+	if state.count == 1 {
+		state.username = username
+	} else if state.username != username {
+		state.others = true
+	}
 }
 
 type loginCounter map[string]*loginWindowState
@@ -141,7 +153,7 @@ type loginAttempt struct {
 	addressKey                  string
 	pairKey                     string // a network and the username, for a known device
 	addressCount, usernameCount int    // addressCount is the pair's for a known device
-	usernameStart               time.Time
+	addressStart, usernameStart time.Time
 }
 
 // begin counts an attempt, or refuses it when its count is used up.
@@ -193,14 +205,18 @@ func (limiter *loginLimiter) begin(client netip.Addr, username string, knownDevi
 	}
 
 	attempt.addressCount = limiter.byAddress.add(attempt.addressKey, now)
+	address := limiter.byAddress[attempt.addressKey]
+	address.attemptAt(attempt.username)
+	attempt.addressStart = address.start
 	attempt.usernameCount = limiter.byUsername.add(attempt.username, now)
 	attempt.usernameStart = limiter.byUsername[attempt.username].start
 
 	return attempt, true
 }
 
-// succeeded clears the attempts of the network (or the known device) and
-// takes the right password off the other counts.
+// succeeded clears the attempts of the known device, or of the network when
+// they were all at this username (the user's own typos), and takes the right
+// password off the other counts, so a user cannot clear guesses at others.
 func (limiter *loginLimiter) succeeded(attempt loginAttempt) {
 	limiter.mutex.Lock()
 	defer limiter.mutex.Unlock()
@@ -212,7 +228,12 @@ func (limiter *loginLimiter) succeeded(attempt loginAttempt) {
 		return
 	}
 
-	delete(limiter.byAddress, attempt.addressKey)
+	if address := limiter.byAddress[attempt.addressKey]; address != nil && address.start.Equal(attempt.addressStart) && !address.others {
+		delete(limiter.byAddress, attempt.addressKey)
+	} else {
+		limiter.byAddress.forgive(attempt.addressKey, attempt.addressStart)
+	}
+
 	limiter.byUsername.forgive(attempt.username, attempt.usernameStart)
 }
 
