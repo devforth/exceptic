@@ -65,8 +65,8 @@ describe('usageSegments', () => {
 		limit: '1000 B',
 		cleanup_stop_percent: 80,
 		projects: [
-			{ id: 1, name: 'backend', bytes: 300, size: '300 B' },
-			{ id: 2, name: 'frontend', bytes: 0, size: '0 B' }
+			{ id: 1, name: 'backend', bytes: 300, size: '300 B', limit_bytes: 0, oldest: {} },
+			{ id: 2, name: 'frontend', bytes: 0, size: '0 B', limit_bytes: 0, oldest: {} }
 		],
 		other_bytes: 100,
 		other: '100 B'

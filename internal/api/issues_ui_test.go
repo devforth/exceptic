@@ -20,6 +20,7 @@ import (
 	"github.com/devforth/exceptic/internal/agentprompt"
 	"github.com/devforth/exceptic/internal/fixtures"
 	"github.com/devforth/exceptic/internal/platform/config"
+	"github.com/devforth/exceptic/internal/storage/database"
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
@@ -575,7 +576,7 @@ func TestUIIssueEventStates(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := server.database.Cleanup(ctx, size/2); err != nil {
+	if _, err := server.database.Cleanup(ctx, database.AllProjects, size/2); err != nil {
 		t.Fatal(err)
 	}
 

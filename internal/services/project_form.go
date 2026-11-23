@@ -1,8 +1,10 @@
 package services
 
 import (
+	"fmt"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/devforth/exceptic/internal/platform/config"
@@ -45,6 +47,17 @@ func readProjectForm(form url.Values, project *store.Project, recording config.R
 	// default", so a project follows RECORD_LOG_LEVELS until it differs.
 	project.LogLevels = chosenLevels(form["log_level"], config.LogLevels, recording.LogLevels)
 
+	// A missing share keeps the stored one (forms without the field).
+	if form.Has("disk_share") {
+		share, err := strconv.Atoi(strings.TrimSpace(form.Get("disk_share")))
+
+		if err != nil || share < store.MinDiskShare || share > 100 || share%store.DiskShareStep != 0 {
+			problems["disk_share"] = fmt.Sprintf("Choose %d%% to 100%% in steps of %d%%.", store.MinDiskShare, store.DiskShareStep)
+		} else {
+			project.DiskShare = share
+		}
+	}
+
 	return problems
 }
 
@@ -67,7 +80,7 @@ func chosenLevels(values, known, defaults []string) *[]string {
 // FormValues is project as the form would post it unchanged: a tool that
 // changes some fields starts from these, so the others keep their values.
 func (service *Projects) FormValues(project store.Project) url.Values {
-	form := url.Values{"name": {project.Name}, "color": {project.Color}}
+	form := url.Values{"name": {project.Name}, "color": {project.Color}, "disk_share": {strconv.Itoa(project.Share())}}
 
 	form["log_level"] = service.recording.RecordedLogLevels(project.LogLevels)
 

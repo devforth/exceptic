@@ -25,7 +25,9 @@ const (
 // CleanupRun is one cleanup by size: what it aims at, where it is and what
 // it did. The steps are those of docs/configuration.md (Retention).
 type CleanupRun struct {
-	Sequence   uint64        `json:"seq"`
+	Sequence uint64 `json:"seq"`
+	// Project is the one project a run cleans down to its disk share; 0: all of them.
+	Project    int           `json:"project,omitempty"`
 	Status     string        `json:"status"`
 	StartedAt  time.Time     `json:"started_at"`
 	Duration   time.Duration `json:"duration"`

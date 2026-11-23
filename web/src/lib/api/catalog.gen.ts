@@ -152,6 +152,8 @@ export interface Endpoints {
 			color?: string | null;
 			/** Log levels to store; an empty list stores none. Events of every level are stored. */
 			log_levels?: ('trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal')[] | null;
+			/** Percent of MAX_DATABASE_SIZE the project may hold, in steps of 5; above it the cleanup deletes its own data first. 100: no limit of its own. */
+			disk_share?: number | null;
 		};
 		out: {
 			id: number;
@@ -161,6 +163,7 @@ export interface Endpoints {
 			log_levels: string[] | null;
 			color?: string;
 			shown_color: string;
+			disk_share: number;
 		};
 	};
 	create_user: {
@@ -404,6 +407,7 @@ export interface Endpoints {
 			log_levels: string[] | null;
 			color?: string;
 			shown_color: string;
+			disk_share: number;
 		};
 	};
 	get_project_defaults: {
@@ -411,6 +415,7 @@ export interface Endpoints {
 		out: {
 			shown_color: string;
 			log_levels: string[] | null;
+			disk_share: number;
 		};
 	};
 	get_project_setup: {
@@ -468,6 +473,12 @@ export interface Endpoints {
 				bytes: number;
 				size?: string;
 				last_received?: IsoTime | null;
+				limit_bytes: number;
+				oldest: {
+					logs_below_error?: IsoTime | null;
+					error_logs?: IsoTime | null;
+					errors?: IsoTime | null;
+				};
 			})[] | null;
 			other_bytes: number;
 			other: string;
@@ -522,6 +533,10 @@ export interface Endpoints {
 			kept: number;
 			runs: ({
 				id: number;
+				project?: {
+					id: number;
+					name: string;
+				} | null;
 				started_at: IsoTime;
 				status: string;
 				limit: string;
@@ -941,6 +956,8 @@ export interface Endpoints {
 			color?: string | null;
 			/** Log levels to store; an empty list stores none. Events of every level are stored. */
 			log_levels?: ('trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal')[] | null;
+			/** Percent of MAX_DATABASE_SIZE the project may hold, in steps of 5; above it the cleanup deletes its own data first. 100: no limit of its own. */
+			disk_share?: number | null;
 		};
 		out: {
 			id: number;
@@ -950,6 +967,7 @@ export interface Endpoints {
 			log_levels: string[] | null;
 			color?: string;
 			shown_color: string;
+			disk_share: number;
 		};
 	};
 	update_user: {
@@ -1217,6 +1235,30 @@ export const projectPalette = [
 	{ name: 'Fuchsia', color: '#a21caf' },
 ] as const;
 
+/** The steps of the cleanup by size in order; those that always run go in full, the rest only while needed. */
+export const cleanupSteps = [
+	{ name: 'logs older than a month', always: true },
+	{ name: 'events older than a month beyond the newest of their issue', always: true },
+	{ name: 'events of resolved and ignored issues but the latest', always: true },
+	{ name: 'logs below error', always: true },
+	{ name: 'events below error but the latest of their issue', always: false },
+	{ name: 'error and fatal logs', always: false },
+	{ name: 'events beyond the newest of their issue', always: false },
+	{ name: 'events older than a week', always: false },
+	{ name: 'events of the last week', always: false },
+	{ name: 'latest events of issues not seen for a week', always: false },
+	{ name: 'whole issues', always: false },
+] as const;
+
+/** The numbers of the cleanup by size. */
+export const cleanupRules = {
+	startPercent: 100,
+	stopPercent: 80,
+	ageDays: 30,
+	recentAgeDays: 7,
+	oldEventsPerIssue: 20,
+} as const;
+
 /** What each role may do. */
 export const roleSummaries = {
 	admin: 'projects, notifications, users and deleting issues',
@@ -1243,6 +1285,7 @@ export const help = {
 		'Projects': {
 			'Color': 'Marks the project\'s badge in lists and the header of its emails.',
 			'DSN': 'The address the app\'s Sentry SDK sends errors and logs to. The key in it only allows sending to this project, so it can be in browser code.',
+			'Disk share': 'The part of MAX_DATABASE_SIZE the project may take. When it reaches it, the cleanup deletes the project\'s own data first, in the usual order, so a flood in one project does not push out the others. A ceiling, not a reservation: shares may add up to more than 100%. At 100% the project has no limit of its own.',
 			'Logs': 'Log levels to store; others are dropped when they arrive. Unchanged, the project follows RECORD_LOG_LEVELS. Errors and messages of every level are stored.',
 		},
 	},

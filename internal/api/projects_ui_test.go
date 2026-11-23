@@ -15,6 +15,7 @@ import (
 	"github.com/devforth/exceptic/internal/api"
 	"github.com/devforth/exceptic/internal/fixtures"
 	"github.com/devforth/exceptic/internal/platform/config"
+	"github.com/devforth/exceptic/internal/storage/database"
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
@@ -26,6 +27,7 @@ type uiProject struct {
 	Color      string   `json:"color"`
 	ShownColor string   `json:"shown_color"`
 	LogLevels  []string `json:"log_levels"`
+	DiskShare  int      `json:"disk_share"`
 }
 
 // An unknown project is not found for the project page (the web app shows
@@ -354,7 +356,7 @@ func TestListCleanups(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := server.database.Cleanup(ctx, 1); err != nil {
+	if _, err := server.database.Cleanup(ctx, database.AllProjects, 1); err != nil {
 		t.Fatal(err)
 	}
 
@@ -370,5 +372,109 @@ func TestListCleanups(t *testing.T) {
 
 	if !strings.Contains(step.Name, "logs below error") || len(step.Projects) != 1 || step.Projects[0].Project != "backend" || step.Projects[0].Deleted != "1 logs" {
 		t.Errorf("step %+v", step)
+	}
+}
+
+// A project's disk share: 100 unless set, 5 to 100 in steps of 5, each
+// problem at its field; get_storage gives its limit and what it keeps.
+func TestUIProjectDiskShare(t *testing.T) {
+	const maxBytes = 1 << 30
+
+	server := newRESTServerWith(t, func(settings *config.Config) { settings.Retention.MaxDatabaseBytes = maxBytes })
+	server.ingestFixtures()
+
+	admin := server.webUser(store.RoleAdmin, false)
+
+	var defaults struct {
+		DiskShare int `json:"disk_share"`
+	}
+
+	admin.request(http.MethodGet, "get_project_defaults", "", &defaults)
+
+	var stored, created, updated uiProject
+
+	admin.read("get_project?project=backend", &stored)
+	admin.request(http.MethodPost, "create_project", `{"name":"mobile","disk_share":35}`, &created)
+	admin.request(http.MethodPost, "update_project", `{"project":"backend","disk_share":20}`, &updated)
+
+	if defaults.DiskShare != 100 || stored.DiskShare != 100 || created.DiskShare != 35 || updated.DiskShare != 20 {
+		t.Fatalf("defaults %d, stored %d, created %d, updated %d", defaults.DiskShare, stored.DiskShare, created.DiskShare, updated.DiskShare)
+	}
+
+	for body, field := range map[string]bool{`{"project":"backend","disk_share":42}`: true, `{"project":"backend","disk_share":3}`: false, `{"project":"backend","disk_share":105}`: false} {
+		response := admin.call(http.MethodPost, "update_project", body)
+
+		var refused api.ErrorBody
+
+		if err := json.Unmarshal(response.Body.Bytes(), &refused); err != nil || response.Code != http.StatusBadRequest || (refused.Fields["disk_share"] != "") != field {
+			t.Errorf("%s: %d %s", body, response.Code, response.Body)
+		}
+	}
+
+	var storage struct {
+		Projects []struct {
+			Name       string `json:"name"`
+			LimitBytes int64  `json:"limit_bytes"`
+			Oldest     struct {
+				LogsBelowError *time.Time `json:"logs_below_error"`
+				ErrorLogs      *time.Time `json:"error_logs"`
+				Errors         *time.Time `json:"errors"`
+			} `json:"oldest"`
+		} `json:"projects"`
+	}
+
+	admin.request(http.MethodGet, "get_storage", "", &storage)
+
+	for _, project := range storage.Projects {
+		switch project.Name {
+		case "backend":
+			if project.LimitBytes != maxBytes/5 || project.Oldest.Errors == nil {
+				t.Errorf("backend: %+v", project)
+			}
+		case "mobile":
+			if project.LimitBytes != maxBytes*35/100 || project.Oldest.Errors != nil || project.Oldest.LogsBelowError != nil || project.Oldest.ErrorLogs != nil {
+				t.Errorf("mobile: %+v", project)
+			}
+		default:
+			if project.LimitBytes != 0 {
+				t.Errorf("%s at 100%%: limit %d", project.Name, project.LimitBytes)
+			}
+		}
+	}
+}
+
+// A run of one project names it; a run over all projects names none.
+func TestListCleanupsOfAProject(t *testing.T) {
+	server := newRESTServer(t)
+	ctx := context.Background()
+
+	if err := server.database.SaveLogs(ctx, []store.NewLog{{ProjectID: 1, Timestamp: time.Now(), Level: "info", Body: "a log to clean"}}, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := server.database.Cleanup(ctx, 1, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := server.database.Cleanup(ctx, database.AllProjects, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	var history struct {
+		Runs []struct {
+			Project *struct {
+				ID   int    `json:"id"`
+				Name string `json:"name"`
+			} `json:"project"`
+		} `json:"runs"`
+	}
+
+	server.webUser(store.RoleUser, false).request(http.MethodGet, "list_cleanups", "", &history)
+
+	if len(history.Runs) != 2 || history.Runs[0].Project != nil || history.Runs[1].Project == nil || *history.Runs[1].Project != struct {
+		ID   int    `json:"id"`
+		Name string `json:"name"`
+	}{1, "backend"} {
+		t.Fatalf("%+v", history.Runs)
 	}
 }

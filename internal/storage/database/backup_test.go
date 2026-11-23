@@ -261,13 +261,13 @@ func TestCleanupWaitsForBackup(t *testing.T) {
 	saveEvent(t, database, "kept", time.Now())
 	database.backups.Add(1)
 
-	if run, err := database.Cleanup(ctx, 1); err != nil || run.Status != "" {
+	if run, err := database.Cleanup(ctx, AllProjects, 1); err != nil || run.Status != "" {
 		t.Errorf("cleanup during a backup: %+v %v", run, err)
 	}
 
 	database.backups.Add(-1)
 
-	if run, err := database.Cleanup(ctx, 1); err != nil || run.Status == "" {
+	if run, err := database.Cleanup(ctx, AllProjects, 1); err != nil || run.Status == "" {
 		t.Errorf("cleanup after the backup: %+v %v", run, err)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/devforth/exceptic/internal/platform/config"
@@ -248,6 +249,8 @@ type projectSettings struct {
 	Color string `json:"color,omitempty"`
 	// ShownColor is the color it shows: its own or the palette's, #rrggbb.
 	ShownColor string `json:"shown_color"`
+	// DiskShare: the percent of MAX_DATABASE_SIZE it may hold before a cleanup of its own.
+	DiskShare int `json:"disk_share"`
 }
 
 // findProject reads the project given by name or ID; an unknown one is not found.
@@ -264,19 +267,22 @@ func (handler *handlers) findProject(ctx context.Context, nameOrID string) (stor
 func (handler *handlers) settings(call Call, project store.Project) projectSettings {
 	shown := config.Project{ID: project.ID, Name: project.Name, PublicKey: project.PublicKey, LogLevels: project.LogLevels}
 
-	return projectSettings{projectView: handler.projectView(call, shown), Color: project.Color, ShownColor: handler.services.Projects.Color(project)}
+	return projectSettings{
+		projectView: handler.projectView(call, shown), Color: project.Color, ShownColor: handler.services.Projects.Color(project), DiskShare: project.Share(),
+	}
 }
 
 // projectDefaults is what the form of a new project starts with.
 type projectDefaults struct {
 	ShownColor string   `json:"shown_color"`
 	LogLevels  []string `json:"log_levels"`
+	DiskShare  int      `json:"disk_share"`
 }
 
 func (handler *handlers) getProjectDefaults(context.Context, Call, noInput) (projectDefaults, error) {
 	defaults := handler.services.Projects.FormValues(store.Project{})
 
-	return projectDefaults{ShownColor: handler.services.Projects.Color(store.Project{}), LogLevels: defaults["log_level"]}, nil
+	return projectDefaults{ShownColor: handler.services.Projects.Color(store.Project{}), LogLevels: defaults["log_level"], DiskShare: store.Project{}.Share()}, nil
 }
 
 type projectIDInput struct {
@@ -337,6 +343,7 @@ func (handler *handlers) getProject(ctx context.Context, call Call, input projec
 type projectFields struct {
 	Color     *string   `json:"color,omitempty" jsonschema:"#rrggbb, or empty for the palette color."`
 	LogLevels *[]string `json:"log_levels,omitempty" jsonschema:"Log levels to store; an empty list stores none. Events of every level are stored."`
+	DiskShare *int      `json:"disk_share,omitempty" jsonschema:"Percent of MAX_DATABASE_SIZE the project may hold, in steps of 5; above it the cleanup deletes its own data first. 100: no limit of its own."`
 }
 
 var projectChoices = map[string][]string{"log_levels": config.LogLevels}
@@ -349,6 +356,10 @@ func (fields projectFields) apply(form url.Values) {
 
 	if fields.LogLevels != nil {
 		form["log_level"] = *fields.LogLevels
+	}
+
+	if fields.DiskShare != nil {
+		form.Set("disk_share", strconv.Itoa(*fields.DiskShare))
 	}
 }
 

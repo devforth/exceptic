@@ -85,7 +85,11 @@ Then, only while the database is still above 80%, each step after the one before
 10. The latest event of issues not seen for a week, longest unseen first: the issue stays listed with its title, count and dates.
 11. Whole issues, longest unseen first.
 
-It deletes in batches of up to 2000 records and stops as soon as enough is freed. Each batch looks at the data as it is then, so an issue that gets a new event or is reopened meanwhile is judged by that. A cleanup stopped by a restart goes on where it stopped, unless `MAX_DATABASE_SIZE` changed meanwhile: then it ends as failed ("stopped: MAX_DATABASE_SIZE changed to …" or "… turned off") and the next one, if the limit is on, starts from the new limit. Each run is logged with what every step deleted per project, and the last 100 runs with their steps are on the Projects page (Cleanup history).
+It deletes in batches of up to 2000 records and stops as soon as enough is freed. Each batch looks at the data as it is then, so an issue that gets a new event or is reopened meanwhile is judged by that.
+
+A project may have a disk share below 100% (its settings page): a part of `MAX_DATABASE_SIZE` it may take, a ceiling rather than a reservation. Each size check first cleans every project that reached its share, the smallest share first, one after another: the same steps in the same order, each deleting only that project's data, down to 80% of its share. The project's size is its part of the database as the Projects page shows it. Only then, if the database is still at its limit, the cleanup over all projects runs. So a project that floods loses its own data before it can push out the others.
+
+A cleanup stopped by a restart goes on where it stopped, for the same project, unless `MAX_DATABASE_SIZE` or that project's share changed meanwhile: then it ends as failed ("stopped: MAX_DATABASE_SIZE changed to …", "… turned off", "stopped: the disk share of … changed to …") and the next one starts from the new limit. Each run is logged with what every step deleted per project, and the last 100 runs with their steps and project are on the Projects page (Cleanup history).
 
 The Projects page shows each project's part of the database. A database written by an earlier version is counted once in the background after the upgrade; until then the page says "counting…".
 

@@ -69,3 +69,28 @@ func TestProjectFormValidation(t *testing.T) {
 		}
 	}
 }
+
+// The disk share takes 5% to 100% in steps of 5%; a form without it keeps the stored one.
+func TestProjectFormDiskShare(t *testing.T) {
+	project := store.Project{Name: "backend", DiskShare: 40}
+
+	if problems := readProjectForm(url.Values{"name": {"backend"}}, &project, config.Recording{}, ""); len(problems) > 0 || project.DiskShare != 40 {
+		t.Fatalf("without the field: share %d, problems %v", project.DiskShare, problems)
+	}
+
+	for value, want := range map[string]int{"5": 5, "35": 35, "100": 100} {
+		if problems := readProjectForm(url.Values{"name": {"backend"}, "disk_share": {value}}, &project, config.Recording{}, ""); len(problems) > 0 || project.DiskShare != want {
+			t.Errorf("%s: share %d, problems %v", value, project.DiskShare, problems)
+		}
+	}
+
+	for _, value := range []string{"0", "3", "42", "105", "half", ""} {
+		if problems := readProjectForm(url.Values{"name": {"backend"}, "disk_share": {value}}, &project, config.Recording{}, ""); problems["disk_share"] == "" {
+			t.Errorf("%q accepted", value)
+		}
+	}
+
+	if values := (&Projects{}).FormValues(store.Project{}); values.Get("disk_share") != "100" {
+		t.Errorf("a new project's share: %q, want 100", values.Get("disk_share"))
+	}
+}

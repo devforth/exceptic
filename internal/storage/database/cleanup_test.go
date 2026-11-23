@@ -249,11 +249,11 @@ func TestCleanupThreshold(t *testing.T) {
 
 	size, _ := database.db.Size()
 
-	if report, _ := database.Cleanup(ctx, size*2); len(report.Steps) != 0 {
+	if report, _ := database.Cleanup(ctx, AllProjects, size*2); len(report.Steps) != 0 {
 		t.Fatalf("cleaned below the limit: %v", report.Steps)
 	}
 
-	report, err := database.Cleanup(ctx, size)
+	report, err := database.Cleanup(ctx, AllProjects, size)
 
 	if err != nil || len(report.Steps) == 0 || report.SizeAfter > size*85/100 {
 		t.Fatalf("at the limit: %+v %v", report, err)
@@ -450,7 +450,7 @@ func TestCleanupDoesNotRepeat(t *testing.T) {
 
 	size, _ := database.db.Size()
 	limit := size / 2
-	first, err := database.Cleanup(ctx, limit)
+	first, err := database.Cleanup(ctx, AllProjects, limit)
 
 	// Smaller on disk; below the limit is not certain on a database this
 	// small, where goleveldb's own files weigh.
@@ -464,7 +464,7 @@ func TestCleanupDoesNotRepeat(t *testing.T) {
 
 	left := database.logicalSize()
 
-	if second, err := database.Cleanup(ctx, limit); err != nil || len(second.Steps) != 0 || database.logicalSize() != left {
+	if second, err := database.Cleanup(ctx, AllProjects, limit); err != nil || len(second.Steps) != 0 || database.logicalSize() != left {
 		t.Fatalf("second run deleted again: %+v, %v", second, err)
 	}
 
@@ -652,7 +652,7 @@ func runBatch(t *testing.T, database *Store, number int, position []byte, record
 		var err error
 
 		cursor.batch = writer.batch
-		finished, err = database.cleanupSteps()[number-1].batch(writer, cursor)
+		finished, err = database.cleanupSteps(AllProjects)[number-1].batch(writer, cursor)
 
 		return err
 	})
@@ -771,7 +771,13 @@ func TestCleanupGoesOn(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	done, err := database.Cleanup(ctx, 1<<40)
+	runs, err := database.cleanupPass(ctx, 1<<40)
+
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("runs: %+v, %v", runs, err)
+	}
+
+	done := runs[0]
 
 	if err != nil || done.Status != cleanupDone || done.Reached != 6 || len(done.Steps) != 1 || done.Steps[0].Number != 6 {
 		t.Fatalf("run: %+v, %v", done, err)
@@ -808,7 +814,7 @@ func TestCleanupStopsWhenLimitChanged(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if _, err := database.Cleanup(ctx, test.maxBytes); err != nil {
+			if _, err := database.cleanupPass(ctx, test.maxBytes); err != nil {
 				t.Fatal(err)
 			}
 
@@ -878,7 +884,7 @@ func TestThinNeverGrows(t *testing.T) {
 
 // The store's step counts, shown by the UI, match the steps.
 func TestCleanupStepCounts(t *testing.T) {
-	steps := openTest(t).cleanupSteps()
+	steps := openTest(t).cleanupSteps(AllProjects)
 	always := 0
 
 	for _, step := range steps {

@@ -204,6 +204,15 @@ func (db *DB) Counters() map[string]int64 {
 	return maps.Clone(db.counters)
 }
 
+// Group returns a group counter.
+func (db *DB) Group(group Key) int64 {
+	db.countersMutex.RLock()
+
+	defer db.countersMutex.RUnlock()
+
+	return db.groups[string(group)]
+}
+
 // Groups returns a copy of every group counter.
 func (db *DB) Groups() map[string]int64 {
 	db.countersMutex.RLock()

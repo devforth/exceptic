@@ -44,7 +44,7 @@ func TestCleanupBench(t *testing.T) {
 			probeCtx, stop := context.WithCancel(ctx)
 			probed := benchProbe(probeCtx, db)
 			started := time.Now()
-			run, err := db.Cleanup(ctx, limit)
+			run, err := db.Cleanup(ctx, database.AllProjects, limit)
 			elapsed := time.Since(started)
 
 			stop()

@@ -35,6 +35,9 @@ type Project struct {
 	// Color marks the project in lists and emails: "#rrggbb", set in the UI
 	// or picked from ProjectPalette by id.
 	Color string
+	// DiskShare is the percent of MAX_DATABASE_SIZE the project may hold
+	// before a cleanup of its own; 100 sets no limit of its own.
+	DiskShare int
 }
 
 // DSN is what a Sentry SDK is configured with: the server address (base,

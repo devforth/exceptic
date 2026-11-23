@@ -38,6 +38,26 @@ type projectStorage struct {
 	Size  string `json:"size,omitempty"`
 	// LastReceived: when its newest error or log came; missing when none is stored.
 	LastReceived *time.Time `json:"last_received,omitempty"`
+	// LimitBytes: its disk share of the size limit; 0 at 100% or without a limit.
+	LimitBytes int64 `json:"limit_bytes"`
+	// Oldest is what it still keeps, by the kinds the cleanup deletes.
+	Oldest oldestKept `json:"oldest"`
+}
+
+// oldestKept is when a project's oldest stored record of each kind came; missing when none is stored.
+type oldestKept struct {
+	LogsBelowError *time.Time `json:"logs_below_error,omitempty"`
+	ErrorLogs      *time.Time `json:"error_logs,omitempty"`
+	Errors         *time.Time `json:"errors,omitempty"`
+}
+
+// timeIfSet is nil for the zero time.
+func timeIfSet(at time.Time) *time.Time {
+	if at.IsZero() {
+		return nil
+	}
+
+	return &at
 }
 
 func (handler *handlers) getStorage(ctx context.Context, _ Call, _ noInput) (storageOutput, error) {
@@ -49,7 +69,12 @@ func (handler *handlers) getStorage(ctx context.Context, _ Call, _ noInput) (sto
 	}
 
 	for _, project := range storage.Projects {
-		output.Projects = append(output.Projects, projectStorage{ID: project.ID, Name: project.Name, Bytes: project.Bytes, Size: project.Size, LastReceived: project.LastReceived})
+		output.Projects = append(output.Projects, projectStorage{
+			ID: project.ID, Name: project.Name, Bytes: project.Bytes, Size: project.Size, LastReceived: project.LastReceived, LimitBytes: project.LimitBytes,
+			Oldest: oldestKept{
+				LogsBelowError: timeIfSet(project.Oldest.LogsBelowError), ErrorLogs: timeIfSet(project.Oldest.ErrorLogs), Errors: timeIfSet(project.Oldest.Errors),
+			},
+		})
 	}
 
 	return output, err

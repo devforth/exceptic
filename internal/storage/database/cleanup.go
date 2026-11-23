@@ -80,7 +80,10 @@ func (database *Store) Lane(maxBytes int64, logger *slog.Logger) background.Lane
 	}}
 }
 
-// CheckSize thins the events that turned a month old and runs the cleanup if the database is at maxBytes.
+// AllProjects is the scope of the cleanup over the whole database; any other is a project's ID.
+const AllProjects = 0
+
+// CheckSize thins the events that turned a month old and runs the cleanups due (cleanupPass).
 func (database *Store) CheckSize(ctx context.Context, maxBytes int64, logger *slog.Logger) error {
 	if maxBytes > 0 {
 		reduced, err := database.ReduceAging(ctx)
@@ -94,22 +97,41 @@ func (database *Store) CheckSize(ctx context.Context, maxBytes int64, logger *sl
 		}
 	}
 
-	run, err := database.Cleanup(ctx, maxBytes)
+	runs, err := database.cleanupPass(ctx, maxBytes)
 
-	if err != nil {
-		return fmt.Errorf("cleanup, step %d: %w", run.Reached, err)
+	for _, run := range runs {
+		if run.Status == cleanupDone {
+			database.logCleanup(logger, run)
+		}
 	}
 
-	if run.Status == cleanupDone {
-		logCleanup(logger, run)
+	if err != nil && len(runs) > 0 {
+		return fmt.Errorf("cleanup of %s, step %d: %w", database.scopeName(runs[len(runs)-1].Project), runs[len(runs)-1].Reached, err)
+	}
+
+	if err != nil {
+		return fmt.Errorf("cleanup: %w", err)
 	}
 
 	return nil
 }
 
+// scopeName names a run's scope in the log.
+func (database *Store) scopeName(project int) string {
+	if project == AllProjects {
+		return "all projects"
+	}
+
+	if stored, err := database.projects.Get(database.db, projectKey(project)); err == nil {
+		return stored.Name
+	}
+
+	return fmt.Sprintf("project %d", project)
+}
+
 // logCleanup writes a run as one record: sizes, the last step reached and a line per step that deleted something.
-func logCleanup(logger *slog.Logger, run CleanupRun) {
-	attributes := []any{logging.Block, "limit", config.FormatSize(run.Limit), "size_before", config.FormatSize(run.SizeBefore),
+func (database *Store) logCleanup(logger *slog.Logger, run CleanupRun) {
+	attributes := []any{logging.Block, "scope", database.scopeName(run.Project), "limit", config.FormatSize(run.Limit), "size_before", config.FormatSize(run.SizeBefore),
 		"compacted", config.FormatSize(run.Compacted), "size_after", config.FormatSize(run.SizeAfter)}
 
 	if run.Reached > 0 {
@@ -160,36 +182,148 @@ func (database *Store) noteWritten() {
 	}
 }
 
-// Cleanup goes on with a run a restart stopped, or starts one when the
-// database is at cleanupStart of maxBytes (0: no limit) and no backup runs. A run stopped by ctx
-// stays running and goes on at the next call, unless maxBytes changed meanwhile.
-func (database *Store) Cleanup(ctx context.Context, maxBytes int64) (CleanupRun, error) {
-	latest, err := database.cleanups.Primary().Newest().First(database.db)
-	run := latest.Record
+// cleanupPass is one pass of the size check: it first goes on with a run a
+// restart stopped (unless its limit changed meanwhile), then cleans each
+// project over its disk share, the smallest share first, then all projects
+// if the database is still at maxBytes (0: no limit). The runs go one after
+// another, never two at once; a run stopped by ctx stays running and goes on
+// at the next pass. It returns the runs that ran.
+func (database *Store) cleanupPass(ctx context.Context, maxBytes int64) ([]CleanupRun, error) {
+	var runs []CleanupRun
 
-	if err == nil && run.Status == cleanupRunning && run.Limit != maxBytes {
-		if err := database.finishCleanup(&run, nil, limitChanged(maxBytes)); err != nil {
-			return run, err
+	latest, err := database.cleanups.Primary().Newest().First(database.db)
+
+	if err != nil && !errors.Is(err, kv.ErrNotFound) {
+		return nil, err
+	}
+
+	if run := latest.Record; err == nil && run.Status == cleanupRunning {
+		limit, reason, err := database.scopeLimit(run, maxBytes)
+
+		if err != nil {
+			return nil, err
+		}
+
+		if run.Limit != limit {
+			// Its goal came from another limit: it ends, and the targets below start from the new one.
+			if err := database.finishCleanup(&run, nil, reason); err != nil {
+				return nil, err
+			}
+		} else {
+			err = database.advance(ctx, &run)
+
+			if ctx.Err() == nil {
+				err = database.finishCleanup(&run, err, "")
+			}
+
+			if runs = append(runs, run); err != nil || ctx.Err() != nil {
+				return runs, err
+			}
 		}
 	}
 
 	if maxBytes <= 0 {
+		return runs, nil
+	}
+
+	targets, err := database.shareTargets(maxBytes)
+
+	if err != nil {
+		return runs, err
+	}
+
+	for _, target := range append(targets, cleanupTarget{AllProjects, maxBytes}) {
+		run, err := database.Cleanup(ctx, target.project, target.limit)
+
+		if run.Status != "" {
+			runs = append(runs, run)
+		}
+
+		if err != nil || ctx.Err() != nil {
+			return runs, err
+		}
+	}
+
+	return runs, nil
+}
+
+// cleanupTarget is what a run cleans and down from which limit.
+type cleanupTarget struct {
+	project int
+	limit   int64
+}
+
+// shareTargets are the projects with a disk share below 100%, the smallest
+// first, each with its limit. None while data stored before the project
+// counters is still counted: their bytes and the events' project index fall short.
+func (database *Store) shareTargets(maxBytes int64) ([]cleanupTarget, error) {
+	if !database.backfilled() {
+		return nil, nil
+	}
+
+	projects, err := database.projects.Primary().All(database.db)
+
+	if err != nil {
+		return nil, err
+	}
+
+	slices.SortFunc(projects, func(first, second store.Project) int {
+		return cmp.Or(cmp.Compare(first.Share(), second.Share()), cmp.Compare(first.ID, second.ID))
+	})
+
+	var targets []cleanupTarget
+
+	for _, project := range projects {
+		if limit := store.ShareLimit(maxBytes, project.Share()); limit > 0 {
+			targets = append(targets, cleanupTarget{project.ID, limit})
+		}
+	}
+
+	return targets, nil
+}
+
+// scopeLimit is the limit a run's scope has now (0: none), and why a run
+// from another limit stops.
+func (database *Store) scopeLimit(run CleanupRun, maxBytes int64) (int64, string, error) {
+	if run.Project == AllProjects || maxBytes <= 0 {
+		return max(maxBytes, 0), limitChanged(maxBytes), nil
+	}
+
+	project, err := database.projects.Get(database.db, projectKey(run.Project))
+
+	if errors.Is(err, kv.ErrNotFound) {
+		return 0, "stopped: the project was deleted", nil
+	}
+
+	if err != nil {
+		return 0, "", err
+	}
+
+	limit := store.ShareLimit(maxBytes, project.Share())
+
+	// The run's limit is another share of the same MAX_DATABASE_SIZE: the share changed.
+	for share := store.MinDiskShare; share <= 100; share += store.DiskShareStep {
+		if store.ShareLimit(maxBytes, share) == run.Limit {
+			return limit, fmt.Sprintf("stopped: the disk share of %s changed to %d%%", project.Name, project.Share()), nil
+		}
+	}
+
+	return limit, limitChanged(maxBytes), nil
+}
+
+// Cleanup cleans one scope, a project (its ID) or AllProjects, when it is at
+// cleanupStart of limit and no backup runs: it starts a run, takes it as far
+// as needed and saves it. A run stopped by ctx stays running; cleanupPass goes on with it.
+func (database *Store) Cleanup(ctx context.Context, project int, limit int64) (CleanupRun, error) {
+	// A backup's snapshot keeps deleted records on disk, which would make the goal too low.
+	if limit <= 0 || database.backups.Load() > 0 {
 		return CleanupRun{}, nil
 	}
 
-	switch {
-	case err == nil && run.Status == cleanupRunning:
-	case database.backups.Load() > 0:
-		// A backup's snapshot keeps deleted records on disk, which would make the goal too low.
-		return CleanupRun{}, nil
-	case err == nil || errors.Is(err, kv.ErrNotFound):
-		run, err = database.startCleanup(maxBytes)
+	run, err := database.startCleanup(project, limit)
 
-		if err != nil || run.Status != cleanupRunning {
-			return run, err
-		}
-	default:
-		return CleanupRun{}, err
+	if err != nil || run.Status != cleanupRunning {
+		return run, err
 	}
 
 	err = database.advance(ctx, &run)
@@ -201,14 +335,20 @@ func (database *Store) Cleanup(ctx context.Context, maxBytes int64) (CleanupRun,
 	return run, database.finishCleanup(&run, err, "")
 }
 
-// startCleanup compacts first, when ingest is quiet, what collects deleted
-// and replaced records (the inbox, the issues rewritten with every event):
-// that may be enough. Otherwise it saves a run whose goal is cleanupStop of maxBytes.
-func (database *Store) startCleanup(maxBytes int64) (CleanupRun, error) {
-	run := CleanupRun{StartedAt: database.now().UTC(), Limit: maxBytes}
+// startCleanup saves a run whose goal is cleanupStop of limit when its
+// scope is at cleanupStart of it. Over all projects it first compacts, when
+// ingest is quiet, what collects deleted and replaced records (the inbox,
+// the issues rewritten with every event): that may be enough.
+func (database *Store) startCleanup(project int, limit int64) (CleanupRun, error) {
+	run := CleanupRun{StartedAt: database.now().UTC(), Limit: limit, Project: project}
+
+	if project != AllProjects {
+		return run, database.startProjectCleanup(&run)
+	}
+
 	size, err := database.db.Size()
 
-	if err != nil || float64(size) < cleanupStart*float64(maxBytes) {
+	if err != nil || float64(size) < cleanupStart*float64(limit) {
 		return run, err
 	}
 
@@ -226,7 +366,7 @@ func (database *Store) startCleanup(maxBytes int64) (CleanupRun, error) {
 		return run, err
 	}
 
-	if float64(run.Compacted) < cleanupStart*float64(maxBytes) {
+	if float64(run.Compacted) < cleanupStart*float64(limit) {
 		run.Status, run.SizeAfter = cleanupDone, run.Compacted
 		run.Duration = database.now().Sub(run.StartedAt)
 
@@ -236,10 +376,51 @@ func (database *Store) startCleanup(maxBytes int64) (CleanupRun, error) {
 	// The counters count bytes before compression; the ratio converts.
 	logical := database.logicalSize()
 	ratio := float64(run.Compacted) / float64(max(logical, 1))
-	run.Goal = logical - int64((float64(run.Compacted)-cleanupStop*float64(maxBytes))/ratio)
+	run.Goal = logical - int64((float64(run.Compacted)-cleanupStop*float64(limit))/ratio)
 	run.Status, run.Reached = cleanupRunning, 1
 
 	return run, database.saveCleanup(&run)
+}
+
+// startProjectCleanup starts the run of a project at cleanupStart of its
+// limit, by its part of the size on disk as the Projects page shows it;
+// compacting is left to the run over all projects.
+func (database *Store) startProjectCleanup(run *CleanupRun) error {
+	onDisk, ratio, err := database.projectOnDisk(run.Project)
+
+	if err != nil || float64(onDisk) < cleanupStart*float64(run.Limit) {
+		return err
+	}
+
+	run.SizeBefore, run.Compacted = onDisk, onDisk
+	run.Goal = int64(cleanupStop * float64(run.Limit) / ratio)
+	run.Status, run.Reached = cleanupRunning, 1
+
+	return database.saveCleanup(run)
+}
+
+// projectOnDisk is a project's part of the size on disk, in the proportion
+// of its bytes to every byte counted (as ProjectUsage counts them), and that
+// ratio of bytes on disk to bytes counted.
+func (database *Store) projectOnDisk(project int) (int64, float64, error) {
+	size, err := database.db.Size()
+
+	if err != nil {
+		return 0, 0, err
+	}
+
+	ratio := float64(size) / float64(max(database.logicalSize()+database.inboxBytes.Load(), 1))
+
+	return int64(float64(database.projectBytes(project)) * ratio), ratio, nil
+}
+
+// scopeBytes is what a run's scope holds, before compression.
+func (database *Store) scopeBytes(project int) int64 {
+	if project == AllProjects {
+		return database.logicalSize()
+	}
+
+	return database.projectBytes(project)
 }
 
 // finishCleanup compacts what the run deleted from and saves it: failed with
@@ -249,8 +430,10 @@ func (database *Store) finishCleanup(run *CleanupRun, err error, stopped string)
 		err = database.compactCleaned(run)
 	}
 
-	if err == nil {
+	if err == nil && run.Project == AllProjects {
 		run.SizeAfter, err = database.db.Size()
+	} else if err == nil {
+		run.SizeAfter, _, err = database.projectOnDisk(run.Project)
 	}
 
 	run.Status, run.Duration, run.Error = cleanupDone, database.now().Sub(run.StartedAt), stopped
@@ -395,28 +578,78 @@ func (cursor *cleanupCursor) number(offset int) uint64 {
 	return kv.Decode(cursor.position, offset).U64()
 }
 
-// cleanupSteps are the steps in the order of docs/configuration.md; their number is their place.
-func (database *Store) cleanupSteps() []cleanupStep {
+// cleanupSteps are the steps in the order of docs/configuration.md; their
+// number is their place. Each reads and deletes only the records of project
+// (AllProjects: every record).
+func (database *Store) cleanupSteps(project int) []cleanupStep {
 	now := database.now()
 	month, week := now.Add(-config.CleanupAge), now.Add(-config.CleanupRecentAge)
+	scope := cleanupScope{database: database, project: project}
 
 	return []cleanupStep{
-		{"logs older than a month", true, database.deleteLogs(allRanks, func() uint64 { return database.sequenceFrom(month) })},
-		{"events older than a month beyond the newest of their issue", true, database.trimIssues(config.OldEventsPerIssue, month, func(issue *issueRecord) bool {
+		{"logs older than a month", true, scope.deleteLogs(allRanks, func() uint64 { return database.sequenceFrom(month) })},
+		{"events older than a month beyond the newest of their issue", true, scope.trimIssues(config.OldEventsPerIssue, month, func(issue *issueRecord) bool {
 			return len(issue.EventDays) > 0 && issue.EventDays[0].Day <= dayOf(month)
 		})},
-		{"events of resolved and ignored issues but the latest", true, database.trimIssues(1, time.Time{}, func(issue *issueRecord) bool {
+		{"events of resolved and ignored issues but the latest", true, scope.trimIssues(1, time.Time{}, func(issue *issueRecord) bool {
 			return issue.Status != store.StatusUnresolved
 		})},
-		{"logs below error", true, database.deleteLogs(minorRanks, nil)},
-		{"events below error but the latest of their issue", false, database.deleteOldestEvents(time.Time{}, minorRanks)},
-		{"error and fatal logs", false, database.deleteOldestLogs(majorRanks)},
-		{"events beyond the newest of their issue", false, database.trimIssues(config.OldEventsPerIssue, time.Time{}, nil)},
-		{"events older than a week", false, database.deleteOldestEvents(week, allRanks)},
-		{"events of the last week", false, database.deleteOldestEvents(time.Time{}, allRanks)},
-		{"latest events of issues not seen for a week", false, database.deleteUnseen(week, false)},
-		{"whole issues", false, database.deleteUnseen(time.Time{}, true)},
+		{"logs below error", true, scope.deleteLogs(minorRanks, nil)},
+		{"events below error but the latest of their issue", false, scope.deleteOldestEvents(time.Time{}, minorRanks)},
+		{"error and fatal logs", false, scope.deleteOldestLogs(majorRanks)},
+		{"events beyond the newest of their issue", false, scope.trimIssues(config.OldEventsPerIssue, time.Time{}, nil)},
+		{"events older than a week", false, scope.deleteOldestEvents(week, allRanks)},
+		{"events of the last week", false, scope.deleteOldestEvents(time.Time{}, allRanks)},
+		{"latest events of issues not seen for a week", false, scope.deleteUnseen(week, false)},
+		{"whole issues", false, scope.deleteUnseen(time.Time{}, true)},
 	}
+}
+
+// CleanupStepName is a step of the cleanup as the web app lists it.
+type CleanupStepName struct {
+	Name   string
+	Always bool // runs in full; the others only while needed
+}
+
+// CleanupSteps are the names of the cleanup's steps, in order.
+func CleanupSteps() []CleanupStepName {
+	var names []CleanupStepName
+
+	for _, step := range (&Store{now: time.Now}).cleanupSteps(AllProjects) {
+		names = append(names, CleanupStepName{step.name, step.always})
+	}
+
+	return names
+}
+
+// cleanupScope reads the records of one project, or of all (AllProjects).
+type cleanupScope struct {
+	database *Store
+
+	project int
+}
+
+// logs walks the logs of a level by arrival.
+func (scope cleanupScope) logs(rank byte) kv.Query[logRecord] {
+	if scope.project == AllProjects {
+		return scope.database.logs.Primary(kv.U8(rank))
+	}
+
+	return scope.database.logs.By("project", kv.U32(uint32(scope.project)), kv.U8(rank))
+}
+
+// events walks the events of a level by arrival.
+func (scope cleanupScope) events(rank byte) kv.Query[eventRecord] {
+	if scope.project == AllProjects {
+		return scope.database.events.By("age", kv.U8(rank))
+	}
+
+	return scope.database.events.By("project", kv.U32(uint32(scope.project)), kv.U8(rank))
+}
+
+// has says whether an issue is in the scope.
+func (scope cleanupScope) has(issue *issueRecord) bool {
+	return scope.project == AllProjects || issue.ProjectID == scope.project
 }
 
 // agingSteps thin the events older than a month as they age, in the background; they delete nothing.
@@ -472,7 +705,7 @@ func (database *Store) ReduceAging(ctx context.Context) ([]CleanupStep, error) {
 // advance runs the run's steps batch by batch from where it is; each batch
 // saves the run with it, so the progress and the deletes are written together.
 func (database *Store) advance(ctx context.Context, run *CleanupRun) error {
-	steps := database.cleanupSteps()
+	steps := database.cleanupSteps(run.Project)
 
 	for ctx.Err() == nil {
 		if run.Reached > len(steps) {
@@ -482,7 +715,7 @@ func (database *Store) advance(ctx context.Context, run *CleanupRun) error {
 		}
 
 		step := steps[run.Reached-1]
-		need := database.logicalSize() - run.Goal
+		need := database.scopeBytes(run.Project) - run.Goal
 
 		if !step.always && need <= 0 {
 			// A step started has a position or deleted something; one not started does not count.
@@ -576,7 +809,9 @@ func withBatch(run CleanupRun, name string, counted map[int]*CleanupCounts, free
 
 // deleteLogs deletes logs of ranks, lowest level and oldest first, that
 // arrived before the sequence bound returns (nil: any). Position: rank, sequence.
-func (database *Store) deleteLogs(ranks []byte, bound func() uint64) cleanupBatch {
+func (scope cleanupScope) deleteLogs(ranks []byte, bound func() uint64) cleanupBatch {
+	database := scope.database
+
 	return func(writer *batchWriter, cursor *cleanupCursor) (bool, error) {
 		start, from := kv.Decode(cursor.position, 0).U8(), cursor.number(1)
 		before := uint64(math.MaxUint64)
@@ -596,7 +831,7 @@ func (database *Store) deleteLogs(ranks []byte, bound func() uint64) cleanupBatc
 
 			full := false
 
-			err := database.logs.Primary(kv.U8(rank)).From(kv.U64(from)).Before(kv.U64(before)).Each(database.db, func(entry kv.Entry[logRecord]) (bool, error) {
+			err := scope.logs(rank).From(kv.U64(from)).Before(kv.U64(before)).Each(database.db, func(entry kv.Entry[logRecord]) (bool, error) {
 				if full = cursor.full(); full {
 					return false, nil
 				}
@@ -621,13 +856,15 @@ func (database *Store) deleteLogs(ranks []byte, bound func() uint64) cleanupBatc
 }
 
 // deleteOldestLogs deletes logs of ranks oldest first, whatever their level. Position: sequence.
-func (database *Store) deleteOldestLogs(ranks []byte) cleanupBatch {
+func (scope cleanupScope) deleteOldestLogs(ranks []byte) cleanupBatch {
+	database := scope.database
+
 	return func(writer *batchWriter, cursor *cleanupCursor) (bool, error) {
 		from := cursor.number(0)
 		queries := make([]kv.Query[logRecord], 0, len(ranks))
 
 		for _, rank := range ranks {
-			queries = append(queries, database.logs.Primary(kv.U8(rank)).From(kv.U64(from)))
+			queries = append(queries, scope.logs(rank).From(kv.U64(from)))
 		}
 
 		full := false
@@ -651,11 +888,14 @@ func (database *Store) deleteOldestLogs(ranks []byte) cleanupBatch {
 	}
 }
 
-// eachIssue visits, by ID from the cursor on, the issues wants accepts as
-// they are now; visit says whether it is done with one. Position: issue ID.
-func (database *Store) eachIssue(wants func(*issueRecord) bool,
+// eachIssue visits, by ID from the cursor on, the issues of the scope
+// accepts takes as they are now; visit says whether it is done with one. Position: issue ID.
+func (scope cleanupScope) eachIssue(accepts func(*issueRecord) bool,
 	visit func(writer *batchWriter, cursor *cleanupCursor, issue *issueRecord) (bool, error),
 ) cleanupBatch {
+	database := scope.database
+	wants := func(issue *issueRecord) bool { return scope.has(issue) && accepts(issue) }
+
 	var ids []string // sorted once per step; each batch checks the issues as they are then
 
 	return func(writer *batchWriter, cursor *cleanupCursor) (bool, error) {
@@ -715,10 +955,11 @@ func (database *Store) issueIDs(wants func(*issueRecord) bool) []string {
 
 // trimIssues deletes the oldest events received before cutoff (zero: any)
 // beyond keep, of the issues match accepts (nil: all).
-func (database *Store) trimIssues(keep int, cutoff time.Time, match func(*issueRecord) bool) cleanupBatch {
+func (scope cleanupScope) trimIssues(keep int, cutoff time.Time, match func(*issueRecord) bool) cleanupBatch {
+	database := scope.database
 	wants := func(issue *issueRecord) bool { return issue.Stored > keep && (match == nil || match(issue)) }
 
-	return database.eachIssue(wants, func(writer *batchWriter, cursor *cleanupCursor, issue *issueRecord) (bool, error) {
+	return scope.eachIssue(wants, func(writer *batchWriter, cursor *cleanupCursor, issue *issueRecord) (bool, error) {
 		done := true
 
 		err := database.events.Primary(kv.Text(issue.ID)).Head().Each(database.db, func(entry kv.Entry[eventRecord]) (bool, error) {
@@ -746,13 +987,15 @@ func (database *Store) trimIssues(keep int, cutoff time.Time, match func(*issueR
 // deleteOldestEvents deletes events of ranks received before cutoff (zero:
 // any), oldest first whatever their level among those, but not the latest of
 // an issue. Position: sequence.
-func (database *Store) deleteOldestEvents(cutoff time.Time, ranks []byte) cleanupBatch {
+func (scope cleanupScope) deleteOldestEvents(cutoff time.Time, ranks []byte) cleanupBatch {
+	database := scope.database
+
 	return func(writer *batchWriter, cursor *cleanupCursor) (bool, error) {
 		from := cursor.number(0)
 		queries := make([]kv.Query[eventRecord], 0, len(ranks))
 
 		for _, rank := range ranks {
-			queries = append(queries, database.events.By("age", kv.U8(rank)).From(kv.U64(from)).Head())
+			queries = append(queries, scope.events(rank).From(kv.U64(from)).Head())
 		}
 
 		full := false
@@ -787,7 +1030,9 @@ func (database *Store) deleteOldestEvents(cutoff time.Time, ranks []byte) cleanu
 // seen before seenBefore (zero: any) or, with whole, the issues.
 // Position: last seen and ID of the last issue done, then the ID of an issue
 // whose events took more than a batch and the sequence its next batch starts at.
-func (database *Store) deleteUnseen(seenBefore time.Time, whole bool) cleanupBatch {
+func (scope cleanupScope) deleteUnseen(seenBefore time.Time, whole bool) cleanupBatch {
+	database := scope.database
+
 	type unseen struct {
 		lastSeen int64
 		id       string
@@ -798,7 +1043,7 @@ func (database *Store) deleteUnseen(seenBefore time.Time, whole bool) cleanupBat
 	}
 
 	wants := func(issue *issueRecord) bool {
-		return (whole || issue.Stored > 0) && (seenBefore.IsZero() || issue.LastSeen.Before(seenBefore))
+		return scope.has(issue) && (whole || issue.Stored > 0) && (seenBefore.IsZero() || issue.LastSeen.Before(seenBefore))
 	}
 
 	var issues []unseen // sorted once per step; each batch checks the issues as they are then

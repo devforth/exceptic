@@ -24,8 +24,10 @@ type cleanupsOutput struct {
 }
 
 type cleanupRun struct {
-	ID        uint64    `json:"id"`
-	StartedAt time.Time `json:"started_at"`
+	ID uint64 `json:"id"`
+	// Project: the one project the run cleaned down to its disk share; missing for a run over all projects.
+	Project   *cleanupProject `json:"project,omitempty"`
+	StartedAt time.Time       `json:"started_at"`
 	// Status is running, done or failed.
 	Status     string `json:"status"`
 	Limit      string `json:"limit"`
@@ -41,6 +43,11 @@ type cleanupRun struct {
 	Took         string        `json:"took"`
 	Error        string        `json:"error,omitempty"`
 	Steps        []cleanupStep `json:"steps"`
+}
+
+type cleanupProject struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
 }
 
 // cleanupStep is a step that deleted something, numbered as in docs/configuration.md.
@@ -79,6 +86,10 @@ func cleanups(runs []store.CleanupRun, projectName func(id int) string) cleanups
 			Steps: []cleanupStep{},
 		}
 
+		if run.Project != 0 {
+			view.Project = &cleanupProject{ID: run.Project, Name: projectName(run.Project)}
+		}
+
 		for _, step := range run.Steps {
 			stepView := cleanupStep{Number: step.Number, Name: step.Name, Freed: config.FormatSize(step.Freed), Took: tookText(step.Duration), Projects: []cleanupDeleted{}}
 
@@ -114,12 +125,21 @@ func cleanupResult(run store.CleanupRun) string {
 	case run.Reached == 0:
 		return "compacting was enough, nothing deleted"
 	case run.Reached <= store.CleanupAlwaysSteps:
-		return fmt.Sprintf("steps 1–%d always run; after them the database was under %d%%", store.CleanupAlwaysSteps, config.CleanupStopPercent)
+		return fmt.Sprintf("steps 1–%d always run; after them %s was under %d%%", store.CleanupAlwaysSteps, cleaned(run), config.CleanupStopPercent)
 	case run.Reached < store.CleanupSteps || run.Position != nil:
-		return fmt.Sprintf("stopped in step %d: the database was at %d%%", run.Reached, config.CleanupStopPercent)
+		return fmt.Sprintf("stopped in step %d: %s was at %d%%", run.Reached, cleaned(run), config.CleanupStopPercent)
 	default:
 		return "every step ran"
 	}
+}
+
+// cleaned names what a run measured against its limit.
+func cleaned(run store.CleanupRun) string {
+	if run.Project != 0 {
+		return "the project"
+	}
+
+	return "the database"
 }
 
 // stepNumbers reads the steps that deleted something as "1, 4–7".

@@ -11,6 +11,7 @@ A project is one service (backend, frontend, worker) with its own DSN. Projects 
 | Color | Marks the project's badge in lists and the header of its emails. |
 | DSN | The address the app's Sentry SDK sends errors and logs to. The key in it only allows sending to this project, so it can be in browser code. |
 | Logs | Log levels to store; others are dropped when they arrive. Unchanged, the project follows RECORD_LOG_LEVELS. Errors and messages of every level are stored. |
+| Disk share | The part of MAX_DATABASE_SIZE the project may take. When it reaches it, the cleanup deletes the project's own data first, in the usual order, so a flood in one project does not push out the others. A ceiling, not a reservation: shares may add up to more than 100%. At 100% the project has no limit of its own. |
 
 ## Notifications
 

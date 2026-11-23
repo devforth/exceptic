@@ -163,6 +163,10 @@ type ProjectStorage struct {
 	Size  string
 	// LastReceived is when its newest issue or log came; nil when none is stored.
 	LastReceived *time.Time
+	// LimitBytes is its disk share of the size limit; 0 at 100% or without a limit.
+	LimitBytes int64
+	// Oldest is what it still keeps, by the kinds the cleanup deletes.
+	Oldest store.OldestKept
 }
 
 func (service *Projects) Storage(ctx context.Context) (Storage, error) {
@@ -188,7 +192,9 @@ func (service *Projects) Storage(ctx context.Context) (Storage, error) {
 	storage.OtherBytes = used
 
 	for _, project := range service.List() {
-		part := ProjectStorage{ID: project.ID, Name: project.Name}
+		part := ProjectStorage{ID: project.ID, Name: project.Name, Oldest: usage.Oldest[project.ID]}
+
+		part.LimitBytes = store.ShareLimit(storage.LimitBytes, project.DiskShare)
 
 		if last, ok := usage.LastReceived[project.ID]; ok {
 			part.LastReceived = &last

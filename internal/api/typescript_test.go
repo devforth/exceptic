@@ -18,6 +18,7 @@ import (
 	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/server"
 	"github.com/devforth/exceptic/internal/services"
+	"github.com/devforth/exceptic/internal/storage/database"
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
@@ -274,7 +275,15 @@ func writeRules(file *strings.Builder) error {
 		fmt.Fprintf(file, "\t{ name: %s, color: %s },\n", quote(color.Name), quote(color.Value))
 	}
 
-	file.WriteString("] as const;\n\n")
+	file.WriteString("] as const;\n\n/** The steps of the cleanup by size in order; those that always run go in full, the rest only while needed. */\nexport const cleanupSteps = [\n")
+
+	for _, step := range database.CleanupSteps() {
+		fmt.Fprintf(file, "\t{ name: %s, always: %t },\n", quote(step.Name), step.Always)
+	}
+
+	fmt.Fprintf(file, "] as const;\n\n/** The numbers of the cleanup by size. */\nexport const cleanupRules = {\n"+
+		"\tstartPercent: %d,\n\tstopPercent: %d,\n\tageDays: %d,\n\trecentAgeDays: %d,\n\toldEventsPerIssue: %d,\n} as const;\n\n",
+		config.CleanupStartPercent, config.CleanupStopPercent, config.CleanupAge/(24*time.Hour), config.CleanupRecentAge/(24*time.Hour), config.OldEventsPerIssue)
 	file.WriteString("/** What each role may do. */\nexport const roleSummaries = {\n")
 
 	for _, role := range slices.Sorted(maps.Keys(store.RoleSummaries)) {

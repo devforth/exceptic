@@ -33,6 +33,11 @@ func (database *Store) Backfill(ctx context.Context) error {
 	return nil
 }
 
+// projectBytes is what a project's issues, events and logs take, before compression.
+func (database *Store) projectBytes(projectID int) int64 {
+	return database.db.Group(projectCounter(projectID))
+}
+
 // backfilled: every record is counted per project.
 func (database *Store) backfilled() bool {
 	return database.issues.Backfilled() && database.events.Backfilled() && database.logs.Backfilled()
@@ -40,7 +45,7 @@ func (database *Store) backfilled() bool {
 
 func (database *Store) ProjectUsage(context.Context) (store.ProjectUsage, error) {
 	usage := store.ProjectUsage{
-		Bytes: map[int]int64{}, LastReceived: map[int]time.Time{}, Counting: !database.backfilled(),
+		Bytes: map[int]int64{}, LastReceived: map[int]time.Time{}, Oldest: map[int]store.OldestKept{}, Counting: !database.backfilled(),
 		Counted: database.logicalSize() + database.inboxBytes.Load(),
 	}
 
@@ -75,9 +80,55 @@ func (database *Store) ProjectUsage(context.Context) (store.ProjectUsage, error)
 		if newest.After(usage.LastReceived[projectID]) {
 			usage.LastReceived[projectID] = newest
 		}
+
+		if usage.Oldest[projectID], err = database.oldestKept(projectID); err != nil {
+			return usage, err
+		}
 	}
 
 	return usage, nil
+}
+
+// oldestKept reads the oldest record of each kind the cleanup deletes, by the project's indexes.
+func (database *Store) oldestKept(projectID int) (store.OldestKept, error) {
+	var kept store.OldestKept
+
+	scope := cleanupScope{database: database, project: projectID}
+
+	for _, logs := range []struct {
+		ranks  []byte
+		oldest *time.Time
+	}{{minorRanks, &kept.LogsBelowError}, {majorRanks, &kept.ErrorLogs}} {
+		queries := make([]kv.Query[logRecord], 0, len(logs.ranks))
+
+		for _, rank := range logs.ranks {
+			queries = append(queries, scope.logs(rank))
+		}
+
+		err := oldestFirst(database.db, queries, func(entry kv.Entry[logRecord]) bool {
+			*logs.oldest = entry.Record.Timestamp
+
+			return false
+		})
+
+		if err != nil {
+			return kept, err
+		}
+	}
+
+	queries := make([]kv.Query[eventRecord], 0, len(allRanks))
+
+	for _, rank := range allRanks {
+		queries = append(queries, scope.events(rank).Head())
+	}
+
+	err := oldestFirst(database.db, queries, func(entry kv.Entry[eventRecord]) bool {
+		kept.Errors = entry.Record.ReceivedAt
+
+		return false
+	})
+
+	return kept, err
 }
 
 // newestLog is the time of a project's newest log, zero when it has none:

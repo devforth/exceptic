@@ -80,6 +80,34 @@ func TestProjectUsage(t *testing.T) {
 	}
 }
 
+// What each project keeps, by the kinds the cleanup deletes: the oldest log
+// below error, error or fatal log and event; none when there is none.
+func TestProjectUsageOldest(t *testing.T) {
+	database := openTest(t)
+	seedShares(t, database, 100, 100)
+
+	first := time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)
+	second := time.Date(2026, 11, 5, 9, 0, 0, 0, time.UTC)
+
+	clockAt(database, first)
+	writeLogs(t, database, "debug", 2, "debug") // projects 1 and 2
+	writeEvents(t, database, "crash", "warning", 1)
+	clockAt(database, second)
+	writeLogs(t, database, "fatal", 1, "fatal") // project 1
+	writeLogs(t, database, "info", 2, "info")
+	writeEvents(t, database, "crash", "error", 1)
+
+	got := usage(t, database)
+
+	if want := (store.OldestKept{LogsBelowError: first, ErrorLogs: second, Errors: first}); got.Oldest[1] != want {
+		t.Errorf("project 1: %+v, want %+v", got.Oldest[1], want)
+	}
+
+	if want := (store.OldestKept{LogsBelowError: first}); got.Oldest[2] != want {
+		t.Errorf("project 2: %+v, want %+v", got.Oldest[2], want)
+	}
+}
+
 // Data stored before the project counters is counted once in the
 // background: until then the page says so, and what arrives meanwhile is
 // counted right; afterwards the counts and the events' project index are

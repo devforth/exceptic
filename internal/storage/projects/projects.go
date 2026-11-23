@@ -109,7 +109,7 @@ func (registry *Registry) Reload(ctx context.Context) error {
 
 		list = append(list, config.Project{
 			ID: project.ID, Name: project.Name, PublicKey: project.PublicKey, Color: color,
-			LogLevels: project.LogLevels,
+			LogLevels: project.LogLevels, DiskShare: project.Share(),
 		})
 	}
 

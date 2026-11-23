@@ -196,7 +196,7 @@ func TestBurstWithCleanup(t *testing.T) {
 		defer close(cleanupDone)
 
 		for cleanupCtx.Err() == nil {
-			report, err := db.Cleanup(cleanupCtx, 3<<20)
+			report, err := db.Cleanup(cleanupCtx, database.AllProjects, 3<<20)
 
 			if err != nil && cleanupCtx.Err() == nil {
 				cleanupErr = err
