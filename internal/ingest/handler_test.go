@@ -245,6 +245,10 @@ func TestAuthentication(t *testing.T) {
 			if events, logs := server.stored(); testCase.wantStatus != http.StatusOK && len(events)+len(logs) != 0 {
 				t.Fatal("rejected request must not store anything")
 			}
+
+			if _, contacted := server.db.FirstContact(1); contacted != (testCase.wantStatus == http.StatusOK) {
+				t.Fatalf("project marked connected: %v, status %d", contacted, testCase.wantStatus)
+			}
 		})
 	}
 }
@@ -459,6 +463,46 @@ func TestRateLimitCountsOnlyStoredItems(t *testing.T) {
 
 	if events, logs := server.stored(); len(events) != 1 || len(logs) != 0 {
 		t.Fatalf("stored %d events, %d logs", len(events), len(logs))
+	}
+}
+
+// A project is connected at its first request with its key, of any kind:
+// SDKs send a session at start, long before an error. The time is written
+// once; later envelopes write nothing.
+func TestFirstContact(t *testing.T) {
+	server := newTestServer(t, testSettings())
+	first := time.Date(2026, 11, 23, 9, 0, 0, 0, time.UTC)
+	server.handler.now = func() time.Time { return first }
+	session := "{\"sent_at\":\"2026-11-23T09:00:00Z\"}\n{\"type\":\"session\"}\n{\"sid\":\"7c3a1f0e9d2b4c5a8e6f1a2b3c4d5e6f\",\"status\":\"ok\",\"init\":true}\n"
+
+	if _, contacted := server.db.FirstContact(1); contacted {
+		t.Fatal("connected before any request")
+	}
+
+	if response := server.send(newRequest(http.MethodPost, envelopeURL("1", fixtures.BackendKey), []byte(session))); response.Code != http.StatusOK {
+		t.Fatalf("session: got %d %s", response.Code, response.Body)
+	}
+
+	if at, contacted := server.db.FirstContact(1); !contacted || !at.Equal(first) {
+		t.Fatalf("after a session: %v %v, want %v", at, contacted, first)
+	}
+
+	if events, logs := server.stored(); len(events)+len(logs) != 0 {
+		t.Fatalf("a session stored %d events, %d logs", len(events), len(logs))
+	}
+
+	server.handler.now = func() time.Time { return first.Add(time.Hour) }
+
+	if response := server.send(fixtures.Load(t, "node-client-report").HTTP()); response.Code != http.StatusOK {
+		t.Fatalf("client report: got %d %s", response.Code, response.Body)
+	}
+
+	if at, _ := server.db.FirstContact(1); !at.Equal(first) {
+		t.Fatalf("first contact moved to %v", at)
+	}
+
+	if _, contacted := server.db.FirstContact(2); contacted {
+		t.Fatal("another project marked connected")
 	}
 }
 

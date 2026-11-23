@@ -64,6 +64,9 @@ type ProjectUsage struct {
 	OnDisk map[int]int64
 	// LastReceived is when its newest issue or log came; missing when it has none.
 	LastReceived map[int]time.Time
+	// FirstContact is when it first sent a request with its key, of any
+	// kind; missing before that.
+	FirstContact map[int]time.Time
 	// Oldest is what each project still keeps, by the kinds the cleanup deletes.
 	Oldest map[int]OldestKept
 	// Counting: data stored before the per-project counters is still being

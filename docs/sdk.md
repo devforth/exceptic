@@ -8,7 +8,7 @@ Each service (backend, frontend, worker, …) should be its own project: the UI 
 https://<public_key>@errors.example.com/<project id>
 ```
 
-The project's **Show installation code** (⋯ on the Projects page) shows the install command, the setup code with the DSN filled in and a test line for Node.js, browser, Python, Go, PHP and Ruby, and copies the same as instructions for a coding agent.
+The project's **Show installation code** (⋯ on the Projects page) shows the install command, the setup code with the DSN filled in and a test line for Node.js, browser, Python, Go, PHP and Ruby, and copies the same as instructions for a coding agent. It shows the project as connected at the first request with its key of any kind: Node.js and browser SDKs send a session when the app starts, Python at its first request; other SDKs may connect only with the test error.
 
 Tested with the Node.js and browser SDKs, version 11. Other SDKs send the same envelope format and should work; please report one that does not.
 

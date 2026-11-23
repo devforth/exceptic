@@ -145,6 +145,14 @@ func (pipeline *Pipeline) accept(project config.Project, envelope *sentry.Envelo
 	return response, nil
 }
 
+// markContact records the project's first request with its key, once; a
+// failure only logs, since the envelope can still be stored.
+func (pipeline *Pipeline) markContact(projectID int, at time.Time) {
+	if _, err := pipeline.store.MarkContact(projectID, at); err != nil {
+		pipeline.logger.Error("mark project connected", "project", projectID, "err", err)
+	}
+}
+
 func (pipeline *Pipeline) Run(ctx context.Context) {
 	workers := runtime.GOMAXPROCS(0)
 

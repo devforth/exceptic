@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"errors"
+	"maps"
 	"time"
 
 	"github.com/devforth/exceptic/internal/storage/kv"
@@ -48,6 +49,10 @@ func (database *Store) ProjectUsage(context.Context) (store.ProjectUsage, error)
 		Bytes: map[int]int64{}, OnDisk: map[int]int64{}, LastReceived: map[int]time.Time{}, Oldest: map[int]store.OldestKept{},
 		Counting: !database.backfilled(),
 	}
+
+	database.contactsMutex.RLock()
+	usage.FirstContact = maps.Clone(database.contacted)
+	database.contactsMutex.RUnlock()
 
 	ratio, err := database.diskRatio()
 

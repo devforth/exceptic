@@ -157,7 +157,7 @@ func Endpoints(projects config.ProjectList, all *services.All) []Endpoint {
 		}, handler.listCleanups),
 		Define(Endpoint{
 			Name:        "get_project_setup",
-			Description: "How to connect an app to a project: the SDK of each platform with its DSN, and whether the project has received anything.",
+			Description: "How to connect an app to a project: the SDK of each platform with its DSN, whether an app has connected (any request with its key) and whether the project has stored anything.",
 			ReadOnly:    true,
 			Transports:  TransportUI,
 		}, handler.getProjectSetup),

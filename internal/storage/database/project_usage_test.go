@@ -232,3 +232,81 @@ func reopenWithoutProjectIndex(t *testing.T, dir string) *Store {
 
 	return database
 }
+
+// A project's first contact is written once, kept across a restart and
+// deleted with the project; once known, marking it again writes nothing.
+func TestFirstContact(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	database, err := Open(dir)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first := time.Date(2026, 11, 23, 9, 0, 0, 0, time.UTC)
+
+	if err := database.SeedProject(ctx, store.Project{ID: 1, Name: "backend", PublicKey: "0123456789abcdef"}, first); err != nil {
+		t.Fatal(err)
+	}
+
+	if written, err := database.MarkContact(1, first); err != nil || !written {
+		t.Fatalf("first mark: written %v, %v", written, err)
+	}
+
+	// Removed behind the store's back: a second mark must not write it again.
+	if err := database.db.Update(true, func(batch *kv.Batch) error {
+		return database.contacts.Delete(batch, projectContact{ProjectID: 1})
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if written, err := database.MarkContact(1, first.Add(time.Hour)); err != nil || written {
+		t.Fatalf("second mark: written %v, %v", written, err)
+	}
+
+	if stored, _ := database.contacts.Primary().All(database.db); len(stored) != 0 {
+		t.Fatalf("second mark wrote %+v", stored)
+	}
+
+	// Forgotten in memory too, it is written again.
+	database.contactsMutex.Lock()
+	delete(database.contacted, 1)
+	database.contactsMutex.Unlock()
+
+	if _, err := database.MarkContact(1, first); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := Open(dir)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = reopened.Close() })
+
+	if at, ok := reopened.FirstContact(1); !ok || !at.Equal(first) {
+		t.Fatalf("after a restart: %v %v", at, ok)
+	}
+
+	if got := usage(t, reopened).FirstContact[1]; !got.Equal(first) {
+		t.Fatalf("usage first contact %v", got)
+	}
+
+	if err := reopened.DeleteProject(ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := reopened.FirstContact(1); ok {
+		t.Fatal("first contact kept after the project's deletion")
+	}
+
+	if stored, _ := reopened.contacts.Primary().All(reopened.db); len(stored) != 0 {
+		t.Fatalf("deletion kept %+v", stored)
+	}
+}

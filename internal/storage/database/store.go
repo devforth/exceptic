@@ -38,6 +38,11 @@ type Store struct {
 	// stored; used only inside updates.
 	goneProjects map[int]bool
 
+	// contacted is the first contact of each project (project_contact), so
+	// ingest marks a project with no database access after the first time.
+	contactsMutex sync.RWMutex
+	contacted     map[int]time.Time
+
 	// checkedAt is Written at the last wake.
 	cleanupWake chan struct{}
 	checkedAt   atomic.Int64
@@ -94,7 +99,7 @@ func open(engine kv.Engine) (*Store, error) {
 	schema := kv.NewSchema()
 	formatKey := schema.Reserve(formatName)
 	database := &Store{schema: schema, collections: defineCollections(schema), formatKey: formatKey, now: time.Now, messageStart: map[string]uint64{},
-		goneProjects: map[int]bool{}, cleanupWake: make(chan struct{}, 1)}
+		goneProjects: map[int]bool{}, contacted: map[int]time.Time{}, cleanupWake: make(chan struct{}, 1)}
 
 	db, err := kv.OpenDB(engine, schema)
 
@@ -104,7 +109,7 @@ func open(engine kv.Engine) (*Store, error) {
 	}
 
 	if err == nil {
-		err = errors.Join(database.loadIssues(), database.loadInboxSize(), database.loadMarks(), database.loadPurges())
+		err = errors.Join(database.loadIssues(), database.loadInboxSize(), database.loadMarks(), database.loadPurges(), database.loadContacts())
 	}
 
 	if err != nil {

@@ -427,6 +427,8 @@ export interface Endpoints {
 			id: number;
 			name: string;
 			dsn: string;
+			connected: boolean;
+			connected_at: IsoTime | null;
 			received: boolean;
 			platforms: {
 				id: string;

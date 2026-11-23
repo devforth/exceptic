@@ -244,17 +244,20 @@ func TestUIDSNUsesPublicURL(t *testing.T) {
 }
 
 // The setup page: every platform's code with the project's DSN, a prompt
-// for an agent, and whether the project has received anything; open to
-// every role, as the DSN is on the Projects page.
+// for an agent, whether the project is connected (any request with its key,
+// a session at the SDK's start too) and whether it has stored anything; open
+// to every role, as the DSN is on the Projects page.
 func TestUIProjectSetup(t *testing.T) {
 	server := newRESTServer(t)
 	user := server.webUser(store.RoleUser, false)
 
 	type setupAnswer struct {
-		Name      string `json:"name"`
-		DSN       string `json:"dsn"`
-		Received  bool   `json:"received"`
-		Platforms []struct {
+		Name        string     `json:"name"`
+		DSN         string     `json:"dsn"`
+		Received    bool       `json:"received"`
+		Connected   bool       `json:"connected"`
+		ConnectedAt *time.Time `json:"connected_at"`
+		Platforms   []struct {
 			ID          string `json:"id"`
 			Init        string `json:"init"`
 			AgentPrompt string `json:"agent_prompt"`
@@ -265,7 +268,7 @@ func TestUIProjectSetup(t *testing.T) {
 
 	user.request(http.MethodGet, "get_project_setup?project=1", "", &setup)
 
-	if setup.Name != "backend" || setup.Received || len(setup.Platforms) < 6 || setup.Platforms[0].ID != "node" {
+	if setup.Name != "backend" || setup.Received || setup.Connected || setup.ConnectedAt != nil || len(setup.Platforms) < 6 || setup.Platforms[0].ID != "node" {
 		t.Fatalf("%+v", setup)
 	}
 
@@ -275,10 +278,17 @@ func TestUIProjectSetup(t *testing.T) {
 		}
 	}
 
+	server.sendEnvelope("{}\n{\"type\":\"session\"}\n{\"sid\":\"7c3a1f0e9d2b4c5a8e6f1a2b3c4d5e6f\",\"status\":\"ok\",\"init\":true}\n")
+	user.request(http.MethodGet, "get_project_setup?project=1", "", &setup)
+
+	if !setup.Connected || setup.ConnectedAt == nil || setup.Received {
+		t.Errorf("after a session: connected %v at %v, received %v", setup.Connected, setup.ConnectedAt, setup.Received)
+	}
+
 	server.ingestFixtures()
 	user.request(http.MethodGet, "get_project_setup?project=1", "", &setup)
 
-	if !setup.Received {
+	if !setup.Received || !setup.Connected {
 		t.Error("a project with errors has received nothing")
 	}
 }

@@ -214,12 +214,29 @@ func (service *Projects) Storage(ctx context.Context) (Storage, error) {
 	return storage, nil
 }
 
-// Received reports whether a project has stored anything: an error or a log.
-func (service *Projects) Received(ctx context.Context, projectID int) (bool, error) {
+// Contact is whether an app reaches a project.
+type Contact struct {
+	// Connected: it sent a request with its key, of any kind (SDKs send a
+	// session at start), or has stored something.
+	Connected bool
+	// ConnectedAt is its first request; nil before, or when only data stored
+	// before first requests were recorded tells it is connected.
+	ConnectedAt *time.Time
+	// Received: it has stored an error or a log.
+	Received bool
+}
+
+// Contact tells whether an app reaches the project, for its setup page.
+func (service *Projects) Contact(ctx context.Context, projectID int) (Contact, error) {
 	usage, err := service.store.ProjectUsage(ctx)
 	_, received := usage.LastReceived[projectID]
+	contact := Contact{Received: received, Connected: received}
 
-	return received, err
+	if at, ok := usage.FirstContact[projectID]; ok {
+		contact.Connected, contact.ConnectedAt = true, &at
+	}
+
+	return contact, err
 }
 
 // Cleanups are every run of the cleanup by size the store keeps, newest first.

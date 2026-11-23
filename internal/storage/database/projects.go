@@ -147,6 +147,61 @@ func (database *Store) loadPurges() error {
 	})
 }
 
+// projectContact is when a project first sent a request with its key, of
+// any kind (a session, a client report, an event): the project is connected.
+type projectContact struct {
+	ProjectID int       `json:"project_id"`
+	At        time.Time `json:"at"`
+}
+
+func (database *Store) loadContacts() error {
+	return database.contacts.Primary().Each(database.db, func(entry kv.Entry[projectContact]) (bool, error) {
+		database.contacted[entry.Record.ProjectID] = entry.Record.At
+
+		return true, nil
+	})
+}
+
+// FirstContact is when the project first sent a request with its key; ok is
+// false before that.
+func (database *Store) FirstContact(projectID int) (at time.Time, ok bool) {
+	database.contactsMutex.RLock()
+
+	defer database.contactsMutex.RUnlock()
+
+	at, ok = database.contacted[projectID]
+
+	return at, ok
+}
+
+// MarkContact records the project's first contact at at, once: when it is
+// known it neither reads nor writes the database. written says it was new.
+func (database *Store) MarkContact(projectID int, at time.Time) (written bool, err error) {
+	if _, known := database.FirstContact(projectID); known {
+		return false, nil
+	}
+
+	err = database.db.Update(true, func(batch *kv.Batch) error {
+		// Updates run one at a time: another may have marked it meanwhile.
+		if _, known := database.FirstContact(projectID); known || database.goneProjects[projectID] {
+			return nil
+		}
+
+		contact := projectContact{ProjectID: projectID, At: at.UTC()}
+		written = true
+
+		batch.AfterWrite(func() {
+			database.contactsMutex.Lock()
+			database.contacted[projectID] = contact.At
+			database.contactsMutex.Unlock()
+		})
+
+		return database.contacts.Save(batch, contact)
+	})
+
+	return written && err == nil, err
+}
+
 // DeleteProject deletes the project and its place in connections in one batch,
 // so its DSN stops at once and no later event or log of it is stored, and
 // marks its data for PurgeProjects.
@@ -166,7 +221,17 @@ func (database *Store) DeleteProject(_ context.Context, id int) error {
 			return err
 		}
 
-		batch.AfterWrite(func() { database.goneProjects[id] = true })
+		if err := database.contacts.Delete(batch, projectContact{ProjectID: id}); err != nil {
+			return err
+		}
+
+		batch.AfterWrite(func() {
+			database.goneProjects[id] = true
+
+			database.contactsMutex.Lock()
+			delete(database.contacted, id)
+			database.contactsMutex.Unlock()
+		})
 
 		return database.dropProjectFromConnections(batch, id)
 	})

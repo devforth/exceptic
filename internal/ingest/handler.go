@@ -149,6 +149,10 @@ func (handler *Handler) ingest(w http.ResponseWriter, r *http.Request) (map[stri
 		return nil, reject(http.StatusForbidden, "invalid project or key")
 	}
 
+	// Any request with the key connects the project: SDKs send a session at
+	// start, long before an error.
+	handler.pipeline.markContact(project.ID, handler.now())
+
 	if body == nil {
 		if body, err = openBody(w, r, handler.reading, projectID); err != nil {
 			return nil, err

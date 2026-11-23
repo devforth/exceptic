@@ -294,6 +294,12 @@ type projectSetup struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
 	DSN  string `json:"dsn"`
+	// Connected: an app sent a request with the project's key, of any kind
+	// (a session at the SDK's start too), or the project has stored data.
+	Connected bool `json:"connected"`
+	// ConnectedAt is the first such request; null before it, or for data
+	// stored before first requests were recorded.
+	ConnectedAt *time.Time `json:"connected_at"`
 	// Received: the project has stored an error or a log.
 	Received  bool          `json:"received"`
 	Platforms []sdkPlatform `json:"platforms"`
@@ -317,8 +323,11 @@ func (handler *handlers) getProjectSetup(ctx context.Context, call Call, input p
 		return projectSetup{}, ErrNotFound
 	}
 
-	received, err := handler.services.Projects.Received(ctx, project.ID)
-	setup := projectSetup{ID: project.ID, Name: project.Name, DSN: project.DSN(call.Address), Received: received, Platforms: []sdkPlatform{}}
+	contact, err := handler.services.Projects.Contact(ctx, project.ID)
+	setup := projectSetup{
+		ID: project.ID, Name: project.Name, DSN: project.DSN(call.Address),
+		Connected: contact.Connected, ConnectedAt: contact.ConnectedAt, Received: contact.Received, Platforms: []sdkPlatform{},
+	}
 
 	for _, sdk := range services.SDKSetups(setup.DSN) {
 		setup.Platforms = append(setup.Platforms, sdkPlatform{

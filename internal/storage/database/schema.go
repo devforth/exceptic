@@ -34,6 +34,7 @@ type collections struct {
 
 	projects     *kv.Collection[store.Project]
 	purges       *kv.Collection[projectPurge]
+	contacts     *kv.Collection[projectContact]
 	destinations *kv.Collection[destinationRecord]
 	connections  *kv.Collection[connectionRecord]
 	outbox       *kv.Collection[store.OutboxRecord]
@@ -234,6 +235,11 @@ func defineCollections(schema *kv.Schema) collections {
 		purges: kv.Define(schema, kv.Definition[projectPurge]{
 			Name: "project_purge",
 			Key:  func(purge projectPurge) kv.Key { return projectKey(purge.ProjectID) },
+		}),
+		// project_contact/<id>: when a project first sent a request with its key.
+		contacts: kv.Define(schema, kv.Definition[projectContact]{
+			Name: "project_contact",
+			Key:  func(contact projectContact) kv.Key { return projectKey(contact.ProjectID) },
 		}),
 		// destination/<id>: where notifications go, an email address or a chat.
 		destinations: kv.Define(schema, kv.Definition[destinationRecord]{
