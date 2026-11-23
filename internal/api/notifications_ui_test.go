@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"path"
 	"regexp"
 	"slices"
 	"strings"
@@ -293,7 +294,7 @@ func TestUIConnections(t *testing.T) {
 
 	webhook, raw := server.details(webhookID)
 
-	if webhook.AllProjects || !slices.Equal(webhook.ProjectIDs, []int{1}) || !slices.Equal(webhook.Levels, []string{"error"}) || webhook.SavedWebhookURL == "" || strings.Contains(raw, hook.url) || strings.Contains(raw, "/services/") {
+	if webhook.AllProjects || !slices.Equal(webhook.ProjectIDs, []int{1}) || !slices.Equal(webhook.Levels, []string{"error"}) || !strings.HasSuffix(webhook.SavedWebhookURL, "/…") || strings.Contains(raw, hook.url) || strings.Contains(raw, path.Base(hook.url)) {
 		t.Errorf("webhook connection: %s", raw)
 	}
 
@@ -305,7 +306,7 @@ func TestUIConnections(t *testing.T) {
 
 	bot, raw := server.details(botID)
 
-	if bot.SlackChannel != "C0123456789" || bot.SavedSlackBotToken != "xoxb-…ghij" || bot.SavedWebhookURL != "" || strings.Contains(raw, "abcdefghij") {
+	if bot.SlackChannel != "C0123456789" || bot.SavedSlackBotToken != "xoxb-1234567890-…" || bot.SavedWebhookURL != "" || strings.Contains(raw, "abcdefghij") {
 		t.Errorf("bot connection: %s", raw)
 	}
 
@@ -686,7 +687,7 @@ func TestSlackBotConnection(t *testing.T) {
 
 	server.must("update_connection", map[string]any{"connection_id": id, "slack_bot_token": slackBotToken, "slack_channel": "C0123456789"}, nil)
 
-	if details, _ := server.details(id); details.SavedWebhookURL != "" || details.SavedSlackBotToken != "xoxb-…ghij" {
+	if details, _ := server.details(id); details.SavedWebhookURL != "" || details.SavedSlackBotToken != "xoxb-1234567890-…" {
 		t.Errorf("the webhook is still stored: %+v", details)
 	}
 }

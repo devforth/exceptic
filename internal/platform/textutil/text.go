@@ -4,6 +4,7 @@ package textutil
 import (
 	"bytes"
 	"encoding/json"
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -110,10 +111,11 @@ func IndentJSON(raw json.RawMessage) string {
 	return buffer.String()
 }
 
-// MaskSecret shows enough of a stored secret to recognize it, not to use
-// it: the start up to the last "/" or ":" of its first part (the webhook
-// host and path, the bot id), the type and ids of a Slack token, and the
-// last 4 characters. Empty stays empty.
+// MaskSecret shows the start of a stored secret, enough to recognize it as
+// Slack's own settings do, never the part that grants access: a webhook URL
+// up to its last path segment (the host and the workspace and hook ids), a
+// token up to the last "/" or ":" of its first half (the bot id), or the type
+// and ids of a Slack token; otherwise its first 4 characters. Empty stays empty.
 func MaskSecret(secret string) string {
 	runes := []rune(secret)
 
@@ -125,18 +127,31 @@ func MaskSecret(secret string) string {
 		return "…"
 	}
 
-	prefix := 0
-	slackIDs := len(slackTokenIDs.FindString(secret))
+	if link, err := url.Parse(secret); err == nil && link.Scheme != "" && link.Host != "" && strings.Contains(link.Path, "/") {
+		path := link.Path[:strings.LastIndex(link.Path, "/")+1]
 
-	// Up to the last separator in the first half, so the secret part stays hidden;
-	// "-" also appears in random text, so it counts only in the ids of a Slack token.
+		return link.Scheme + "://" + link.Host + path + "…"
+	}
+
+	// The type and ids of a Slack token are not secret: Slack shows them too.
+	if slackIDs := len(slackTokenIDs.FindString(secret)); slackIDs > 0 && slackIDs < len(secret) {
+		return secret[:slackIDs] + "…"
+	}
+
+	prefix := 0
+
+	// Up to the last separator in the first half, so the secret part stays hidden.
 	for index, char := range runes[:len(runes)/2] {
-		if char == '/' || char == ':' || (char == '-' && index < slackIDs) {
+		if char == '/' || char == ':' {
 			prefix = index + 1
 		}
 	}
 
-	return string(runes[:prefix]) + "…" + string(runes[len(runes)-4:])
+	if prefix == 0 {
+		prefix = 4
+	}
+
+	return string(runes[:prefix]) + "…"
 }
 
 var slackTokenIDs = regexp.MustCompile(`^xox[a-z]-(?:[0-9]+-)*`)
