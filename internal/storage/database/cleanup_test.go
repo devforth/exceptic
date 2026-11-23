@@ -458,7 +458,7 @@ func TestCleanupDoesNotRepeat(t *testing.T) {
 		t.Fatalf("first run: %+v, %v (limit %d)", first, err, limit)
 	}
 
-	if runs, err := database.CleanupHistory(ctx, 10); err != nil || len(runs) != 1 || runs[0].Reached < 4 || runs[0].SizeBefore == 0 {
+	if runs, err := database.CleanupHistory(ctx, 10); err != nil || len(runs) != 1 || runs[0].Reached < store.CleanupAlwaysSteps || runs[0].SizeBefore == 0 {
 		t.Fatalf("history: %+v, %v", runs, err)
 	}
 
@@ -604,17 +604,17 @@ func TestCleanupCountsPerStep(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if reached != 4 || len(steps) != 2 {
+	if reached != 5 || len(steps) != 2 {
 		t.Fatalf("reached %d, steps %+v", reached, steps)
 	}
 
 	old, minor := steps[0], steps[1]
 
-	if old.Number != 1 || old.Projects[1].Logs != 20 || old.Projects[2].Logs != 20 || old.Freed <= 0 {
-		t.Fatalf("step 1: %+v %+v %+v", old, old.Projects[1], old.Projects[2])
+	if old.Number != 2 || old.Projects[1].Logs != 20 || old.Projects[2].Logs != 20 || old.Freed <= 0 {
+		t.Fatalf("step 2: %+v %+v %+v", old, old.Projects[1], old.Projects[2])
 	}
 
-	if minor.Number != 4 || minor.Projects[1].Logs != 5 || minor.Projects[2].Logs != 5 {
+	if minor.Number != 5 || minor.Projects[1].Logs != 5 || minor.Projects[2].Logs != 5 {
 		t.Fatalf("step 5: %+v", minor)
 	}
 }
@@ -674,8 +674,8 @@ func TestCleanupJudgesIssuesAsTheyAre(t *testing.T) {
 	writeEvents(t, database, "second", "error", 1)
 	clockAt(database, time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC))
 
-	// Step 9: the first batch has room for one issue.
-	position, finished := runBatch(t, database, 10, nil, cleanupChunk-1)
+	// Step 11: the first batch has room for one issue.
+	position, finished := runBatch(t, database, 11, nil, cleanupChunk-1)
 
 	if finished || storedEvents(database, "first") != 0 || storedEvents(database, "second") != 1 {
 		t.Fatalf("first batch: finished %v, first %d, second %d", finished, storedEvents(database, "first"), storedEvents(database, "second"))
@@ -683,11 +683,11 @@ func TestCleanupJudgesIssuesAsTheyAre(t *testing.T) {
 
 	writeEvents(t, database, "second", "error", 1)
 
-	if _, finished := runBatch(t, database, 10, position, 0); !finished || storedEvents(database, "second") != 2 {
+	if _, finished := runBatch(t, database, 11, position, 0); !finished || storedEvents(database, "second") != 2 {
 		t.Fatalf("seen again, second keeps %d events (finished %v)", storedEvents(database, "second"), finished)
 	}
 
-	// Step 3: an issue reopened between batches keeps its events.
+	// Step 4: an issue reopened between batches keeps its events.
 	writeEvents(t, database, "reopened", "error", 3)
 
 	issue := storedIssue(database, "reopened")
@@ -696,18 +696,18 @@ func TestCleanupJudgesIssuesAsTheyAre(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	position, _ = runBatch(t, database, 3, nil, cleanupChunk)
+	position, _ = runBatch(t, database, 4, nil, cleanupChunk)
 
 	if _, err := database.SetIssuesStatus(context.Background(), []string{issue.ID}, store.StatusUnresolved, store.Actor{}); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, finished := runBatch(t, database, 3, position, 0); !finished || storedEvents(database, "reopened") != 3 {
+	if _, finished := runBatch(t, database, 4, position, 0); !finished || storedEvents(database, "reopened") != 3 {
 		t.Fatalf("reopened keeps %d events (finished %v)", storedEvents(database, "reopened"), finished)
 	}
 }
 
-// Step 10 goes on inside an issue whose events take more than a batch after
+// Step 12 goes on inside an issue whose events take more than a batch after
 // the last event it deleted, so no batch walks the deleted keys again.
 func TestCleanupGoesOnInsideAnIssue(t *testing.T) {
 	database := openTest(t)
@@ -715,7 +715,7 @@ func TestCleanupGoesOnInsideAnIssue(t *testing.T) {
 	writeEvents(t, database, "large", "error", 30)
 	issueID := storedIssue(database, "large").ID
 
-	position, finished := runBatch(t, database, 11, nil, cleanupChunk-10)
+	position, finished := runBatch(t, database, 12, nil, cleanupChunk-10)
 
 	if finished || storedEvents(database, "large") != 20 {
 		t.Fatalf("first batch: finished %v, %d events left", finished, storedEvents(database, "large"))
@@ -731,7 +731,7 @@ func TestCleanupGoesOnInsideAnIssue(t *testing.T) {
 		t.Fatalf("position: issue %q, from %d; next event %d (%v)", started, from, next.Record.Sequence, err)
 	}
 
-	if _, finished := runBatch(t, database, 11, position, 0); !finished || storedIssue(database, "large") != nil {
+	if _, finished := runBatch(t, database, 12, position, 0); !finished || storedIssue(database, "large") != nil {
 		t.Fatalf("second batch: finished %v, issue left %v", finished, storedIssue(database, "large") != nil)
 	}
 }
@@ -749,8 +749,8 @@ func TestCleanupStopsAtTheGoal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Step 6 deletes one event.
-	if reached != 7 || storedEvents(database, "busy") != 299 || len(steps) != 1 || steps[0].Projects[1].Events != 1 {
+	// Step 8 deletes one event.
+	if reached != 8 || storedEvents(database, "busy") != 299 || len(steps) != 1 || steps[0].Projects[1].Events != 1 {
 		t.Fatalf("reached %d, busy keeps %d, steps %+v", reached, storedEvents(database, "busy"), steps)
 	}
 }
@@ -764,8 +764,8 @@ func TestCleanupGoesOn(t *testing.T) {
 	clockAt(database, time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC))
 	writeLogs(t, database, "error", 10, "error")
 
-	// Stopped at step 6 with the goal still ahead; steps 1 to 5 do not run again.
-	run := CleanupRun{Status: cleanupRunning, Reached: 6, Goal: database.logicalSize() - bytesOf(database, kindLog, levelRank("error")), Limit: 1 << 40}
+	// Stopped at step 7 with the goal still ahead; steps 1 to 6 do not run again.
+	run := CleanupRun{Status: cleanupRunning, Reached: 7, Goal: database.logicalSize() - bytesOf(database, kindLog, levelRank("error")), Limit: 1 << 40}
 
 	if err := database.saveCleanup(&run); err != nil {
 		t.Fatal(err)
@@ -779,7 +779,7 @@ func TestCleanupGoesOn(t *testing.T) {
 
 	done := runs[0]
 
-	if err != nil || done.Status != cleanupDone || done.Reached != 6 || len(done.Steps) != 1 || done.Steps[0].Number != 6 {
+	if err != nil || done.Status != cleanupDone || done.Reached != 7 || len(done.Steps) != 1 || done.Steps[0].Number != 7 {
 		t.Fatalf("run: %+v, %v", done, err)
 	}
 
@@ -808,7 +808,7 @@ func TestCleanupStopsWhenLimitChanged(t *testing.T) {
 			clockAt(database, time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC))
 			writeLogs(t, database, "error", 10, "error")
 
-			run := CleanupRun{Status: cleanupRunning, Reached: 6, Goal: database.logicalSize() - bytesOf(database, kindLog, levelRank("error")), Limit: 1}
+			run := CleanupRun{Status: cleanupRunning, Reached: 7, Goal: database.logicalSize() - bytesOf(database, kindLog, levelRank("error")), Limit: 1}
 
 			if err := database.saveCleanup(&run); err != nil {
 				t.Fatal(err)

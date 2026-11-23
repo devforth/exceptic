@@ -159,6 +159,45 @@ func (query Query[T]) Keys(reader Reader, visit func(key Key) (bool, error)) err
 	return iterator.Close()
 }
 
+// Groups visits, in key order, the first primary key of each group: the keys
+// that start with what group returns for that first key (a prefix of it). It
+// seeks past each group, so it reads one key per group, however large; Where
+// and Limit do not apply.
+func (query Query[T]) Groups(reader Reader, group func(key Key) Key, visit func(first Key) (bool, error)) error {
+	if query.index != nil || query.newest {
+		panic("kv: Groups walks the primary keys in order")
+	}
+
+	lower, upper := query.bounds()
+	iterator := reader.Iterate(lower, upper)
+	base := query.collection.prefix
+
+	for valid := iterator.First(); valid; {
+		key := bytes.Clone(iterator.Key())
+		more, err := visit(key[len(base):])
+
+		if err != nil || !more {
+			return errors.Join(err, iterator.Close())
+		}
+
+		prefix := group(key[len(base):])
+
+		if len(prefix) == 0 || !bytes.HasPrefix(key[len(base):], prefix) {
+			return errors.Join(fmt.Errorf("kv: group %x is not a prefix of key %x", prefix, key), iterator.Close())
+		}
+
+		next := prefixEnd(append(bytes.Clone(base), prefix...))
+
+		if next == nil {
+			break
+		}
+
+		valid = iterator.Seek(next)
+	}
+
+	return iterator.Close()
+}
+
 // Cursor reads a walk one record at a time.
 type Cursor[T any] struct {
 	query    Query[T]

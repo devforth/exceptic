@@ -48,6 +48,8 @@ type Iterator interface {
 	Last() bool
 	Next() bool
 	Prev() bool
+	// Seek moves to the first key at or after key within the bounds; false when there is none.
+	Seek(key []byte) bool
 	Key() []byte
 	Value() []byte
 	Close() error

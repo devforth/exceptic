@@ -9,8 +9,8 @@ import (
 // The cleanup by size has CleanupSteps steps (docs/configuration.md); the
 // first CleanupAlwaysSteps run in full, the rest only while needed.
 const (
-	CleanupSteps       = 11
-	CleanupAlwaysSteps = 4
+	CleanupSteps       = 12
+	CleanupAlwaysSteps = 5
 	// CleanupRunsKept is how many of the latest runs the store keeps.
 	CleanupRunsKept = 100
 )
@@ -60,6 +60,8 @@ type CleanupCounts struct {
 	Events  int `json:"events,omitempty"`
 	Thinned int `json:"thinned,omitempty"`
 	Issues  int `json:"issues,omitempty"`
+	// StatusChanges of missing issues; one with no events left counts as project 0.
+	StatusChanges int `json:"status_changes,omitempty"`
 }
 
 func (counts *CleanupCounts) Add(other CleanupCounts) {
@@ -67,6 +69,7 @@ func (counts *CleanupCounts) Add(other CleanupCounts) {
 	counts.Events += other.Events
 	counts.Thinned += other.Thinned
 	counts.Issues += other.Issues
+	counts.StatusChanges += other.StatusChanges
 }
 
 // String reads "120 logs, 3 events, 5 events thinned".
@@ -76,7 +79,7 @@ func (counts CleanupCounts) String() string {
 	for _, part := range []struct {
 		count int
 		name  string
-	}{{counts.Logs, "logs"}, {counts.Events, "events"}, {counts.Thinned, "events thinned"}, {counts.Issues, "issues"}} {
+	}{{counts.Logs, "logs"}, {counts.Events, "events"}, {counts.Thinned, "events thinned"}, {counts.Issues, "issues"}, {counts.StatusChanges, "status changes"}} {
 		if part.count > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", part.count, part.name))
 		}

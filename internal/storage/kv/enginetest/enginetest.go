@@ -114,6 +114,43 @@ func Run(t *testing.T, open Open, persistent bool) {
 		}
 	})
 
+	t.Run("seek", func(t *testing.T) {
+		engine := start(t)
+		write(t, engine, map[string]string{"a": "1", "b": "2", "b\x00": "3", "c": "4", "d": "5"})
+
+		for _, test := range []struct{ lower, upper, seek, want string }{
+			{"", "", "b", "b"},
+			{"", "", "b\x01", "c"},
+			{"", "", "e", ""},
+			{"b", "d", "a", "b"}, // before the lower bound: the first key
+			{"b", "d", "d", ""},  // at the upper bound: none
+		} {
+			iterator := engine.Iterate([]byte(test.lower), []byte(test.upper))
+
+			if test.lower == "" {
+				iterator = engine.Iterate(nil, nil)
+			}
+
+			got := ""
+
+			if iterator.Seek([]byte(test.seek)) {
+				got = string(iterator.Key())
+
+				if iterator.Next() && string(iterator.Key()) <= got {
+					t.Errorf("after seeking %q, next is %q", test.seek, iterator.Key())
+				}
+			}
+
+			if err := iterator.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			if got != test.want {
+				t.Errorf("seek %q in [%q, %q): %q, want %q", test.seek, test.lower, test.upper, got, test.want)
+			}
+		}
+	})
+
 	t.Run("snapshot", func(t *testing.T) {
 		engine := start(t)
 		write(t, engine, map[string]string{"a": "old"})

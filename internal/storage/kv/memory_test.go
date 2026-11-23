@@ -153,6 +153,12 @@ func (it *memoryIterator) Next() bool { it.position++; return it.valid() }
 
 func (it *memoryIterator) Prev() bool { it.position--; return it.valid() }
 
+func (it *memoryIterator) Seek(key []byte) bool {
+	it.position, _ = slices.BinarySearch(it.keys, string(key))
+
+	return it.valid()
+}
+
 func (it *memoryIterator) Key() []byte { return []byte(it.keys[it.position]) }
 
 func (it *memoryIterator) Value() []byte { return it.values[it.position] }

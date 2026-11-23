@@ -70,26 +70,27 @@ While the limit is on, events lose their details as they turn a month old, every
 
 The size is checked at startup, every 10 minutes and after every 50 MB written. Every 10 minutes, halfway between the checks and limit or not, the ingest queue is compacted, so envelopes that waited there as the SDKs sent them, credentials included, leave the files; the pass is skipped while envelopes arrive (one came in the last 2 seconds, or the server has just started). Only the database files in use count (`DATA_DIR/leveldb`). Deleted data keeps its space until its files are compacted, so at the limit the logs and events are compacted first if anything in them was deleted or replaced since they were last compacted, and the parts that collect deleted data as the server works (the ingest queue, issues) when ingest is quiet; if the database is still at the limit, the cleanup runs and always deletes:
 
-1. Logs older than a month.
-2. Events older than a month beyond the newest 20 of their issue.
-3. The events of resolved and ignored issues but their latest.
-4. Logs below error (trace, debug, info, warn), whatever their age.
+1. Events and status changes of issues that are no longer stored: only a bug leaves them, so the log warns when any go.
+2. Logs older than a month.
+3. Events older than a month beyond the newest 20 of their issue.
+4. The events of resolved and ignored issues but their latest.
+5. Logs below error (trace, debug, info, warn), whatever their age.
 
 Then, only while the database is still above 80%, each step after the one before:
 
-5. Events below error (debug, info, warning: messages, PHP notices, console warnings), oldest first, but the latest of each issue.
-6. Error and fatal logs together, oldest first.
-7. Every issue down to its newest 20 events (new events are not capped as they arrive).
-8. Events older than a week, oldest first whatever their level, but the latest of each issue.
-9. Events of the last week, oldest first whatever their level, but the latest of each issue.
-10. The latest event of issues not seen for a week, longest unseen first: the issue stays listed with its title, count and dates.
-11. Whole issues, longest unseen first.
+6. Events below error (debug, info, warning: messages, PHP notices, console warnings), oldest first, but the latest of each issue.
+7. Error and fatal logs together, oldest first.
+8. Every issue down to its newest 20 events (new events are not capped as they arrive).
+9. Events older than a week, oldest first whatever their level, but the latest of each issue.
+10. Events of the last week, oldest first whatever their level, but the latest of each issue.
+11. The latest event of issues not seen for a week, longest unseen first: the issue stays listed with its title, count and dates.
+12. Whole issues, longest unseen first.
 
 It deletes in batches of up to 2000 records and stops as soon as enough is freed. Each batch looks at the data as it is then, so an issue that gets a new event or is reopened meanwhile is judged by that.
 
 A project may have a disk share below 100% (its settings page): a part of `MAX_DATABASE_SIZE` it may take, a ceiling rather than a reservation. Each size check first cleans every project that reached its share, the smallest share first, one after another: the same steps in the same order, each deleting only that project's data, down to 80% of its share. Only then, if the database is still at its limit, the cleanup over all projects runs. So a project that floods loses its own data before it can push out the others.
 
-A project's size is its part of the database as the Projects page shows it: the files without the ingest queue's, in the proportion of its data to all the data stored. It is an estimate, since one proportion serves every project: logs and events take different space for the same data, so the sizes move a little as the mix changes, a run that deletes one project's logs included. Deleted and replaced logs and events (by a cleanup, deleted issues, a deleted project, thinning, a repeated log message) keep their space until their files are compacted; the database counts them, across restarts too, and they count as no project's, so one project's deletes never raise another's size. Compacting the logs and events rewrites every project's records, so it waits until those deleted records are more than 10% of the data: then the size check compacts them, before it judges the shares and at the end of a project's run. The database also compacts some of them on its own without saying which, so until then the sizes may read up to that much low. Until a database from an earlier version is counted ("counting…"), only the cleanup over all projects runs.
+A project's size is its part of the database as the Projects page shows it: the files without the ingest queue's, in the proportion of its data to all the data stored. It is an estimate, since one proportion serves every project: logs and events take different space for the same data, so the sizes move a little as the mix changes, a run that deletes one project's logs included. Deleted and replaced logs and events (by a cleanup, deleted issues or logs, a deleted project, thinning, a repeated log message) keep their space until their files are compacted; the database counts them, across restarts too, and they count as no project's, so one project's deletes never raise another's size. Compacting the logs and events rewrites every project's records, so it waits until those deleted records are more than 10% of the data: then the size check compacts them, before it judges the shares and at the end of a project's run. The database also compacts some of them on its own without saying which, so until then the sizes may read up to that much low. Until a database from an earlier version is counted ("counting…"), only the cleanup over all projects runs.
 
 A cleanup stopped by a restart goes on where it stopped, for the same project, unless `MAX_DATABASE_SIZE` or that project's share changed meanwhile: then it ends as failed ("stopped: MAX_DATABASE_SIZE changed to …", "… turned off", "stopped: the disk share of … changed to …", "stopped: the project was deleted") and the next one starts from the new limit. Each run is logged with what every step deleted per project, and the last 100 runs with their steps and project are on the Projects page (Cleanup history).
 

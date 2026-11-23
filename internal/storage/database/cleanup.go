@@ -132,6 +132,10 @@ func (database *Store) logCleanup(logger *slog.Logger, run CleanupRun) {
 
 	for _, step := range run.Steps {
 		attributes = append(attributes, fmt.Sprintf("step_%d", step.Number), stepLine(step))
+
+		if step.Number == orphanStep {
+			logger.Warn("records of missing issues deleted, which only a bug leaves", "scope", database.scope(run.Project).name(), "deleted", stepLine(step))
+		}
 	}
 
 	logger.Info("cleanup", attributes...)
@@ -476,6 +480,7 @@ func (database *Store) cleanupSteps(project int) []cleanupStep {
 	month, week := now.Add(-config.CleanupAge), now.Add(-config.CleanupRecentAge)
 
 	return []cleanupStep{
+		{"events and status changes of missing issues", true, scope.deleteOrphans()},
 		{"logs older than a month", true, scope.deleteLogs(allRanks, func() uint64 { return database.sequenceFrom(month) })},
 		{"events older than a month beyond the newest of their issue", true, scope.trimIssues(config.OldEventsPerIssue, month, func(issue *issueRecord) bool {
 			return len(issue.EventDays) > 0 && issue.EventDays[0].Day <= dayOf(month)

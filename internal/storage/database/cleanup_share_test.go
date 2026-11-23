@@ -494,7 +494,7 @@ func testFloodCutBack(t *testing.T, percent, floodEvents, floodLogs int, times f
 
 // A project's run takes the steps of docs/configuration.md (Retention) in
 // their order: steps 1 to 4 in full, then 5 and 6 until the project is at 80%
-// of its share, where it stops in the middle of step 6 with the oldest error
+// of its share, where it stops in the middle of step 7 with the oldest error
 // logs gone and everything after kept; the other project keeps all of it.
 func TestDiskShareStepOrder(t *testing.T) {
 	ctx := context.Background()
@@ -555,7 +555,7 @@ func TestDiskShareStepOrder(t *testing.T) {
 
 	clockAt(database, scenarioNow)
 
-	// The goal falls half way through the error logs of step 6.
+	// The goal falls half way through the error logs of step 7.
 	goal := database.projectBytes(2) - (oldLogs + oldEvents/3 + resolved*5/6 + debugLogs + warnings*9/10 + errorLogs/2)
 
 	// As the check finds it: the thinned events' old versions compacted away.
@@ -579,7 +579,7 @@ func TestDiskShareStepOrder(t *testing.T) {
 
 	runs := checkSize(t, database, maxBytes)
 
-	if len(runs) != 1 || runs[0].Project != 2 || runs[0].Status != cleanupDone || runs[0].Reached != 6 {
+	if len(runs) != 1 || runs[0].Project != 2 || runs[0].Status != cleanupDone || runs[0].Reached != 7 {
 		t.Fatalf("runs: %+v", runs)
 	}
 
@@ -594,10 +594,10 @@ func TestDiskShareStepOrder(t *testing.T) {
 		deleted[step.Number] = *step.Projects[2]
 	}
 
-	want := map[int]CleanupCounts{1: {Logs: 100}, 2: {Events: 10}, 3: {Events: 5}, 4: {Logs: 200}, 5: {Events: 9}}
+	want := map[int]CleanupCounts{2: {Logs: 100}, 3: {Events: 10}, 4: {Events: 5}, 5: {Logs: 200}, 6: {Events: 9}}
 
-	if !slices.Equal(numbers, []int{1, 2, 3, 4, 5, 6}) {
-		t.Fatalf("steps %v, want 1 to 6: %+v", numbers, runs[0].Steps)
+	if !slices.Equal(numbers, []int{2, 3, 4, 5, 6, 7}) {
+		t.Fatalf("steps %v, want 2 to 7: %+v", numbers, runs[0].Steps)
 	}
 
 	for number, counts := range want {
@@ -607,8 +607,8 @@ func TestDiskShareStepOrder(t *testing.T) {
 	}
 
 	// The goal is half way through its 400 error logs.
-	if logs := deleted[6].Logs; logs < 100 || logs > 300 {
-		t.Errorf("step 6 deleted %d of 400 error logs, want about 200", logs)
+	if logs := deleted[7].Logs; logs < 100 || logs > 300 {
+		t.Errorf("step 7 deleted %d of 400 error logs, want about 200", logs)
 	}
 
 	errorsAfter := levelLogs(t, database, 2, "error")
