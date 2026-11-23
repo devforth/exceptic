@@ -1,4 +1,4 @@
-// The component catalog exists only in the dev server (make web-dev): the import sits in a
+// The component catalog exists only in the dev server (make dev): the import sits in a
 // branch the build drops, so neither the page nor its code reaches dist or the binary.
 import { error } from '@sveltejs/kit';
 import type { PageLoad } from './$types';

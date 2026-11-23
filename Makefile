@@ -2,7 +2,7 @@ IMAGE ?= devforth/exceptic
 VERSION ?= dev
 MAX_IMAGE_MB ?= 50
 
-.PHONY: test lint fix build api-types web web-deps web-check web-dev run backup docker image-size
+.PHONY: test lint fix build api-types web web-deps web-check dev run backup docker image-size
 
 test:
 	go test -race ./...
@@ -34,9 +34,10 @@ web-deps:
 web-check: web-deps
 	cd web && pnpm check && pnpm lint && pnpm test
 
-# The app with hot reload at http://localhost:5173; the Go server's API, MCP, OAuth and health from `make run`.
-web-dev: web-deps
-	cd web && pnpm dev
+# Development in one terminal, everything at http://localhost:8000 (PORT): the web app with hot
+# reload, the Go server (built once, as `make run`) behind it on the next port. Ctrl+C stops both.
+dev: web-deps
+	@tools/dev.sh
 
 # Loads .env and then .env.local (both optional, gitignored; see .env.example).
 # Values from the files override the shell, so one-off variables like

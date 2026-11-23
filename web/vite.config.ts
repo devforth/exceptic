@@ -4,8 +4,8 @@ import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vitest/config';
 
-// `pnpm dev` serves the app and sends the Go server's own addresses (its API, MCP, OAuth,
-// health) to it. changeOrigin stays off: the Origin check of /api/ui compares with the Host
+// `pnpm dev` (run by make dev, tools/dev.sh) serves the app and sends the Go server's own
+// addresses (its API, ingest, MCP, OAuth, health) to it. changeOrigin stays off: the Origin check of /api/ui compares with the Host
 // the browser used.
 const goServer = process.env.EXCEPTIC_URL ?? 'http://localhost:8000';
 const goAddresses =
