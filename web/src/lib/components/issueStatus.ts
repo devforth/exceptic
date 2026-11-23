@@ -1,15 +1,18 @@
 // How an issue status looks (StatusBadge.svelte, the issue list's rows): its tone, its sign
 // and what it means, from the server's generated issueStatuses.
 import { issueStatuses } from '#lib/api/catalog.gen.ts';
-import type { BadgeTone } from './badge.ts';
 import type { RowTone } from './table.ts';
 
 export type IssueStatus = (typeof issueStatuses)[number]['name'];
 
-type Look = { tone: BadgeTone; mark: string; row: RowTone };
+/** The color of a status's text; plain for "all". */
+export type StatusTextTone = 'error' | 'success' | 'muted' | 'plain';
+
+/** smallMark: a sign drawn larger than the others (the dot), shown smaller to match. */
+type Look = { tone: StatusTextTone; mark: string; smallMark?: boolean; row: RowTone };
 
 const looks: Record<IssueStatus, Look> = {
-	unresolved: { tone: 'error', mark: '●', row: 'error' },
+	unresolved: { tone: 'error', mark: '●', smallMark: true, row: 'error' },
 	resolved: { tone: 'success', mark: '✓', row: 'success' },
 	ignored: { tone: 'muted', mark: '⊘', row: 'faded' }
 };
@@ -30,8 +33,12 @@ export function statusTitle(name: string): string | undefined {
 	return status && `${statusLabel(name)}: ${status.meaning}`;
 }
 
-/** The badge of a status; "all" is a plain one without a sign. */
-export function statusLook(name: string): { tone: BadgeTone; mark?: string } {
+/** The look of a status; "all" is plain, without a sign. */
+export function statusLook(name: string): {
+	tone: StatusTextTone;
+	mark?: string;
+	smallMark?: boolean;
+} {
 	return known(name) ? looks[name] : { tone: 'plain' };
 }
 

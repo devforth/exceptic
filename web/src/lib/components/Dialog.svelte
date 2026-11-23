@@ -1,8 +1,9 @@
 <!--
 @component
-A modal window with a title and a close button; Esc and a click beside it close it too, unless
-it is not dismissible (while its action runs). `narrow` fits a question or a short form, with
-its buttons in `actions` at the bottom; onopen runs once it is shown (to move the focus).
+A modal window; Esc and a click beside it close it, unless it is not dismissible (while its
+action runs). `wide` (a log, a summary) has a bar with its title and Close; `narrow` fits a
+question or a short form: its title, the content and its buttons (`actions`, which hold its
+Cancel) in one padded column. onopen runs once it is shown (to move the focus).
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -27,6 +28,8 @@ its buttons in `actions` at the bottom; onopen runs once it is shown (to move th
 		actions,
 		children
 	}: Props = $props();
+
+	const titleId = $props.id();
 
 	let dialog: HTMLDialogElement;
 
@@ -69,22 +72,39 @@ its buttons in `actions` at the bottom; onopen runs once it is shown (to move th
 	onclose={closed}
 	oncancel={cancel}
 	onclick={closeOutside}
-	aria-label={title}
+	aria-labelledby={titleId}
 	class={[
-		'backdrop:bg-black/50 m-auto max-h-[90vh] rounded-dialog bg-surface p-0 text-text shadow-pop',
-		size === 'wide' ? 'w-[min(1000px,calc(100vw-32px))]' : 'w-[min(440px,calc(100vw-32px))]'
+		// whitespace-normal: a dialog opened from a nowrap place (a table's actions cell) wraps its text.
+		'm-auto max-h-[90vh] border border-border bg-surface p-0 whitespace-normal text-text shadow-pop backdrop:bg-backdrop',
+		size === 'wide'
+			? 'w-[min(1000px,calc(100vw-32px))] rounded-popup'
+			: 'w-[min(420px,calc(100vw-32px))] rounded-dialog'
 	]}
 >
-	<div class="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
-		<strong>{title}</strong>
-		<Button variant="ghost" icon="close" title="Close" onclick={dismiss} />
-	</div>
-	<div
-		class={['overflow-auto p-4', actions ? 'max-h-[calc(90vh-112px)]' : 'max-h-[calc(90vh-56px)]']}
-	>
-		{@render children()}
-	</div>
-	{#if actions}
-		<div class="flex justify-end gap-2 px-4 pb-4">{@render actions()}</div>
+	{#if size === 'wide'}
+		<div class="flex items-center justify-between gap-3 border-b border-border px-3.5 py-2.5">
+			<h2 id={titleId} class="font-bold">{title}</h2>
+			<Button onclick={dismiss}>Close</Button>
+		</div>
+		<div
+			class={[
+				'overflow-auto p-3.5',
+				actions ? 'max-h-[calc(90vh-112px)]' : 'max-h-[calc(90vh-58px)]'
+			]}
+		>
+			{@render children()}
+		</div>
+		{#if actions}
+			<div class="flex justify-end gap-2 px-3.5 pb-3.5">{@render actions()}</div>
+		{/if}
+	{:else}
+		<div class="flex max-h-[calc(90vh-2px)] flex-col gap-3.5 p-5">
+			<h2 id={titleId} class="text-dialog font-bold">{title}</h2>
+			<!-- Room for the focus rings of fields at its edges. -->
+			<div class="-m-1 min-h-0 overflow-auto p-1">{@render children()}</div>
+			{#if actions}
+				<div class="flex justify-end gap-2">{@render actions()}</div>
+			{/if}
+		</div>
 	{/if}
 </dialog>

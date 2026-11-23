@@ -13,6 +13,7 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 <script lang="ts" generics="Row, Key extends string">
 	import type { Snippet } from 'svelte';
 	import EmptyState from './EmptyState.svelte';
+	import { checkClasses } from './field.ts';
 	import Icon from './Icon.svelte';
 	import {
 		columnSort,
@@ -135,8 +136,6 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 
 		checkedRows = rows;
 	});
-
-	const checkboxClasses = 'size-4 cursor-pointer accent-accent align-middle focus-ring';
 </script>
 
 {#if rows.length === 0 && empty}
@@ -154,10 +153,10 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 			<thead class={headerless ? 'sr-only' : undefined}>
 				<tr>
 					{#if selectable}
-						<th scope="col" class={[padding, headingClasses, 'w-[1%]']}>
+						<th scope="col" class={[padding, headingClasses, 'w-[1%] pr-0']}>
 							<input
 								type="checkbox"
-								class={checkboxClasses}
+								class={checkClasses.checkbox}
 								aria-label="Select all"
 								checked={keys.length > 0 && checkedCount === keys.length}
 								{@attach (box: HTMLInputElement) => {
@@ -186,7 +185,10 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 									]}
 								>
 									{column.label}
-									<Icon name={sortIcons[state.direction ?? 'none']} size={14} />
+									<!-- Unsorted: dim, as both arrows are; sorted: its direction, strong. -->
+									<span class={['flex', !state.direction && 'opacity-30']}>
+										<Icon name={sortIcons[state.direction ?? 'none']} size={14} />
+									</span>
 								</a>
 								<!-- eslint-enable svelte/no-navigation-without-resolve -->
 							{:else}
@@ -206,10 +208,10 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 						aria-current={selectedKey !== undefined && key === selectedKey ? 'true' : undefined}
 					>
 						{#if selectable && key !== undefined}
-							<td class={[padding, 'w-[1%] align-top']}>
+							<td class={[padding, 'w-[1%] pr-0 align-top']}>
 								<input
 									type="checkbox"
-									class={checkboxClasses}
+									class={checkClasses.checkbox}
 									aria-label={selectLabel?.(row) ?? 'Select'}
 									checked={selected?.has(key)}
 									onchange={(event) => check(key, event.currentTarget.checked)}

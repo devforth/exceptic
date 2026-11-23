@@ -40,4 +40,18 @@ describe('Details', () => {
 
 		expect(container.querySelector('details')!.open).toBe(false);
 	});
+
+	it('draws a nested box with its title and what its count counts, without a heading', () => {
+		render(Details, {
+			title: 'Stack trace',
+			variant: 'nested',
+			count: 10,
+			unit: 'frames',
+			children
+		});
+
+		expect(screen.getByText('Stack trace')).toBeTruthy();
+		expect(screen.getByText('10 frames')).toBeTruthy();
+		expect(screen.queryByRole('heading')).toBeNull();
+	});
 });

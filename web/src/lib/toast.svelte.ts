@@ -14,63 +14,71 @@ export type ToastItem = {
 	paused: boolean;
 };
 
-let items: ToastItem[] = $state([]);
-let lastId = 0;
+type Clock = { timer?: ReturnType<typeof setTimeout>; started: number; left: number };
 
-// Per toast: its timer, when it last started and the time it still has (not shown: no state).
-// eslint-disable-next-line svelte/prefer-svelte-reactivity
-const clocks = new Map<
-	number,
-	{ timer?: ReturnType<typeof setTimeout>; started: number; left: number }
->();
+/** A stack of toasts; the app has one (`toast`), the design-system page its own sample. */
+export class ToastStore {
+	#items: ToastItem[] = $state([]);
+	#lastId = 0;
+	// Per toast: its timer, when it last started and the time it still has (not shown: no state).
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	#clocks = new Map<number, Clock>();
 
-function run(id: number) {
-	const clock = clocks.get(id);
-
-	if (!clock) return;
-
-	clock.started = Date.now();
-	clock.timer = setTimeout(() => toast.dismiss(id), clock.left);
-}
-
-export const toast = {
 	get items(): readonly ToastItem[] {
-		return items;
-	},
+		return this.#items;
+	}
+
 	/** A done action ("Saved.") by default; a failure with tone error, a note with info. */
 	show(text: string, tone: ToastTone = 'success', duration = shownFor) {
-		const id = ++lastId;
+		const id = ++this.#lastId;
 
-		items = [...items, { id, text, tone, duration, paused: false }];
-		clocks.set(id, { started: Date.now(), left: duration });
-		run(id);
+		this.#items = [...this.#items, { id, text, tone, duration, paused: false }];
+		this.#clocks.set(id, { started: Date.now(), left: duration });
+		this.#run(id);
 
-		for (const old of items.slice(0, Math.max(0, items.length - kept))) toast.dismiss(old.id);
-	},
+		for (const old of this.#items.slice(0, Math.max(0, this.#items.length - kept))) {
+			this.dismiss(old.id);
+		}
+	}
+
 	dismiss(id: number) {
-		clearTimeout(clocks.get(id)?.timer);
-		clocks.delete(id);
-		items = items.filter((item) => item.id !== id);
-	},
+		clearTimeout(this.#clocks.get(id)?.timer);
+		this.#clocks.delete(id);
+		this.#items = this.#items.filter((item) => item.id !== id);
+	}
+
 	pause(id: number) {
-		const clock = clocks.get(id);
-		const item = items.find((entry) => entry.id === id);
+		const clock = this.#clocks.get(id);
+		const item = this.#items.find((entry) => entry.id === id);
 
 		if (!clock || !item || item.paused) return;
 
 		clearTimeout(clock.timer);
 		clock.left = Math.max(0, clock.left - (Date.now() - clock.started));
 		item.paused = true;
-	},
+	}
+
 	resume(id: number) {
-		const item = items.find((entry) => entry.id === id);
+		const item = this.#items.find((entry) => entry.id === id);
 
 		if (!item?.paused) return;
 
 		item.paused = false;
-		run(id);
-	},
-	clear() {
-		for (const item of items) toast.dismiss(item.id);
+		this.#run(id);
 	}
-};
+
+	clear() {
+		for (const item of this.#items) this.dismiss(item.id);
+	}
+
+	#run(id: number) {
+		const clock = this.#clocks.get(id);
+
+		if (!clock) return;
+
+		clock.started = Date.now();
+		clock.timer = setTimeout(() => this.dismiss(id), clock.left);
+	}
+}
+
+export const toast = new ToastStore();

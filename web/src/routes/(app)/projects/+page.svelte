@@ -17,7 +17,12 @@
 	import Time from '#lib/components/Time.svelte';
 	import UsageBar from '#lib/components/UsageBar.svelte';
 	import { withQuery } from '#lib/nav.ts';
-	import { deleteConfirmation, deleteProject, usageSegments } from '#lib/projects.ts';
+	import {
+		deleteConfirmation,
+		deleteProject,
+		fromEnvDeleteReason,
+		usageSegments
+	} from '#lib/projects.ts';
 	import { FormState } from '#lib/form.svelte.ts';
 	import { sharePercent } from '#lib/format.ts';
 	import { toast } from '#lib/toast.svelte.ts';
@@ -59,14 +64,13 @@
 	let editOpen = $state(false);
 	let newName = $state('');
 	let newColor = $state('');
-	const editForm = new FormState();
+	const editForm = new FormState(() => ({ name: newName.trim(), color: newColor }));
 
 	function startEdit(project: Project) {
 		editing = project;
 		newName = project.name;
 		newColor = colors[project.name] ?? '';
-		editForm.error = '';
-		editForm.fields = {};
+		editForm.reset();
 		editOpen = true;
 	}
 
@@ -129,7 +133,7 @@
 				label: 'Delete',
 				icon: 'delete',
 				separatorBefore: true,
-				disabled: 'Remove it from PROJECTS first.'
+				disabled: fromEnvDeleteReason
 			});
 		}
 
@@ -197,11 +201,14 @@
 	{#snippet cell(project: Project, column: ProjectColumn)}
 		{@const part = usage.get(project.id)}
 		{#if column.key === 'project'}
+			<!-- Admins open its settings; the others, who cannot, its issues. -->
 			<Badge
 				tone="project"
 				label={project.name}
-				href={withQuery(resolve('/(app)/issues'), { project: project.name })}
-				title="Issues of {project.name}"
+				href={canAdminister
+					? resolve('/(app)/projects/[id=projectId]', { id: project.id })
+					: withQuery(resolve('/(app)/issues'), { project: project.name })}
+				title={canAdminister ? `Settings of ${project.name}` : `Issues of ${project.name}`}
 			/>
 			<div class="text-xs text-muted">
 				#{project.id}{project.from_env ? ' · from PROJECTS' : ''}

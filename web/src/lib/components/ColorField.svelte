@@ -28,19 +28,19 @@ input for any other color and then shows it, and the project's badge in the chos
 	const custom = $derived(paletteName(value) === undefined);
 
 	const swatch =
-		'relative flex size-9 cursor-pointer items-center justify-center rounded-note bg-project text-on-project transition-transform hover:scale-106 motion-reduce:transition-none forced-colors:forced-color-adjust-none';
+		'relative flex size-9 cursor-pointer items-center justify-center rounded-popup bg-project text-on-project transition-transform duration-100 hover:scale-106 motion-reduce:transition-none forced-colors:forced-color-adjust-none';
 	const chosen =
 		'shadow-[0_0_0_2px_var(--color-surface),0_0_0_4px_var(--project-color)] forced-colors:outline-3 forced-colors:outline-offset-2 forced-colors:outline-[Highlight]';
 	const idle = 'shadow-[inset_0_0_0_1px_rgb(0_0_0/0.08)]';
 	const focus =
-		'has-focus-visible:outline-2 has-focus-visible:outline-offset-4 has-focus-visible:outline-focus';
+		'has-focus-visible:outline-2 has-focus-visible:outline-offset-4 has-focus-visible:outline-accent';
 </script>
 
 <fieldset
 	class="flex min-w-0 flex-col gap-2.5"
 	aria-describedby={error ? `${id}-error` : undefined}
 >
-	<legend class={hideLegend ? 'sr-only' : 'mb-2 flex items-center gap-1.5 text-label text-muted'}>
+	<legend class={hideLegend ? 'sr-only' : 'mb-2 flex items-center gap-1.25 text-label text-muted'}>
 		Color
 		{#if hint && !hideLegend}<Hint text={hint} />{/if}
 	</legend>
@@ -60,7 +60,7 @@ input for any other color and then shows it, and the project's badge in the chos
 					onchange={() => (value = entry.color)}
 				/>
 				<span class="sr-only">{entry.name}</span>
-				{#if value === entry.color}<Icon name="check" size={18} />{/if}
+				{#if value === entry.color}<Icon name="check" size={14} />{/if}
 			</label>
 		{/each}
 		<label
@@ -78,9 +78,9 @@ input for any other color and then shows it, and the project's badge in the chos
 				type="color"
 				bind:value
 				aria-label="Custom color"
-				class="absolute inset-0 size-full cursor-pointer appearance-none rounded-note border-0 p-0 opacity-0"
+				class="absolute inset-0 size-full cursor-pointer appearance-none rounded-popup border-0 p-0 opacity-0"
 			/>
-			{#if custom}<Icon name="check" size={18} />{/if}
+			{#if custom}<Icon name="check" size={14} />{/if}
 		</label>
 	</div>
 	<p class="flex items-center gap-1.5 text-xs text-muted">

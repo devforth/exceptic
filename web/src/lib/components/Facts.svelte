@@ -20,7 +20,7 @@ with its `hint`.
 </script>
 
 {#if title}
-	<p class="mt-1 flex items-center gap-1.5 text-label font-semibold">
+	<p class="mt-1 flex items-center gap-1.25 text-label font-semibold">
 		{title}
 		{#if hint}<Hint text={hint} />{/if}
 	</p>
@@ -28,8 +28,8 @@ with its `hint`.
 
 <dl
 	class={boxed
-		? 'my-1 grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-px overflow-hidden rounded-note border border-border bg-border'
-		: 'my-3 flex flex-wrap gap-x-6 gap-y-3'}
+		? 'my-1 grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-px overflow-hidden rounded-popup border border-border bg-border'
+		: 'my-3 flex flex-wrap gap-6'}
 >
 	{#each facts as fact (fact.label)}
 		<div class={boxed ? 'min-w-0 bg-surface px-3 py-2.5' : 'min-w-0'}>

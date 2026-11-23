@@ -90,8 +90,8 @@ describe('notifications', () => {
 	});
 
 	it('shows a connection as awaiting, active or paused', () => {
-		expect(connectionState({ confirmed: false, active: true }).label).toBe('awaiting confirmation');
+		expect(connectionState({ confirmed: false, active: true }).label).toBe('Awaiting confirmation');
 		expect(connectionState({ confirmed: true, active: true }).tone).toBe('success');
-		expect(connectionState({ confirmed: true, active: false }).label).toBe('paused');
+		expect(connectionState({ confirmed: true, active: false }).label).toBe('Paused');
 	});
 });

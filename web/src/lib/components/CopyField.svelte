@@ -25,9 +25,9 @@ A value to copy (a DSN, a command): read-only, selected on focus, with its copy 
 	const hidden = $derived(masked && !shown);
 </script>
 
-<div class="flex min-w-0 items-center gap-1.5">
+<div class="flex min-w-0 items-center gap-2">
 	<input
-		class={[fieldClasses, 'min-w-0 flex-1 bg-code-bg font-mono text-code']}
+		class={[fieldClasses, 'min-w-0 flex-1 bg-surface font-mono text-sm']}
 		value={hidden ? '•'.repeat(Math.min(value.length, 32)) : value}
 		readonly
 		aria-label={label}

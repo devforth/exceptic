@@ -6,11 +6,11 @@ only the password form shows.
 	import { invalidate } from '$app/navigation';
 	import { limits } from '#lib/api/catalog.gen.ts';
 	import { post, send } from '#lib/api/client.ts';
-	import Button from '#lib/components/Button.svelte';
 	import Card from '#lib/components/Card.svelte';
 	import Notice from '#lib/components/Notice.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import RoleBadge from '#lib/components/RoleBadge.svelte';
+	import SubmitButton from '#lib/components/SubmitButton.svelte';
 	import TextField from '#lib/components/TextField.svelte';
 	import { FormState } from '#lib/form.svelte.ts';
 	import { toast } from '#lib/toast.svelte.ts';
@@ -22,7 +22,7 @@ only the password form shows.
 
 	// The saved name, until the user types; it follows the session after a save.
 	let name = $derived(user.display_name);
-	const nameForm = new FormState();
+	const nameForm = new FormState(() => ({ name: name.trim() }));
 
 	async function saveName(event: SubmitEvent) {
 		event.preventDefault();
@@ -30,6 +30,8 @@ only the password form shows.
 		if (await nameForm.submit(() => post('update_account_name', { name }))) {
 			toast.show('Name saved.');
 			await invalidate('app:session');
+			// An empty name shows the username once saved.
+			nameForm.reset();
 		}
 	}
 
@@ -83,7 +85,7 @@ only the password form shows.
 				error={nameForm.fields.name}
 			/>
 			{#if nameForm.error}<Notice tone="error">{nameForm.error}</Notice>{/if}
-			<div><Button variant="primary" type="submit" busy={nameForm.busy}>Save name</Button></div>
+			<div><SubmitButton form={nameForm}>Save name</SubmitButton></div>
 		</form>
 	</Card>
 {/if}
@@ -129,7 +131,7 @@ only the password form shows.
 		</p>
 		{#if passwordForm.error}<Notice tone="error">{passwordForm.error}</Notice>{/if}
 		<div>
-			<Button variant="primary" type="submit" busy={passwordForm.busy}>Change password</Button>
+			<SubmitButton form={passwordForm}>Change password</SubmitButton>
 		</div>
 	</form>
 </Card>

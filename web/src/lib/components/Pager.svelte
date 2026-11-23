@@ -1,7 +1,7 @@
 <!--
 @component
-The navigation under a list: "21–40 of 134", previous and next, the first and last pages and
-two on each side of the current one, and the page size.
+The navigation under a list: "21–40 of 134" on the left; previous and next, the first and last
+pages and two on each side of the current one (filled) in the middle; the page size on the right.
 -->
 <script lang="ts">
 	import { perPageChoices } from '#lib/filters.ts';
@@ -42,26 +42,29 @@ two on each side of the current one, and the page size.
 		label: `${choice} per page`
 	}));
 
-	const linkClasses =
-		'focus-ring rounded-control px-2 py-1 no-underline hover:bg-hover hover:no-underline';
+	// The boxed links; the current page filled, the ends that lead nowhere faded.
+	const box = 'min-w-8 rounded-control border px-2 py-1 text-center';
+	const linkClasses = `${box} border-border bg-surface no-underline focus-ring hover:bg-hover hover:no-underline`;
+	const disabledClasses = `${box} border-border bg-surface text-muted opacity-60`;
+	const currentClasses = `${box} border-accent bg-accent font-semibold text-accent-text`;
 </script>
 
 {#if total > 0}
-	<nav aria-label="Pages" class="mt-3 flex flex-wrap items-center gap-3 text-sm">
+	<nav aria-label="Pages" class="my-3 flex flex-wrap items-center justify-between gap-2">
 		<span class="text-xs text-muted">{first}–{last} of {total}{more ? '+' : ''}</span>
 		{#if pages > 1}
-			<span class="flex flex-wrap items-center gap-1">
+			<span class="flex flex-wrap gap-1">
 				{#if page > 1}
 					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the list's own address -->
 					<a href={href(page - 1)} rel="prev" class={linkClasses}>← Prev</a>
 				{:else}
-					<span class="px-2 text-muted">← Prev</span>
+					<span class={disabledClasses}>← Prev</span>
 				{/if}
 				{#each numbers as number, index (index)}
 					{#if number === 0}
-						<span class="px-1 text-muted">…</span>
+						<span class="min-w-8 px-2 py-1 text-center text-muted">…</span>
 					{:else if number === page}
-						<span class="rounded-control bg-selected px-2 py-1 font-semibold" aria-current="page">
+						<span class={currentClasses} aria-current="page">
 							{number}
 						</span>
 					{:else}
@@ -73,7 +76,7 @@ two on each side of the current one, and the page size.
 					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the list's own address -->
 					<a href={href(page + 1)} rel="next" class={linkClasses}>Next →</a>
 				{:else}
-					<span class="px-2 text-muted">Next →</span>
+					<span class={disabledClasses}>Next →</span>
 				{/if}
 			</span>
 		{/if}

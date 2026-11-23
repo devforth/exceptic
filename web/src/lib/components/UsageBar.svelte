@@ -1,7 +1,7 @@
 <!--
 @component
 How full something is: a bar filled to percent, or split into segments (each project's part in
-its color, the rest grey), read as a meter by screen readers. Widths and colors are set through
+its color, the rest grey; each at least a sliver wide), read as a meter by screen readers. Widths and colors are set through
 the DOM (style: directive), which the CSP allows, unlike a style attribute.
 -->
 <script lang="ts">
@@ -24,18 +24,24 @@ the DOM (style: directive), which the CSP allows, unlike a style attribute.
 	aria-valuenow={Math.round(filled)}
 	aria-valuemin={0}
 	aria-valuemax={100}
-	class="flex h-2 w-full max-w-[520px] overflow-hidden rounded-full bg-code-bg forced-colors:border"
+	class="flex h-2.5 w-full max-w-[520px] overflow-hidden rounded-full bg-track forced-colors:border"
 >
 	{#if segments}
 		{#each segments as segment, index (index)}
 			<div
-				class="h-full bg-project not-last:border-r not-last:border-surface"
+				class={[
+					'h-full min-w-1.5 forced-color-adjust-none not-first:border-l-2 not-first:border-surface',
+					segment.color ? 'bg-project' : 'bg-muted'
+				]}
 				title={segment.label}
 				style:width="{clamp(segment.percent)}%"
 				style:--project-color={segment.color}
 			></div>
 		{/each}
 	{:else}
-		<div class="h-full rounded-full bg-accent" style:width="{filled}%"></div>
+		<div
+			class="h-full rounded-full bg-accent forced-color-adjust-none"
+			style:width="{filled}%"
+		></div>
 	{/if}
 </div>

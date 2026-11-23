@@ -27,12 +27,15 @@ caught it, its value and its stack trace (closed), newest frame first.
 		<p class="mb-2.5 font-mono break-words whitespace-pre-wrap">{exception.value}</p>
 	{/if}
 	{#if frames.length}
-		<Details variant="inline" title="Stack trace · {frames.length} frames">
-			<div class="border-l-2 border-border pl-3.5">
-				{#each frames as frame, index (index)}
-					<StackFrame {frame} />
-				{/each}
-			</div>
+		<Details
+			variant="nested"
+			title="Stack trace"
+			count={frames.length}
+			unit={frames.length === 1 ? 'frame' : 'frames'}
+		>
+			{#each frames as frame, index (index)}
+				<StackFrame {frame} />
+			{/each}
 		</Details>
 	{/if}
 </div>

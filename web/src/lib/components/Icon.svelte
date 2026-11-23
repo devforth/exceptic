@@ -2,7 +2,7 @@
 <script lang="ts">
 	import { icons, type IconName } from '#lib/icons.ts';
 
-	type Props = { name: IconName; size?: 14 | 16 | 18 };
+	type Props = { name: IconName; size?: 14 | 15 | 16 | 18 | 24 };
 
 	let { name, size = 18 }: Props = $props();
 

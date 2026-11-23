@@ -1,6 +1,7 @@
 <!--
 @component
-A search field that reports what is typed once typing pauses.
+A search field that reports what is typed once typing pauses; in a FilterBar it takes the
+width the other filters leave (at least 200px).
 -->
 <script lang="ts">
 	import { controlClasses } from './field.ts';
@@ -19,7 +20,7 @@ A search field that reports what is typed once typing pauses.
 
 <input
 	type="search"
-	class={[controlClasses, 'w-48']}
+	class={[controlClasses, 'min-w-[200px] flex-1']}
 	{value}
 	placeholder={label}
 	aria-label={label}

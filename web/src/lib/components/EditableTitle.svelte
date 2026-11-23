@@ -7,6 +7,7 @@ sends it (Enter too), Esc goes back to the title and drops what was typed. A ref
 <script lang="ts">
 	import { tick } from 'svelte';
 	import Button from './Button.svelte';
+	import { fieldFrame } from './field.ts';
 	import type { TitleField } from './heading.ts';
 
 	type Props = TitleField & { title: string; value: string };
@@ -72,10 +73,7 @@ sends it (Enter too), Esc goes back to the title and drops what was typed. A ref
 			aria-describedby={error ? `${id}-error` : undefined}
 			onkeydown={keydown}
 			{@attach selectAll}
-			class={[
-				'h-10 w-80 max-w-full rounded-control border border-border bg-surface px-2.5 text-h1 font-bold text-text focus-visible:border-accent focus-visible:outline-none',
-				error && 'border-error focus-visible:border-error'
-			]}
+			class={[fieldFrame, 'h-10 w-80 max-w-full bg-surface text-h1 font-bold']}
 		/>
 		{#if error}<p id="{id}-error" class="text-xs text-error">{error}</p>{/if}
 	</div>

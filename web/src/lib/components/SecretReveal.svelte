@@ -1,12 +1,12 @@
 <!--
 @component
-A secret shown only this once (a temporary password, a personal token): what to do with it in
-a warning, the value to copy, plain or masked until Show. The copy button copies the full value.
+A secret shown only this once (a temporary password, a personal token), in a box in the warning
+tone: what to do with it, then the value to copy, plain or masked until Show. The copy button
+copies the full value.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import CopyField from './CopyField.svelte';
-	import Notice from './Notice.svelte';
 
 	type Props = {
 		value: string;
@@ -22,7 +22,9 @@ a warning, the value to copy, plain or masked until Show. The copy button copies
 	let { value, label, copyTitle, copied, masked = false, children }: Props = $props();
 </script>
 
-<div role="status" class="flex flex-col gap-2">
-	<Notice tone="warning">{@render children()}</Notice>
-	<CopyField {value} {label} {copyTitle} {copied} {masked} />
+<div role="status" class="flex flex-col gap-2 rounded-note border border-warning bg-warning-bg p-3">
+	<div>{@render children()}</div>
+	<div class="max-w-130">
+		<CopyField {value} {label} {copyTitle} {copied} {masked} />
+	</div>
 </div>

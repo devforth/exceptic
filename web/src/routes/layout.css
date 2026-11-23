@@ -33,8 +33,15 @@
 	--color-focus: color-mix(in srgb, var(--color-accent) 45%, transparent);
 	--color-hover: color-mix(in srgb, var(--color-text) 6%, var(--color-surface));
 	--color-accent-hover: color-mix(in srgb, var(--color-accent) 86%, var(--color-text));
-	--color-accent-bg: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface));
 	--color-info-hover: color-mix(in srgb, var(--color-info) 22%, var(--color-info-bg));
+	/* A soft accent: a hovered or focused menu item, an accent button at rest. */
+	--color-accent-soft: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface));
+	/* A link button hovered: the accent a shade toward the text. */
+	--color-link-hover: color-mix(in srgb, var(--color-accent) 75%, var(--color-text));
+	/* The empty part of a bar (UsageBar). */
+	--color-track: color-mix(in srgb, var(--color-muted) 20%, var(--color-surface));
+	/* Behind a modal dialog, in both themes. */
+	--color-backdrop: rgb(0 0 0 / 0.4);
 	/* A shade deeper than error-bg, so an error badge shows on red rows. */
 	--color-error-badge: color-mix(in srgb, var(--color-error-bg) 90%, var(--color-error));
 	/* Table rows in a tone (an issue's status): lighter than the badge, every second row a
@@ -48,6 +55,7 @@
 	--font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
 
 	--text-*: initial;
+	--text-3xs: 10px;
 	--text-2xs: 11px;
 	--text-xs: 12px;
 	--text-code: 12.5px;
@@ -55,6 +63,7 @@
 	--text-sm: 14px;
 	--text-md: 15px;
 	--text-h2: 16px;
+	--text-dialog: 17px;
 	--text-lg: 18px;
 	--text-h1: 22px;
 	--text-hero: 26px;
@@ -73,7 +82,7 @@
 	--shadow-sm: 0 1px 2px rgb(0 0 0 / 0.05);
 	--shadow-pop: var(--pop-shadow);
 	--shadow-card: var(--card-shadow);
-	--shadow-toast: 0 4px 20px rgb(0 0 0 / 0.15);
+	--shadow-toast: var(--toast-shadow);
 	/* A toast's time bar: empties over its duration (set on the element). */
 	--animate-toast-time: toast-time linear forwards;
 
@@ -110,6 +119,7 @@
 	:root {
 		--pop-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 4px 16px rgb(0 0 0 / 0.06);
 		--card-shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 8px 24px rgb(0 0 0 / 0.07);
+		--toast-shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 4px 20px rgb(0 0 0 / 0.15);
 		--project-text-share: 100%;
 		color-scheme: light;
 	}
@@ -127,7 +137,7 @@
 			--color-current-line: #3d3517;
 			--color-error: #ff8a80;
 			--color-error-bg: #3b1f1f;
-			--color-success: #81c784;
+			--color-success: #7fd18b;
 			--color-success-bg: #1d3323;
 			--color-warning: #ffd166;
 			--color-warning-bg: #3a3118;
@@ -140,6 +150,8 @@
 			--pop-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 20px rgb(0 0 0 / 0.35);
 			--card-shadow:
 				0 0 0 1px rgb(255 255 255 / 0.04), 0 1px 2px rgb(0 0 0 / 0.5), 0 8px 24px rgb(0 0 0 / 0.45);
+			--toast-shadow:
+				0 0 0 1px rgb(255 255 255 / 0.06), 0 1px 2px rgb(0 0 0 / 0.5), 0 6px 24px rgb(0 0 0 / 0.5);
 			--project-text-share: 60%;
 			color-scheme: dark;
 		}

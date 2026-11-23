@@ -17,6 +17,7 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 	import LevelChoices from '#lib/components/LevelChoices.svelte';
 	import LevelSummary from '#lib/components/LevelSummary.svelte';
 	import Notice from '#lib/components/Notice.svelte';
+	import SubmitButton from '#lib/components/SubmitButton.svelte';
 	import TextField from '#lib/components/TextField.svelte';
 	import Time from '#lib/components/Time.svelte';
 	import { FormState } from '#lib/form.svelte.ts';
@@ -94,8 +95,6 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 		botToken = webhookURL = slackBotToken = '';
 	}
 
-	const form = new FormState();
-
 	const typeChoices = $derived(defaults.types ?? []);
 	const chosenType = $derived(typeChoices.find((choice) => choice.type === type));
 	// A new email connection is filled in once its address is confirmed.
@@ -144,6 +143,25 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 		return input;
 	}
 
+	/** What update_connection and create_connection take but the type and address. */
+	function input() {
+		return {
+			name: name.trim(),
+			all_projects: allProjects,
+			// In the list's order, as the checkboxes keep it: a saved order counts as no change.
+			projects: allProjects ? [] : projectIdsAll.filter((id) => projectIds.includes(id)),
+			levels: levels.event.filter((level) => chosenLevels.includes(level)),
+			active,
+			// Hidden without PUBLIC_URL: the stored value stays.
+			...(defaults.issue_links_available ? { include_issue_link: includeIssueLink } : {}),
+			...chatInput()
+		};
+	}
+
+	// A saved connection is sent only once changed; an empty token field changes nothing.
+	// svelte-ignore state_referenced_locally
+	const form = new FormState(connection ? input : undefined);
+
 	function chooseType(next: string) {
 		type = next;
 		const typeDefault = typeChoices.find((choice) => choice.type === next)?.include_issue_link;
@@ -163,16 +181,7 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 	async function save(event: SubmitEvent) {
 		event.preventDefault();
 
-		const fields = {
-			name: name.trim(),
-			all_projects: allProjects,
-			projects: allProjects ? [] : projectIds,
-			levels: levels.event.filter((level) => chosenLevels.includes(level)),
-			active,
-			// Hidden without PUBLIC_URL: the stored value stays.
-			...(defaults.issue_links_available ? { include_issue_link: includeIssueLink } : {}),
-			...chatInput()
-		};
+		const fields = input();
 
 		if (connection) {
 			if (
@@ -183,6 +192,7 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 				toast.show('Saved.');
 				await invalidateAll();
 				reload();
+				form.reset();
 			}
 
 			return;
@@ -385,7 +395,12 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 						{/each}
 					{/if}
 				{/snippet}
-				<ChoiceGroup legend="Projects that are sent" hideLegend inline error={form.fields.projects}>
+				<ChoiceGroup
+					legend="Projects that are sent"
+					hideLegend
+					compact
+					error={form.fields.projects}
+				>
 					{#snippet lead()}
 						<Choice
 							type="checkbox"
@@ -403,7 +418,9 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 								checked={projectIds.includes(String(project.id))}
 								onchange={(checked: boolean) =>
 									(projectIds = toggled(projectIdsAll, projectIds, String(project.id), checked))}
-							/>
+							>
+								<Badge tone="project" label={project.name} />
+							</Choice>
 						{/each}
 					{/if}
 				</ChoiceGroup>
@@ -452,7 +469,7 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 			{#if form.error}<Notice tone="error">{form.error}</Notice>{/if}
 
 			<div class="flex gap-2">
-				<Button type="submit" variant="primary" busy={form.busy}>{isNew ? 'Add' : 'Save'}</Button>
+				<SubmitButton {form}>{isNew ? 'Add' : 'Save'}</SubmitButton>
 				<Button href={resolve('/(app)/notifications')}>Cancel</Button>
 			</div>
 		</fieldset>

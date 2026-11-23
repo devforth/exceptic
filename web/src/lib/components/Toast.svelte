@@ -1,20 +1,21 @@
 <!--
 @component
 The toasts of #lib/toast, stacked in one corner (`position`). Mount it once, in the root layout:
-the live region stays in the page so screen readers announce each message. A toast slides in,
+the live region stays in the page so screen readers announce each message. `toasts` shows another
+store (the design-system page's sample) instead of the app's. A toast slides in,
 shows a bar of the time it has left (paused while the pointer or the focus is on it) and a × to close it;
 on white: a round status mark and a time bar in the tone's color (success, error, info). No motion with reduced motion.
 -->
 <script lang="ts">
 	import { flip } from 'svelte/animate';
 	import { fade, fly } from 'svelte/transition';
-	import { toast } from '#lib/toast.svelte.ts';
+	import { toast, type ToastStore } from '#lib/toast.svelte.ts';
 	import Icon from './Icon.svelte';
 	import { toastPositions, type ToastPosition } from './toast.ts';
 
-	type Props = { position?: ToastPosition };
+	type Props = { position?: ToastPosition; toasts?: ToastStore };
 
-	let { position = 'bottom-right' }: Props = $props();
+	let { position = 'bottom-right', toasts = toast }: Props = $props();
 
 	const reducedMotion =
 		typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -34,7 +35,7 @@ on white: a round status mark and a time bar in the tone's color (success, error
 		toastPositions[position]
 	]}
 >
-	{#each toast.items as item (item.id)}
+	{#each toasts.items as item (item.id)}
 		<!-- Pausing is no action of its own: pointer and focus only hold the time (WCAG 2.2.1). -->
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
@@ -42,10 +43,10 @@ on white: a round status mark and a time bar in the tone's color (success, error
 			animate:flip={{ duration: 200 * motion }}
 			in:fly={{ y: fromBelow ? 24 : -24, duration: 260 * motion }}
 			out:fade={{ duration: 180 * motion }}
-			onpointerenter={() => toast.pause(item.id)}
-			onpointerleave={() => toast.resume(item.id)}
-			onfocusin={() => toast.pause(item.id)}
-			onfocusout={() => toast.resume(item.id)}
+			onpointerenter={() => toasts.pause(item.id)}
+			onpointerleave={() => toasts.resume(item.id)}
+			onfocusin={() => toasts.pause(item.id)}
+			onfocusout={() => toasts.resume(item.id)}
 			class={[
 				'relative flex items-start gap-3 overflow-hidden rounded-note bg-surface py-3.5 pr-2 pl-4 text-text shadow-toast forced-colors:border'
 			]}
@@ -66,7 +67,7 @@ on white: a round status mark and a time bar in the tone's color (success, error
 				aria-label="Close"
 				title="Close"
 				class="-mt-1.5 shrink-0 cursor-pointer rounded-control p-0.5 text-muted focus-ring hover:text-text"
-				onclick={() => toast.dismiss(item.id)}
+				onclick={() => toasts.dismiss(item.id)}
 			>
 				<Icon name="close" size={16} />
 			</button>

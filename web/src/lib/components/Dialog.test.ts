@@ -6,7 +6,11 @@ import Dialog from './Dialog.svelte';
 
 const children = createRawSnippet(() => ({ render: () => '<p>Inside</p>' }));
 
-function renderDialog(props: { dismissible?: boolean } = {}) {
+const actions = createRawSnippet(() => ({
+	render: () => '<button type="button">Cancel</button>'
+}));
+
+function renderDialog(props: { dismissible?: boolean; size?: 'wide' | 'narrow' } = {}) {
 	const onopen = vi.fn();
 	const view = render(Dialog, { title: 'Sample', open: true, onopen, children, ...props });
 
@@ -25,6 +29,35 @@ describe('Dialog', () => {
 		expect(dialog.open).toBe(true);
 		expect(onopen).toHaveBeenCalledOnce();
 		expect(screen.getByText('Inside')).toBeTruthy();
+	});
+
+	it('is named by its title', () => {
+		const { dialog } = renderDialog();
+
+		expect(screen.getByRole('heading', { name: 'Sample' })).toBeTruthy();
+		expect(dialog.getAttribute('aria-labelledby')).toBe(
+			screen.getByRole('heading', { name: 'Sample' }).id
+		);
+	});
+
+	it('narrow: title, content and its own buttons, no Close; Esc still closes it', () => {
+		const onopen = vi.fn();
+		const view = render(Dialog, {
+			title: 'Sample',
+			open: true,
+			size: 'narrow',
+			onopen,
+			children,
+			actions
+		});
+		const dialog = view.container.querySelector('dialog')!;
+
+		expect(screen.getByRole('heading', { name: 'Sample' })).toBeTruthy();
+		expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
+		expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
+
+		pressEscape(dialog);
+		expect(dialog.open).toBe(false);
 	});
 
 	it('closes with its button', async () => {

@@ -17,7 +17,7 @@ of the field it explains.
 	tabindex="0"
 	title={text}
 	aria-label={text}
-	class="inline-flex shrink-0 cursor-help rounded-full p-px text-muted opacity-75 focus-ring hover:bg-selected hover:text-accent hover:opacity-100 focus-visible:opacity-100"
+	class="inline-flex shrink-0 cursor-help items-center justify-center rounded-full p-px text-muted opacity-75 transition-[color,opacity,background-color] duration-150 hover:bg-accent-soft hover:text-accent hover:opacity-100 focus-visible:bg-accent-soft focus-visible:text-accent focus-visible:opacity-100 focus-visible:shadow-[0_0_0_2px_var(--color-focus)] focus-visible:outline-hidden motion-reduce:transition-none"
 >
-	<Icon name="hint" size={14} />
+	<Icon name="hint" size={15} />
 </span>

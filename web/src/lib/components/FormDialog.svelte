@@ -2,7 +2,8 @@
 @component
 A small form in a Dialog (rename, change a color): its fields, Cancel and the submit button.
 The request goes through a FormState, so a refused field shows its problem beside it and the
-dialog stays open; it closes once the request succeeds. Enter in a field submits it; the first
+dialog stays open; it closes once the request succeeds. Save does nothing while nothing changed
+(the caller resets the form when it opens it for a record). Enter in a field submits it; the first
 text field is selected when it opens.
 -->
 <script lang="ts">
@@ -11,6 +12,7 @@ text field is selected when it opens.
 	import Button from './Button.svelte';
 	import Dialog from './Dialog.svelte';
 	import Notice from './Notice.svelte';
+	import SubmitButton from './SubmitButton.svelte';
 
 	type Props = {
 		title: string;
@@ -39,12 +41,12 @@ text field is selected when it opens.
 </script>
 
 <Dialog {title} bind:open size="narrow" dismissible={!form.busy} onopen={selectFirstField}>
-	<form bind:this={element} id="{id}-form" class="flex flex-col gap-3" onsubmit={submit}>
+	<form bind:this={element} id="{id}-form" class="flex flex-col gap-3.5" onsubmit={submit}>
 		{@render children()}
 		{#if form.error}<Notice tone="error">{form.error}</Notice>{/if}
 	</form>
 	{#snippet actions()}
 		<Button disabled={form.busy} onclick={() => (open = false)}>Cancel</Button>
-		<Button variant="primary" type="submit" form="{id}-form" busy={form.busy}>Save</Button>
+		<SubmitButton {form} formId="{id}-form" />
 	{/snippet}
 </Dialog>

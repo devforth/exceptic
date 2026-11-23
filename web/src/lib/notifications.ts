@@ -2,7 +2,6 @@
 // checks every one of them again.
 import { limits } from '#lib/api/catalog.gen.ts';
 import { post } from '#lib/api/client.ts';
-import type { BadgeTone } from '#lib/components/badge.ts';
 import type { Confirmation } from '#lib/components/confirm.ts';
 import type { StatusTone } from '#lib/components/status.ts';
 import { toast } from '#lib/toast.svelte.ts';
@@ -91,13 +90,13 @@ export function issueLinkFor(typeDefault: boolean, touched: boolean, current: bo
 /** A connection's state in the list. */
 export function connectionState(connection: { confirmed: boolean; active: boolean }): {
 	label: string;
-	tone: BadgeTone;
+	tone: StatusTone;
 } {
-	if (!connection.confirmed) return { label: 'awaiting confirmation', tone: 'warning' };
+	if (!connection.confirmed) return { label: 'Awaiting confirmation', tone: 'warning' };
 
 	return connection.active
-		? { label: 'active', tone: 'success' }
-		: { label: 'paused', tone: 'muted' };
+		? { label: 'Active', tone: 'success' }
+		: { label: 'Paused', tone: 'muted' };
 }
 
 type Health = {

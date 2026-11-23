@@ -28,7 +28,9 @@ only its icon, and title names it (tooltip and aria-label).
 		popup?: 'menu' | 'dialog';
 		/** Its action runs: it ignores clicks but keeps the focus (disabled would drop it). */
 		busy?: boolean;
-		/** large: the one main action of a page (Add project). */
+		/** Why it does nothing now (Nothing changed): its tooltip; it ignores clicks, keeps the focus. */
+		unavailable?: string;
+		/** large: the one main action of a page (Add project), with larger corners. */
 		size?: 'default' | 'large';
 		children?: Snippet;
 	};
@@ -46,12 +48,15 @@ only its icon, and title names it (tooltip and aria-label).
 		expanded,
 		popup,
 		busy = false,
+		unavailable,
 		size = 'default',
 		children
 	}: Props = $props();
 
+	const inert = $derived(busy || Boolean(unavailable));
+
 	function click(event: MouseEvent) {
-		if (busy) {
+		if (inert) {
 			event.preventDefault();
 
 			return;
@@ -60,46 +65,60 @@ only its icon, and title names it (tooltip and aria-label).
 		onclick?.(event);
 	}
 
-	// Boxed buttons share one hover and focus: the border takes the tone, a ring of it glows.
-	const boxed =
-		'rounded-control border no-underline transition-[background-color,border-color,color,box-shadow] duration-150 hover:no-underline not-disabled:hover:border-(--tone) not-disabled:hover:ring-3 not-disabled:hover:ring-(--tone)/22 focus-visible:border-(--tone) focus-visible:ring-3 focus-visible:ring-(--tone)/40 focus-visible:outline-none';
+	// Boxed buttons share one focus: the border takes the tone, a ring of it glows; most glow
+	// on hover too.
+	const boxedBase =
+		'border no-underline transition-[background-color,border-color,color,box-shadow] duration-150 hover:no-underline focus-visible:border-(--tone) focus-visible:ring-3 focus-visible:ring-(--tone)/40 focus-visible:outline-none';
+	const boxed = `${boxedBase} not-disabled:hover:border-(--tone) not-disabled:hover:ring-3 not-disabled:hover:ring-(--tone)/22`;
 
 	const variants: Record<ButtonVariant, string> = {
 		default: `${boxed} [--tone:var(--color-muted)] border-border bg-surface text-text not-disabled:hover:bg-hover`,
 		primary: `${boxed} [--tone:var(--color-accent)] border-accent bg-accent text-accent-text not-disabled:hover:bg-accent-hover`,
 		danger: `${boxed} [--tone:var(--color-error)] border-border bg-surface text-error not-disabled:hover:bg-error-bg`,
 		info: `${boxed} [--tone:var(--color-info)] border-info bg-info-bg text-info not-disabled:hover:bg-info-hover`,
-		// Opens a record beside the blue copy button (the issue list's Open): indigo, filled on hover.
-		accent: `${boxed} [--tone:var(--color-accent)] border-accent bg-accent-bg text-accent not-disabled:hover:bg-accent not-disabled:hover:text-accent-text`,
-		link: 'focus-ring rounded-control text-accent hover:underline focus-visible:underline',
+		// Opens a record beside the info buttons of a row (the issue list's Open).
+		accent: `${boxed} [--tone:var(--color-accent)] border-accent bg-accent-soft text-accent not-disabled:hover:bg-accent not-disabled:hover:text-accent-text`,
+		// The ⋯ of a row menu: no box until hovered or open.
+		menu: `${boxedBase} [--tone:var(--color-muted)] border-transparent text-muted not-disabled:hover:border-muted not-disabled:hover:bg-hover aria-expanded:border-border aria-expanded:bg-hover aria-expanded:text-text`,
+		link: 'focus-ring rounded-control text-accent not-disabled:hover:text-link-hover focus-visible:underline',
 		// A secondary link, grey (a log's trace).
 		muted: 'focus-ring rounded-control text-muted hover:underline focus-visible:underline',
 		// The name of a table row that opens the record: the text's color, bold, on one line cut
 		// with "…" when its cell is narrower (a fill column).
 		title:
-			'focus-ring max-w-full min-w-0 justify-start rounded-control text-left font-semibold text-text hover:underline focus-visible:underline',
-		// Quiet: no box until hovered (the menu's toggle).
-		ghost:
-			'focus-ring rounded-control text-muted not-disabled:hover:bg-bg not-disabled:hover:text-text'
+			'focus-ring max-w-full min-w-0 rounded-control text-left font-semibold text-text hover:underline focus-visible:underline',
+		// Quiet: no box until hovered (the menu's toggle, Back).
+		ghost: 'focus-ring text-muted not-disabled:hover:bg-bg not-disabled:hover:text-text'
 	};
 
 	const iconOnly = $derived(!children);
+	const textual = $derived(variant === 'link' || variant === 'muted' || variant === 'title');
+
+	// The box of a button that is not text-like: its size and corners.
+	function boxClasses(): string {
+		if (size === 'large' && !iconOnly) {
+			return 'rounded-popup px-4.5 py-2.5 text-md font-semibold';
+		}
+
+		if (iconOnly) {
+			const side = variant === 'ghost' ? 'size-7.5' : variant === 'menu' ? 'size-8' : 'size-8.5';
+
+			return `rounded-control p-0 ${side}`;
+		}
+
+		if (variant === 'info') return 'h-9 rounded-control px-3';
+
+		// A link is a little wider than a button, as in the design.
+		return href ? 'rounded-control px-3 py-1.5' : 'rounded-control px-2.5 py-1.5';
+	}
 
 	const classes = $derived([
-		'inline-flex cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap',
+		'inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap',
+		variant === 'title' ? 'justify-start' : 'justify-center',
 		'disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
 		'forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-[Highlight]',
 		variants[variant],
-		variant !== 'link' &&
-			variant !== 'muted' &&
-			variant !== 'title' &&
-			(iconOnly
-				? 'size-8.5 p-0'
-				: variant === 'info' || variant === 'accent'
-					? 'h-9 px-3'
-					: size === 'large'
-						? 'px-4.5 py-2.5 text-md font-semibold'
-						: 'px-3 py-1.5')
+		!textual && boxClasses()
 	]);
 </script>
 
@@ -142,9 +161,9 @@ only its icon, and title names it (tooltip and aria-label).
 		aria-expanded={expanded}
 		aria-haspopup={popup}
 		aria-busy={busy || undefined}
-		aria-disabled={busy || undefined}
+		aria-disabled={inert || undefined}
 		class={classes}
-		{title}
+		title={unavailable ?? title}
 		aria-label={iconOnly ? title : undefined}
 	>
 		{@render content()}

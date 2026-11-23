@@ -1,9 +1,8 @@
 <!--
 @component
-A short label: a level or state filled in its tone, or a project outlined in its color (from
+A short label: a level or role filled in its tone, or a project outlined in its color (from
 the session, or `color` for one not saved yet; set through the style: directive, which the CSP
-allows). With an href it is a link; a mark is a sign before the label (an issue status), hidden
-from screen readers.
+allows). With an href it is a link. A state (on, off) is a StatusText.
 -->
 <script lang="ts">
 	import { page } from '$app/state';
@@ -15,12 +14,11 @@ from screen readers.
 		label: string;
 		href?: string;
 		title?: string;
-		mark?: string;
 		/** project: this color instead of the saved one (a preview), #rrggbb. */
 		color?: string;
 	};
 
-	let { tone, label, href, title, mark, color: chosen }: Props = $props();
+	let { tone, label, href, title, color: chosen }: Props = $props();
 
 	const filled = 'px-[7px] py-px align-[2px] lowercase';
 
@@ -30,8 +28,6 @@ from screen readers.
 		info: `${filled} bg-info-bg text-info`,
 		debug: `${filled} bg-debug-bg text-debug`,
 		plain: `${filled} bg-code-bg text-text`,
-		success: `${filled} bg-success-bg text-success`,
-		muted: `${filled} bg-debug-bg text-muted`,
 		project:
 			'border border-project-text px-[7px] align-[1px] text-project-text first-letter:uppercase'
 	};
@@ -48,15 +44,13 @@ from screen readers.
 	);
 </script>
 
-{#snippet text()}{#if mark}<span class="mr-1" aria-hidden="true">{mark}</span>{/if}{label}{/snippet}
-
 {#if href}
 	<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- callers pass resolved paths -->
 	<a {href} class={classes} {title} data-project={project} style:--project-color={color}>
-		{@render text()}
+		{label}
 	</a>
 {:else}
 	<span class={classes} {title} data-project={project} style:--project-color={color}>
-		{@render text()}
+		{label}
 	</span>
 {/if}

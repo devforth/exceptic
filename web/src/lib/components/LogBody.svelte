@@ -29,7 +29,7 @@ to read it whole, JSON fields as lines (readableLog).
 		'overflow-auto font-mono text-code break-words whitespace-pre-wrap',
 		expanded ? 'max-h-none' : 'max-h-40'
 	]}>{clean}</pre>
-<div class="flex gap-3 text-xs">
+<div class="mt-1 flex gap-3 text-xs">
 	{#if overflowing || expanded}
 		<Button variant="link" {expanded} onclick={() => (expanded = !expanded)}>
 			{expanded ? 'Collapse' : 'Expand'}

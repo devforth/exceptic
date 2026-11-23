@@ -51,7 +51,8 @@ describe('Pager', () => {
 	it('changes the page size', async () => {
 		const { onperpage } = renderPager(1, 30);
 
-		await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Rows per page' }), '50');
+		await userEvent.click(screen.getByRole('button', { name: 'Rows per page 20 per page' }));
+		await userEvent.click(screen.getByRole('option', { name: '50 per page' }));
 
 		expect(onperpage).toHaveBeenCalledWith(50);
 	});

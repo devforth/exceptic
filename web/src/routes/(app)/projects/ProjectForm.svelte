@@ -15,10 +15,11 @@ problem beside it. `actions` go in the heading, `intro` under it.
 	import EditableTitle from '#lib/components/EditableTitle.svelte';
 	import LevelSummary from '#lib/components/LevelSummary.svelte';
 	import Notice from '#lib/components/Notice.svelte';
+	import SubmitButton from '#lib/components/SubmitButton.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import { FormState } from '#lib/form.svelte.ts';
 	import { formatSize } from '#lib/format.ts';
-	import { projectNameRules, type ProjectFormValues } from '#lib/projects.ts';
+	import { projectInput, projectNameRules, type ProjectFormValues } from '#lib/projects.ts';
 	import DiskShareField from './DiskShareField.svelte';
 	import LogLevelsField from './LogLevelsField.svelte';
 
@@ -41,7 +42,7 @@ problem beside it. `actions` go in the heading, `intro` under it.
 	// svelte-ignore state_referenced_locally
 	let newName = $state(name);
 
-	const form = new FormState();
+	const form = new FormState(() => ({ name: newName.trim(), ...projectInput(values) }));
 	const budget = $derived(storage.limit_bytes ?? 0);
 
 	async function submit(event: SubmitEvent) {
@@ -82,7 +83,7 @@ problem beside it. `actions` go in the heading, `intro` under it.
 		{#snippet summary()}
 			<LevelSummary kind="log" chosen={values.logLevels} />
 		{/snippet}
-		<LogLevelsField bind:value={values.logLevels} error={form.fields.log_levels} />
+		<LogLevelsField bind:value={values.logLevels} error={form.fields.log_levels} beside />
 	</Details>
 
 	<Details title="Disk share" variant="form" open invalid={Boolean(form.fields.disk_share)}>
@@ -108,7 +109,7 @@ problem beside it. `actions` go in the heading, `intro` under it.
 	{#if form.error}<Notice tone="error">{form.error}</Notice>{/if}
 
 	<div class="flex flex-wrap gap-2">
-		<Button variant="primary" type="submit" busy={form.busy}>Save</Button>
+		<SubmitButton {form} />
 		<Button href={resolve('/(app)/projects')}>Cancel</Button>
 	</div>
 </form>

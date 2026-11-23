@@ -5,8 +5,8 @@ save sends it; a refusal shows at its fields.
 -->
 <script lang="ts">
 	import { limits } from '#lib/api/catalog.gen.ts';
-	import Button from '#lib/components/Button.svelte';
 	import Notice from '#lib/components/Notice.svelte';
+	import SubmitButton from '#lib/components/SubmitButton.svelte';
 	import RoleChoices from '#lib/components/RoleChoices.svelte';
 	import { isAssignable } from '#lib/components/role.ts';
 	import TextField from '#lib/components/TextField.svelte';
@@ -22,11 +22,13 @@ save sends it; a refusal shows at its fields.
 
 	let { user, submitLabel, save }: Props = $props();
 
-	const form = new FormState();
 	let username = $derived(user?.username ?? '');
 	let name = $derived(user?.name ?? '');
 	// A new user is a user unless chosen otherwise.
 	let role = $derived(user && isAssignable(user.role) ? user.role : 'user');
+	// A saved user is sent only once changed.
+	// svelte-ignore state_referenced_locally
+	const form = new FormState(user ? () => ({ name: name.trim(), role }) : undefined);
 
 	function submit(event: SubmitEvent) {
 		event.preventDefault();
@@ -65,5 +67,5 @@ save sends it; a refusal shows at its fields.
 		</p>
 	{/if}
 	{#if form.error}<Notice tone="error">{form.error}</Notice>{/if}
-	<div><Button variant="primary" type="submit" busy={form.busy}>{submitLabel}</Button></div>
+	<div><SubmitButton {form}>{submitLabel}</SubmitButton></div>
 </form>

@@ -121,24 +121,26 @@ describe('ConnectedApps', () => {
 	});
 
 	it('chooses whose apps by the address, the own ones without ?user=', async () => {
-		render(ConnectedApps, { agents, viewerId: 'viewer01' });
+		const view = render(ConnectedApps, { agents, viewerId: 'viewer01' });
+		const owner = () => screen.getByRole('button', { name: /^Whose apps/ });
 
-		const owner = screen.getByRole('combobox', { name: 'Whose apps' });
+		expect(owner().textContent).toContain('Admin (you)');
 
-		expect(screen.getByRole('option', { name: 'Admin (you)' })).toBeTruthy();
-
-		await userEvent.selectOptions(owner, 'dev00001');
+		await userEvent.click(owner());
+		await userEvent.click(screen.getByRole('option', { name: 'Dev' }));
 		expect(app.goto).toHaveBeenLastCalledWith('/agents?client=other&user=dev00001');
 
 		app.url = new URL('http://localhost/agents?client=codex&user=dev00001');
-		await userEvent.selectOptions(owner, 'viewer01');
+		await view.rerender({ agents: { ...agents, user_id: 'dev00001' }, viewerId: 'viewer01' });
+		await userEvent.click(owner());
+		await userEvent.click(screen.getByRole('option', { name: 'Admin (you)' }));
 		expect(app.goto).toHaveBeenLastCalledWith('/agents?client=codex');
 	});
 
 	it('shows no choice to a user', () => {
 		render(ConnectedApps, { agents: { ...agents, owners: undefined }, viewerId: 'viewer01' });
 
-		expect(screen.queryByRole('combobox')).toBeNull();
+		expect(screen.queryByRole('button', { name: /^Whose apps/ })).toBeNull();
 	});
 
 	it('disconnects after a confirmation', async () => {

@@ -14,7 +14,7 @@ A section of a page on a raised surface, with its title.
 
 <section class={[cardClasses, 'mb-4 px-[22px] py-5']}>
 	{#if title}
-		<h2 class="mb-2 text-h2 font-bold">{title}</h2>
+		<h2 class="mb-2.5 text-h2 font-bold">{title}</h2>
 	{/if}
 	<div class="flex flex-col gap-2">{@render children()}</div>
 </section>

@@ -5,6 +5,7 @@ as a badge) and a muted description or a Hint beside it; a disabled one says why
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import { checkClasses } from './field.ts';
 	import Hint from './Hint.svelte';
 
 	type Props = {
@@ -45,7 +46,9 @@ as a badge) and a muted description or a Hint beside it; a disabled one says why
 {#snippet option()}
 	<label
 		class={[
-			'flex items-start gap-2',
+			// With a description under it, the control sits by the first line (the name), not the middle.
+			'flex gap-2 py-0.75',
+			description ? 'items-start' : 'items-center',
 			disabled ? 'cursor-not-allowed text-muted' : 'cursor-pointer'
 		]}
 	>
@@ -56,10 +59,15 @@ as a badge) and a muted description or a Hint beside it; a disabled one says why
 			{checked}
 			{disabled}
 			aria-describedby={hint ? `${id}-hint` : undefined}
-			class="mt-[3px] size-4 shrink-0 accent-accent focus-ring"
+			class={[checkClasses[type], description && 'mt-[1.5px]']}
 			onchange={(event) => onchange(event.currentTarget.checked)}
 		/>
-		<span class="flex min-w-0 flex-wrap items-baseline gap-x-2">
+		<span
+			class={[
+				'flex min-w-0 gap-x-1',
+				description ? 'flex-col items-start' : 'flex-wrap items-baseline'
+			]}
+		>
 			{#if children}{@render children()}{:else}{label}{/if}
 			{#if description}<span class="text-xs text-muted">{description}</span>{/if}
 			{#if disabled && reason}<span class="text-xs text-muted">({reason})</span>{/if}
@@ -68,9 +76,9 @@ as a badge) and a muted description or a Hint beside it; a disabled one says why
 {/snippet}
 
 {#if hint}
-	<span class="flex items-start gap-1.5">
+	<span class="flex items-center gap-1.25">
 		{@render option()}
-		<span class="mt-[3px] flex"><Hint text={hint} id="{id}-hint" /></span>
+		<Hint text={hint} id="{id}-hint" />
 	</span>
 {:else}
 	{@render option()}

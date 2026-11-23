@@ -25,7 +25,7 @@ describe('TextField', () => {
 		const input = screen.getByLabelText('Confirmation code');
 
 		expect(input.className).toContain('font-mono');
-		expect(input.className).toContain('tracking-widest');
+		expect(input.className).toContain('tracking-[.15em]');
 		expect(input.className).not.toContain('w-full');
 	});
 });

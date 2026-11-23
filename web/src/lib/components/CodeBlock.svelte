@@ -2,8 +2,8 @@
 @component
 Code or data on the code background.
 - `plain`: text as given, long lines wrapped (indented JSON, a payload).
-- `command`: one line to run, after a "›", with its copy button.
-- `snippet`: several lines to paste (a config file), with its copy button.
+- `command`: one line to run, after an accent "›", on the page's background, with its copy button.
+- `snippet`: several lines to paste (a config file), on the code background, with its copy button.
 Commands and snippets keep their lines and scroll sideways, so they paste as shown.
 -->
 <script lang="ts">
@@ -26,16 +26,23 @@ Commands and snippets keep their lines and scroll sideways, so they paste as sho
 
 {#if variant === 'plain'}
 	<pre
-		class={[box, 'overflow-auto break-words whitespace-pre-wrap']}
+		class={[box, 'max-h-120 overflow-auto break-words whitespace-pre-wrap']}
 		aria-label={label}>{code}</pre>
+{:else if variant === 'command'}
+	<div class="flex min-w-0 items-center gap-2 py-2">
+		<pre
+			class="min-w-0 flex-1 overflow-x-auto font-mono text-code whitespace-pre"
+			aria-label={label}><span
+				class="inline-block w-4 font-bold text-accent select-none"
+				aria-hidden="true">›</span
+			>{code}</pre>
+		<CopyButton text={code} title={copyTitle} label="Copy" {copied} />
+	</div>
 {:else}
 	<div class="flex min-w-0 items-start gap-2">
 		<pre
 			class={[box, 'min-w-0 flex-1 overflow-x-auto whitespace-pre']}
-			aria-label={label}>{#if variant === 'command'}<span
-					class="text-muted select-none"
-					aria-hidden="true"
-					>› </span>{/if}{code}</pre>
-		<CopyButton text={code} title={copyTitle} {copied} />
+			aria-label={label}>{code}</pre>
+		<CopyButton text={code} title={copyTitle} label="Copy" {copied} />
 	</div>
 {/if}

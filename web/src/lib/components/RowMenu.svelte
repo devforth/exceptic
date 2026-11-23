@@ -170,7 +170,7 @@ there is no room below), so a table's scroll box does not cut it.
 
 <span bind:this={toggleBox} class="inline-flex">
 	<Button
-		variant="ghost"
+		variant="menu"
 		icon="more"
 		title={label}
 		popup="menu"
@@ -186,7 +186,11 @@ there is no room below), so a table's scroll box does not cut it.
 		aria-label={label}
 		tabindex="-1"
 		data-popup
-		class={[popupClasses, 'fixed z-40 min-w-[200px] text-text']}
+		class={[
+			popupClasses,
+			'fixed z-40 min-w-[200px] text-text',
+			'transition-[opacity,translate] duration-120 motion-reduce:transition-none starting:-translate-y-1 starting:opacity-0'
+		]}
 		style:top="{top}px"
 		style:right="{right}px"
 		onkeydown={keydown}
@@ -197,7 +201,7 @@ there is no room below), so a table's scroll box does not cut it.
 			{/if}
 			{@const tone = item.danger
 				? 'text-error hover:bg-error-bg focus-visible:bg-error-bg'
-				: 'text-text hover:bg-selected focus-visible:bg-selected'}
+				: 'text-text hover:bg-accent-soft focus-visible:bg-accent-soft'}
 			{#if item.disabled}
 				{@render disabledItem(item, index)}
 			{:else if item.href}

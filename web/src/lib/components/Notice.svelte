@@ -1,32 +1,28 @@
 <!--
 @component
-A tinted note with a bar in its tone: information (a neutral note), a success, a warning or an
-error.
+A note in its tone. Information, a warning and an error are tinted callouts with a bar in their
+tone at the left; a success is a short message in the info tint, as the toast is. `compact` sets
+the text a size smaller (a note beside a form's fields). Paragraphs inside are spaced.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { NoticeTone } from './notice.ts';
-	import Icon from './Icon.svelte';
 
-	type Props = { tone: NoticeTone; children: Snippet };
+	type Props = { tone: NoticeTone; compact?: boolean; children: Snippet };
 
-	let { tone, children }: Props = $props();
+	let { tone, compact = false, children }: Props = $props();
 
-	const tones: Record<NoticeTone, { box: string; icon: string }> = {
-		info: { box: 'bg-code-bg before:bg-muted', icon: 'text-muted' },
-		success: { box: 'bg-success-bg before:bg-success', icon: 'text-success' },
-		warning: { box: 'bg-warning-bg before:bg-warning', icon: 'text-warning' },
-		error: { box: 'bg-error-bg before:bg-error', icon: 'text-error' }
+	const callout =
+		'relative rounded-popup py-3 pr-4 pl-5 text-text before:absolute before:inset-y-2 before:left-0 before:w-1 before:rounded-r-[4px] forced-colors:border-l-4 forced-colors:before:hidden';
+
+	const tones: Record<NoticeTone, string> = {
+		info: `${callout} bg-info-bg before:bg-info`,
+		success: 'rounded-control bg-info-bg px-3 py-2 text-info forced-colors:border',
+		warning: `${callout} bg-warning-bg before:bg-warning`,
+		error: `${callout} bg-error-bg before:bg-error`
 	};
 </script>
 
-<div
-	class={[
-		'relative flex items-start gap-2 rounded-popup py-3 pr-4 pl-5 text-text forced-colors:border',
-		'before:absolute before:inset-y-2 before:left-0 before:w-1 before:rounded-r-full',
-		tones[tone].box
-	]}
->
-	<span class={['mt-0.5', tones[tone].icon]}><Icon name={tone} /></span>
-	<div class="min-w-0">{@render children()}</div>
+<div class={['min-w-0 [&_p+p]:mt-1.5', compact && 'text-label', tones[tone]]}>
+	{@render children()}
 </div>

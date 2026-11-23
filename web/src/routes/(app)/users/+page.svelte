@@ -41,6 +41,23 @@
 		await goto(pageOf(id));
 	}
 
+	// The viewer's own row: name and password change on the account page.
+	const ownMenu: MenuItem[] = [{ label: 'Edit', icon: 'edit', href: resolve('/(app)/account') }];
+
+	// A row the viewer may not manage (an admin seeing the superadmin): the actions with why not.
+	const notYoursReason = 'Only the superadmin can change the superadmin.';
+	const lockedMenu: MenuItem[] = [
+		{ label: 'Edit', icon: 'edit', disabled: notYoursReason },
+		{ label: 'Reset password', icon: 'token', disabled: notYoursReason },
+		{
+			label: 'Delete',
+			icon: 'delete',
+			danger: true,
+			separatorBefore: true,
+			disabled: notYoursReason
+		}
+	];
+
 	function menuOf(id: string, username: string): MenuItem[] {
 		return [
 			{ label: 'Edit', icon: 'edit', href: pageOf(id) },
@@ -99,8 +116,15 @@
 				</span>{/if}
 		{:else if column.key === 'added'}
 			<Time at={user.created_at} />
-		{:else if can_manage}
-			<RowMenu label="Actions for {user.display_name}" items={menuOf(user.id, user.username)} />
+		{:else}
+			<RowMenu
+				label="Actions for {user.display_name}"
+				items={user.id === viewer
+					? ownMenu
+					: can_manage
+						? menuOf(user.id, user.username)
+						: lockedMenu}
+			/>
 		{/if}
 	{/snippet}
 </Table>

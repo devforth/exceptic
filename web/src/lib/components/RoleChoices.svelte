@@ -1,7 +1,7 @@
 <!--
 @component
-The role of a user form: the roles an administrator may give, each with what it may do, both
-as the server has them.
+The role of a user form, a card: the roles an administrator may give, each with what it may do,
+both as the server has them.
 -->
 <script lang="ts">
 	import { choices, roleSummaries } from '#lib/api/catalog.gen.ts';
@@ -14,7 +14,7 @@ as the server has them.
 	let { value = $bindable(), error }: Props = $props();
 </script>
 
-<ChoiceGroup legend="Role" {error}>
+<ChoiceGroup legend="Role" {error} card>
 	{#each choices.create_user.role as role (role)}
 		<Choice
 			type="radio"

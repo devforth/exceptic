@@ -1,7 +1,8 @@
 <!--
 @component
 The event or log levels as checkboxes, each a LevelBadge, highest first (the generated levels):
-side by side, or in a column (`inline` false); `hideLegend` as in ChoiceGroup.
+side by side under a small legend, or in a column (`inline` false); `beside` puts the legend before
+them on their line (in a form section); `hideLegend` as in ChoiceGroup.
 -->
 <script lang="ts">
 	import { levels } from '#lib/api/catalog.gen.ts';
@@ -18,6 +19,7 @@ side by side, or in a column (`inline` false); `hideLegend` as in ChoiceGroup.
 		hint?: string;
 		error?: string;
 		inline?: boolean;
+		beside?: boolean;
 		hideLegend?: boolean;
 	};
 
@@ -29,13 +31,14 @@ side by side, or in a column (`inline` false); `hideLegend` as in ChoiceGroup.
 		hint,
 		error,
 		inline = true,
+		beside = false,
 		hideLegend = false
 	}: Props = $props();
 
 	const known: readonly string[] = $derived(levels[kind]);
 </script>
 
-<ChoiceGroup {legend} {hint} {error} {inline} {hideLegend}>
+<ChoiceGroup {legend} {hint} {error} {inline} {beside} {hideLegend} compact>
 	{#each known as level (level)}
 		<Choice
 			type="checkbox"

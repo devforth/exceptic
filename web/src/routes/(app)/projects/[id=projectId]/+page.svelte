@@ -7,6 +7,7 @@
 	import {
 		deleteConfirmation,
 		deleteProject,
+		fromEnvDeleteReason,
 		projectInput,
 		type ProjectFormValues
 	} from '#lib/projects.ts';
@@ -48,11 +49,18 @@
 {#key project.id}
 	<ProjectForm {id} name={project.name} {initial} storage={data.storage} {save}>
 		{#snippet actions()}
-			{#if !fromEnv}
-				<ConfirmButton icon="delete" confirm={deleteConfirmation(project.name)} action={remove}>
+			<!-- Disabled for a project from PROJECTS; the wrapper keeps the reason's tooltip, which a
+			     disabled button does not show in every browser. -->
+			<span title={fromEnv ? fromEnvDeleteReason : undefined}>
+				<ConfirmButton
+					icon="delete"
+					confirm={deleteConfirmation(project.name)}
+					action={remove}
+					disabled={fromEnv}
+				>
 					Delete project
 				</ConfirmButton>
-			{/if}
+			</span>
 		{/snippet}
 		{#snippet intro()}
 			{#if fromEnv}

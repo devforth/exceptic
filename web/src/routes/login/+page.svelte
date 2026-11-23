@@ -6,10 +6,10 @@ to go after it (a local path only); a full load opens that page with a fresh ses
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { send } from '#lib/api/client.ts';
-	import Button from '#lib/components/Button.svelte';
 	import Card from '#lib/components/Card.svelte';
 	import Notice from '#lib/components/Notice.svelte';
 	import PageTitle from '#lib/components/PageTitle.svelte';
+	import SubmitButton from '#lib/components/SubmitButton.svelte';
 	import TextField from '#lib/components/TextField.svelte';
 	import { FormState } from '#lib/form.svelte.ts';
 	import type { PageProps } from './$types';
@@ -77,7 +77,7 @@ to go after it (a local path only); a full load opens that page with a fresh ses
 					autocomplete="current-password"
 					required
 				/>
-				<Button variant="primary" type="submit" busy={form.busy}>Log in</Button>
+				<SubmitButton {form}>Log in</SubmitButton>
 			</form>
 		{/if}
 	</Card>

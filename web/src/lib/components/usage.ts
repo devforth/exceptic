@@ -4,6 +4,6 @@ export type UsageSegment = {
 	label: string;
 	/** Its width, in percent of the bar. */
 	percent: number;
-	/** A project's color, #rrggbb; grey without. */
+	/** A project's color, #rrggbb; grey (the rest) without. */
 	color?: string;
 };

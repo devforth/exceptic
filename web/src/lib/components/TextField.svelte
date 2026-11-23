@@ -99,16 +99,17 @@ code), narrow and monospace.
 				? heroFieldClasses
 				: [
 						fieldClasses,
-						variant === 'code' ? 'w-36 font-mono text-sm tracking-widest' : 'w-full min-w-0 text-sm'
+						variant === 'code'
+							? 'w-[140px] font-mono text-sm tracking-[.15em]'
+							: 'w-full min-w-0 text-sm'
 					],
-			readonly ? 'bg-code-bg' : 'bg-surface',
-			error && 'border-error focus-visible:border-error'
+			'bg-surface'
 		]}
 	/>
 {/snippet}
 
 <div class="flex flex-col gap-1">
-	<span class={hero ? 'sr-only' : 'flex items-center gap-1.5 text-label text-muted'}>
+	<span class={hero ? 'sr-only' : 'flex items-center gap-1.25 text-label text-muted'}>
 		<label for={id}>{label}</label>
 		{#if note}<span class="text-xs">({note})</span>{/if}
 		{#if hint}<Hint text={hint} />{/if}

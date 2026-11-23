@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { toast } from '#lib/toast.svelte.ts';
+import { ToastStore, toast } from '#lib/toast.svelte.ts';
 import Toast from './Toast.svelte';
 
 beforeEach(() => {
@@ -95,5 +95,17 @@ describe('Toast', () => {
 
 		expect(region().className).toContain('top-5');
 		expect(region().className).toContain('left-5');
+	});
+
+	it("shows the toasts of the store it is given, not the app's", async () => {
+		const sample = new ToastStore();
+
+		render(Toast, { toasts: sample });
+		toast.show('From the app.');
+		sample.show('From the sample.', 'info');
+
+		await vi.waitFor(() => within(region()).getByText('From the sample.'));
+		expect(within(region()).queryByText('From the app.')).toBeNull();
+		sample.clear();
 	});
 });

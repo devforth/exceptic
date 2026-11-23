@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '#lib/api/client.ts';
 import { FormState } from './form.svelte.ts';
 
@@ -42,5 +42,51 @@ describe('FormState', () => {
 		finish();
 		await first;
 		expect(runs).toBe(1);
+	});
+
+	it('sends nothing until a value differs from the saved ones', async () => {
+		const values = { name: 'backend', levels: ['fatal', 'error'] };
+		const form = new FormState(() => values);
+		const request = vi.fn(() => Promise.resolve());
+
+		expect(form.changed).toBe(false);
+		expect(await form.submit(request)).toBe(false);
+		expect(request).not.toHaveBeenCalled();
+
+		values.levels = ['fatal'];
+		expect(form.changed).toBe(true);
+		values.levels = ['fatal', 'error'];
+		expect(form.changed).toBe(false);
+
+		values.name = 'api';
+		expect(await form.submit(request)).toBe(true);
+		expect(request).toHaveBeenCalledTimes(1);
+		// Saved: these are the values to compare with now.
+		expect(form.changed).toBe(false);
+		values.name = 'backend';
+		expect(form.changed).toBe(true);
+	});
+
+	it('stays changed after a refused save, and reset takes the values shown as saved', async () => {
+		const values = { name: 'backend' };
+		const form = new FormState(() => values);
+
+		values.name = 'api';
+		await form.submit(() =>
+			Promise.reject(new ApiError(400, 'refused', { fields: { name: 'taken' } }))
+		);
+		expect(form.changed).toBe(true);
+
+		form.reset();
+		expect(form.changed).toBe(false);
+		expect(form.fields).toEqual({});
+	});
+
+	it('counts every form without its values as changed', async () => {
+		const form = new FormState();
+
+		expect(form.changed).toBe(true);
+		expect(await form.submit(() => Promise.resolve())).toBe(true);
+		expect(form.changed).toBe(true);
 	});
 });

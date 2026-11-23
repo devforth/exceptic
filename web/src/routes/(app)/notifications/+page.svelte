@@ -8,6 +8,7 @@
 	import type { MenuItem } from '#lib/components/menu.ts';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import RowMenu from '#lib/components/RowMenu.svelte';
+	import StatusText from '#lib/components/StatusText.svelte';
 	import Table from '#lib/components/Table.svelte';
 	import type { TableColumn } from '#lib/components/table.ts';
 	import Time from '#lib/components/Time.svelte';
@@ -118,7 +119,7 @@
 			{#if connection.all_projects}
 				All projects
 			{:else}
-				<span class="flex flex-col items-start gap-1">
+				<span class="inline-flex flex-wrap gap-1">
 					{#each connection.projects ?? [] as project (project)}
 						<Badge tone="project" label={project} />
 					{/each}
@@ -148,7 +149,7 @@
 			</div>
 		{:else if column.key === 'status'}
 			{@const state = connectionState(connection)}
-			<Badge tone={state.tone} label={state.label} />
+			<StatusText tone={state.tone}>{state.label}</StatusText>
 		{:else}
 			<RowMenu label="Actions for {connection.name}" items={menuOf(connection)} />
 		{/if}

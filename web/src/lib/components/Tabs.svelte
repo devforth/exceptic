@@ -1,6 +1,7 @@
 <!--
 @component
-Tabs over panels, as a segmented control. One Tab stop: the arrows move between the tabs (and
+Tabs over panels, as a segmented control, or with `variant="underline"` as a row of names over
+a line, the chosen one underlined (a page's main choice, e.g. the MCP client). One Tab stop: the arrows move between the tabs (and
 wrap), Home and End go to the ends (#lib/roving.ts). With `param` the address names the tab
 (?param=id), read on load and replaced without a navigation (a shallow goto), so a reload or a
 shared link opens the same tab.
@@ -10,7 +11,7 @@ shared link opens the same tab.
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { movedIndex } from '#lib/roving.ts';
-	import type { Tab } from './tabs.ts';
+	import type { Tab, TabsVariant } from './tabs.ts';
 
 	type Props = {
 		/** What the tabs choose, e.g. "MCP client". */
@@ -19,11 +20,37 @@ shared link opens the same tab.
 		/** The query parameter that names the tab. */
 		param?: string;
 		selected?: string;
+		variant?: TabsVariant;
 		/** The panel of a tab, by its id. */
 		panel: Snippet<[string]>;
 	};
 
-	let { label, tabs, param, selected = $bindable(), panel }: Props = $props();
+	let {
+		label,
+		tabs,
+		param,
+		selected = $bindable(),
+		variant = 'segmented',
+		panel
+	}: Props = $props();
+
+	// Literal class names, so Tailwind builds them.
+	const looks = {
+		segmented: {
+			list: 'mb-3 inline-flex flex-wrap gap-0.5 rounded-popup bg-hover p-1',
+			tab: 'rounded-[7px] px-3.5 py-1.5 font-medium focus-ring',
+			current: 'bg-surface text-text shadow-sm ring-1 ring-border forced-colors:outline-2',
+			other: 'text-muted hover:text-text'
+		},
+		underline: {
+			list: 'mb-1.5 flex gap-[18px] overflow-x-auto border-b border-border table:gap-6',
+			tab: 'flex-none border-b-2 py-2.5 whitespace-nowrap focus-ring [--focus-offset:-3px]',
+			current: 'border-accent text-text',
+			other: 'border-transparent text-muted hover:text-text'
+		}
+	} as const satisfies Record<TabsVariant, Record<string, string>>;
+
+	const look = $derived(looks[variant]);
 
 	const prefix = $props.id();
 
@@ -71,7 +98,7 @@ shared link opens the same tab.
 	role="tablist"
 	aria-label={label}
 	tabindex="-1"
-	class="mb-3 inline-flex flex-wrap gap-0.5 rounded-note bg-hover p-1"
+	class={look.list}
 	onkeydown={keydown}
 >
 	{#each tabs as tab (tab.id)}
@@ -83,12 +110,7 @@ shared link opens the same tab.
 			aria-selected={current}
 			aria-controls="{prefix}-panel-{tab.id}"
 			tabindex={current ? 0 : -1}
-			class={[
-				'cursor-pointer rounded-control px-3.5 py-1.5 font-medium focus-ring',
-				current
-					? 'bg-surface text-text shadow-sm ring-1 ring-border forced-colors:outline-2'
-					: 'text-muted hover:text-text'
-			]}
+			class={['cursor-pointer', look.tab, current ? look.current : look.other]}
 			onclick={() => select(tab.id)}
 		>
 			{tab.label}

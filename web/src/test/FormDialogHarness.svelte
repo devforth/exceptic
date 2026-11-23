@@ -8,7 +8,7 @@
 
 	let open = $state(true);
 	let name = $state('backend');
-	const form = new FormState();
+	const form = new FormState(() => ({ name: name.trim() }));
 </script>
 
 <FormDialog title="Rename project" bind:open {form} {save}>

@@ -69,7 +69,7 @@ component: gone after a reload or leaving the page, never in the address or stor
 	</div>
 {/if}
 
-<Tabs label="MCP client" tabs={clients} param="client">
+<Tabs label="MCP client" tabs={clients} param="client" variant="underline">
 	{#snippet panel(client: string)}
 		<div class="flex flex-col gap-2 pt-1">
 			{#if client === 'claude'}

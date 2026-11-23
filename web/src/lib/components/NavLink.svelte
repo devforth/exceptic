@@ -43,10 +43,10 @@ or under 800px wide it shows its icon only, its count in a corner.
 	// Beside the label in the full menu, on the icon's corner otherwise (class names in
 	// full: Tailwind finds them in the source).
 	const countClasses = $derived([
-		'min-w-[22px] rounded-full bg-error-bg px-1.5 text-center text-xs leading-[18px] font-semibold text-error forced-colors:border',
+		'rounded-full bg-error-bg text-center font-semibold text-error forced-colors:border',
 		collapsed
-			? 'absolute top-px right-0.5 min-w-0 px-1 text-2xs leading-[15px]'
-			: 'max-sidebar:absolute max-sidebar:top-px max-sidebar:right-0.5 max-sidebar:min-w-0 max-sidebar:px-1 max-sidebar:text-2xs max-sidebar:leading-[15px] sidebar:ml-auto'
+			? 'absolute top-0 right-0 px-1 text-3xs leading-[15px] max-sidebar:top-px max-sidebar:right-0.5'
+			: 'min-w-[22px] px-1.5 py-px text-xs leading-[18px] max-sidebar:absolute max-sidebar:top-px max-sidebar:right-0.5 max-sidebar:min-w-0 max-sidebar:px-1 max-sidebar:py-0 max-sidebar:text-3xs max-sidebar:leading-[15px] sidebar:ml-auto'
 	]);
 
 	const shownCount = $derived(count === undefined ? '' : count > 999 ? '999+' : String(count));

@@ -38,6 +38,21 @@ const projects = [
 	{ id: 2, name: 'frontend' }
 ];
 
+const savedSlack = {
+	id: 'abcd1234',
+	name: 'Team chat',
+	type: 'slack',
+	confirmed: true,
+	all_projects: true,
+	project_ids: [],
+	levels: ['error'],
+	active: true,
+	include_issue_link: false,
+	saved_webhook_url: 'https://hoo…/x',
+	secret_readable: true,
+	retrying: 0
+};
+
 const field = (label: RegExp) => screen.getByLabelText<HTMLInputElement>(label);
 
 beforeEach(() => api.post.mockReset());
@@ -86,7 +101,7 @@ describe('ConnectionForm', () => {
 		expect(options.querySelectorAll('[role="img"]')).toHaveLength(2);
 	});
 
-	it('lists the projects by name once All projects is off, and shows them as badges in the heading', async () => {
+	it('lists the projects one per line as badges once All projects is off, and the chosen ones in the heading', async () => {
 		const user = userEvent.setup();
 		const { container } = render(ConnectionForm, { defaults: defaults(false), projects });
 
@@ -99,9 +114,11 @@ describe('ConnectionForm', () => {
 		const badges = [...(summary?.querySelectorAll('[data-project]') ?? [])];
 
 		expect(badges.map((badge) => badge.textContent?.trim())).toEqual(['backend', 'frontend']);
+		const options = screen.getByRole('group', { name: 'Projects that are sent' });
+
 		expect(
-			screen.getByRole('group', { name: 'Projects that are sent' }).querySelector('[data-project]')
-		).toBeNull();
+			[...options.querySelectorAll('[data-project]')].map((badge) => badge.textContent?.trim())
+		).toEqual(['backend', 'frontend']);
 
 		await user.click(screen.getByRole('checkbox', { name: 'frontend' }));
 		await user.click(screen.getByRole('checkbox', { name: 'backend' }));
@@ -189,24 +206,7 @@ describe('ConnectionForm', () => {
 		const user = userEvent.setup();
 
 		api.post.mockResolvedValue({});
-		render(ConnectionForm, {
-			defaults: defaults(true),
-			projects,
-			connection: {
-				id: 'abcd1234',
-				name: 'Team chat',
-				type: 'slack',
-				confirmed: true,
-				all_projects: true,
-				project_ids: [],
-				levels: ['error'],
-				active: true,
-				include_issue_link: false,
-				saved_webhook_url: 'https://hoo…/x',
-				secret_readable: true,
-				retrying: 0
-			}
-		});
+		render(ConnectionForm, { defaults: defaults(true), projects, connection: savedSlack });
 
 		const webhook = field(/^Incoming webhook URL/);
 
@@ -218,6 +218,7 @@ describe('ConnectionForm', () => {
 			false
 		);
 
+		await user.click(screen.getByRole('checkbox', { name: 'fatal' }));
 		await user.click(screen.getByRole('button', { name: 'Save' }));
 
 		await waitFor(() =>
@@ -226,10 +227,52 @@ describe('ConnectionForm', () => {
 				name: 'Team chat',
 				all_projects: true,
 				projects: [],
-				levels: ['error'],
+				levels: ['fatal', 'error'],
 				active: true,
 				include_issue_link: false
 			})
 		);
+	});
+
+	it('saves a connection only when something changed; an empty token field keeps the saved one', async () => {
+		const user = userEvent.setup();
+		const save = () => screen.getByRole('button', { name: 'Save' });
+
+		api.post.mockResolvedValue({});
+		render(ConnectionForm, { defaults: defaults(true), projects, connection: savedSlack });
+
+		expect(save().getAttribute('aria-disabled')).toBe('true');
+		expect(save().title).toBe('Nothing changed');
+		await user.click(save());
+		expect(api.post).not.toHaveBeenCalled();
+
+		await user.type(field(/^Incoming webhook URL/), 'https://hooks.slack.com/services/T/B/C');
+		expect(save().getAttribute('aria-disabled')).toBeNull();
+		await user.clear(field(/^Incoming webhook URL/));
+		expect(save().getAttribute('aria-disabled')).toBe('true');
+
+		await user.clear(field(/^Name/));
+		await user.type(field(/^Name/), 'Ops');
+		await user.click(save());
+		await waitFor(() =>
+			expect(api.post).toHaveBeenCalledWith(
+				'update_connection',
+				expect.objectContaining({ name: 'Ops' })
+			)
+		);
+		await waitFor(() => expect(save().getAttribute('aria-disabled')).toBe('true'));
+	});
+
+	it('counts projects saved in another order as unchanged once a project is checked again', async () => {
+		const user = userEvent.setup();
+		const save = () => screen.getByRole('button', { name: 'Save' });
+		// Saved through the API in its own order.
+		const connection = { ...savedSlack, all_projects: false, project_ids: [2, 1] };
+
+		render(ConnectionForm, { defaults: defaults(true), projects, connection });
+
+		await user.click(screen.getByRole('checkbox', { name: 'frontend' }));
+		await user.click(screen.getByRole('checkbox', { name: 'frontend' }));
+		expect(save().getAttribute('aria-disabled')).toBe('true');
 	});
 });

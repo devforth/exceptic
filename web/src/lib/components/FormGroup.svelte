@@ -16,7 +16,7 @@ every part but the first.
 	class="flex flex-col gap-2 not-first:border-t not-first:border-dashed not-first:border-border not-first:pt-5"
 >
 	<h3
-		class="mb-0.5 flex flex-wrap items-center gap-1.5 text-label font-semibold tracking-[.06em] text-muted uppercase"
+		class="mb-0.5 flex flex-wrap items-center gap-1.5 text-label font-bold tracking-[.06em] text-muted uppercase"
 	>
 		{title}
 		{#if hint}<Hint text={hint} />{/if}
