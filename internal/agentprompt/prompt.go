@@ -22,11 +22,18 @@ import (
 )
 
 const (
+	maxExceptions  = 10
 	maxFrames      = 40
+	maxContext     = 7 // source lines before and after the current one, as the Node SDK sends
+	maxTags        = 30
 	maxBreadcrumbs = 30
 	maxLogs        = 50
 	maxTextLength  = 2000
 )
+
+// MaxLength caps a prompt in characters: anyone with a DSN writes every
+// field, and the prompt goes whole into an agent's context.
+const MaxLength = 100_000
 
 // Issue is the history of the issue an event belongs to.
 type Issue struct {
@@ -117,11 +124,9 @@ func MCPReference(appName string, issueID string) string {
 }
 
 // Build returns the prompt: the instructions, the error data (Describe)
-// between markers, and a reminder after it.
+// between markers, and a reminder after it, within MaxLength.
 func Build(input Input) string {
-	head, data, tail := promptParts(input)
-
-	return head + data + tail
+	return BuildWithin(input, MaxLength, func(text string) string { return text })
 }
 
 // BuildWithin is Build written through encode (a chat's escaping) and cut to
@@ -165,7 +170,7 @@ func Describe(input Input) string {
 	field(&prompt, "Location", Redact(input.Culprit))
 
 	if event := input.Event; event != nil {
-		field(&prompt, "Platform", event.Platform)
+		field(&prompt, "Platform", Redact(event.Platform))
 		field(&prompt, "Release", Redact(event.Release))
 		field(&prompt, "Environment", Redact(event.Environment))
 		field(&prompt, "Transaction", Redact(event.Transaction))
@@ -177,7 +182,7 @@ func Describe(input Input) string {
 		field(&prompt, "Runtime", runtimes(event))
 
 		if event.SDK != nil {
-			field(&prompt, "SDK", strings.TrimSpace(event.SDK.Name+" "+event.SDK.Version))
+			field(&prompt, "SDK", Redact(strings.TrimSpace(event.SDK.Name+" "+event.SDK.Version)))
 		}
 	}
 
@@ -254,7 +259,13 @@ func writeExceptions(prompt *strings.Builder, exceptions sentry.ExceptionList) {
 
 	section(prompt, "Exception (outermost first, frames newest first)")
 
-	for index, exception := range exceptions.OutermostFirst() {
+	chain := exceptions.OutermostFirst()
+
+	for index, exception := range chain[:min(len(chain), maxExceptions)] {
+		if full(prompt) {
+			return
+		}
+
 		if index > 0 {
 			prompt.WriteString("\nCaused by ")
 		}
@@ -281,6 +292,10 @@ func writeExceptions(prompt *strings.Builder, exceptions sentry.ExceptionList) {
 		}
 
 		for _, frame := range frames[:min(len(frames), maxFrames)] {
+			if full(prompt) {
+				return
+			}
+
 			writeFrame(prompt, frame, frame.IsInApp() || !anyInApp)
 		}
 
@@ -288,6 +303,16 @@ func writeExceptions(prompt *strings.Builder, exceptions sentry.ExceptionList) {
 			fmt.Fprintf(prompt, "  … %d more frames\n", len(frames)-maxFrames)
 		}
 	}
+
+	if len(chain) > maxExceptions {
+		fmt.Fprintf(prompt, "\n… %d more exceptions\n", len(chain)-maxExceptions)
+	}
+}
+
+// full tells when the data already fills a prompt, so a hostile event costs
+// no more work: Build cuts the rest anyway.
+func full(prompt *strings.Builder) bool {
+	return prompt.Len() > MaxLength
 }
 
 // writeFrame writes one frame; source lines only for the application's own
@@ -302,6 +327,8 @@ func writeFrame(prompt *strings.Builder, frame sentry.Frame, withSource bool) {
 	if location == "" {
 		location = frame.Module
 	}
+
+	location = Redact(location)
 
 	if frame.Lineno > 0 {
 		location += fmt.Sprintf(":%d", frame.Lineno)
@@ -329,7 +356,10 @@ func writeFrame(prompt *strings.Builder, frame sentry.Frame, withSource bool) {
 		return
 	}
 
-	for _, line := range frame.SourceLines() {
+	lines := frame.SourceLines()
+	current := slices.IndexFunc(lines, func(line sentry.SourceLine) bool { return line.Current })
+
+	for _, line := range lines[max(0, current-maxContext):min(len(lines), current+maxContext+1)] {
 		pointer := " "
 
 		if line.Current {
@@ -340,27 +370,45 @@ func writeFrame(prompt *strings.Builder, frame sentry.Frame, withSource bool) {
 	}
 }
 
-// sensitiveTag matches tag names that identify hosts, people or secrets.
-var sensitiveTag = regexp.MustCompile(`(?i)server|host|ip|user|email|url|token|secret|key|pass|auth|cookie|session`)
+// sensitiveTag tells tag names that identify hosts, people or secrets. A
+// search for each word: a regexp took seconds over thousands of long names.
+func sensitiveTag(name string) bool {
+	name = strings.ToLower(name)
 
-func writeTags(prompt *strings.Builder, tags sentry.Tags) {
-	var lines []string
-
-	for name, value := range tags {
-		if !sensitiveTag.MatchString(name) {
-			lines = append(lines, fmt.Sprintf("%s: %s", name, Redact(value)))
+	for _, word := range []string{"server", "host", "ip", "user", "email", "url", "token", "secret", "key", "pass", "auth", "cookie", "session"} {
+		if strings.Contains(name, word) {
+			return true
 		}
 	}
 
-	if len(lines) == 0 {
+	return false
+}
+
+func writeTags(prompt *strings.Builder, tags sentry.Tags) {
+	var names []string
+
+	for name := range tags {
+		if !sensitiveTag(name) {
+			names = append(names, name)
+		}
+	}
+
+	if len(names) == 0 {
 		return
 	}
 
 	section(prompt, "Tags")
 
 	// Map order is random; sorted output keeps the prompt stable.
-	slices.Sort(lines)
-	prompt.WriteString(strings.Join(lines, "\n") + "\n")
+	slices.Sort(names)
+
+	for _, name := range names[:min(len(names), maxTags)] {
+		fmt.Fprintf(prompt, "%s: %s\n", Redact(name), Redact(tags[name]))
+	}
+
+	if len(names) > maxTags {
+		fmt.Fprintf(prompt, "… %d more tags\n", len(names)-maxTags)
+	}
 }
 
 func writeBreadcrumbs(prompt *strings.Builder, breadcrumbs sentry.BreadcrumbList) {
