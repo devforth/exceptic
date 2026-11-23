@@ -103,6 +103,8 @@ type Store interface {
 	ListLogs(ctx context.Context, filter LogFilter) ([]LogRecord, error)
 	// IssuesForLogs finds the issue of each log's request, by span.
 	IssuesForLogs(ctx context.Context, logs []LogRecord) (map[int64]LogIssue, error)
+	// DeleteLogs deletes the logs that exist; it says how many.
+	DeleteLogs(ctx context.Context, logIDs []int64) (int, error)
 
 	// The database.
 

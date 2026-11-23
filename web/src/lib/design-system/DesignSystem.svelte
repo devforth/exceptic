@@ -9,6 +9,7 @@ Every component with its variants, on sample data. Served only by the dev server
 	import { FormState } from '#lib/form.svelte.ts';
 	import Badge from '#lib/components/Badge.svelte';
 	import type { BadgeTone } from '#lib/components/badge.ts';
+	import BulkBar from '#lib/components/BulkBar.svelte';
 	import Button from '#lib/components/Button.svelte';
 	import type { ButtonVariant } from '#lib/components/button.ts';
 	import ActiveFilters from '#lib/components/ActiveFilters.svelte';
@@ -1239,6 +1240,29 @@ Every component with its variants, on sample data. Served only by the dev server
 			<IssueActions issueIds={['sample00']} status="unresolved" canDelete ondone={pause} />
 			<IssueActions issueIds={['sample00']} status="resolved" canDelete={false} ondone={pause} />
 			<IssueActions issueIds={[]} canDelete ondone={pause} />
+		</Row>
+		<Row caption="BulkBar: above a list with checkboxes, the count checked or why not yet" wide>
+			<BulkBar count={3}>
+				<ConfirmButton
+					confirm={{
+						title: 'Delete logs',
+						message: 'Delete 3 selected logs?',
+						confirmLabel: 'Delete'
+					}}
+					action={pause}
+				>
+					Delete
+				</ConfirmButton>
+			</BulkBar>
+			<BulkBar count={0} problem="Select logs to delete them">
+				<ConfirmButton
+					confirm={{ title: 'Delete logs', message: '', confirmLabel: 'Delete' }}
+					action={pause}
+					disabled
+				>
+					Delete
+				</ConfirmButton>
+			</BulkBar>
 		</Row>
 	</Section>
 

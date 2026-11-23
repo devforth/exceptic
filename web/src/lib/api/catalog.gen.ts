@@ -199,6 +199,15 @@ export interface Endpoints {
 			done: string;
 		};
 	};
+	delete_logs: {
+		in: {
+			/** The logs to delete; logs deleted meanwhile are skipped. */
+			log_ids: number[] | null;
+		};
+		out: {
+			deleted: number;
+		};
+	};
 	delete_project: {
 		in: {
 			/** Project name or ID. */
@@ -725,6 +734,7 @@ export interface Endpoints {
 		};
 		out: {
 			items: ({
+				id: number;
 				time: IsoTime;
 				project: string;
 				level: string;
@@ -1005,6 +1015,7 @@ export const endpoints = {
 	create_project: { method: 'POST', admin: true, destructive: false, confirm: false },
 	create_user: { method: 'POST', admin: true, destructive: false, confirm: true },
 	delete_connection: { method: 'POST', admin: true, destructive: true, confirm: false },
+	delete_logs: { method: 'POST', admin: true, destructive: true, confirm: false },
 	delete_project: { method: 'POST', admin: true, destructive: true, confirm: false },
 	delete_user: { method: 'POST', admin: true, destructive: true, confirm: false },
 	disconnect_agent: { method: 'POST', admin: false, destructive: true, confirm: false },
@@ -1239,6 +1250,7 @@ export const projectPalette = [
 
 /** The steps of the cleanup by size in order; those that always run go in full, the rest only while needed. */
 export const cleanupSteps = [
+	{ name: 'events and status changes of missing issues', always: true },
 	{ name: 'logs older than a month', always: true },
 	{ name: 'events older than a month beyond the newest of their issue', always: true },
 	{ name: 'events of resolved and ignored issues but the latest', always: true },

@@ -6,7 +6,7 @@ import (
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
-// Logs reads the logs list.
+// Logs reads the logs list and deletes logs.
 type Logs struct {
 	store store.Store
 }
@@ -35,4 +35,18 @@ func (service *Logs) List(ctx context.Context, filter store.LogFilter) ([]store.
 // list links to it.
 func (service *Logs) Issues(ctx context.Context, logs []store.LogRecord) (map[int64]store.LogIssue, error) {
 	return service.store.IssuesForLogs(ctx, logs)
+}
+
+// MaxActionLogs bounds the logs of one Delete: a page holds at most 100,
+// the same room to spare as MaxActionIssues.
+const MaxActionLogs = MaxActionIssues
+
+// Delete deletes the chosen logs for the viewer, who must be able to
+// administer (ErrForbidden); logs deleted meanwhile are skipped. It says how many went.
+func (service *Logs) Delete(ctx context.Context, viewer store.User, logIDs []int64) (int, error) {
+	if !viewer.CanAdminister() {
+		return 0, ErrForbidden
+	}
+
+	return service.store.DeleteLogs(ctx, logIDs)
 }

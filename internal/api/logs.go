@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/devforth/exceptic/internal/platform/config"
+	"github.com/devforth/exceptic/internal/services"
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
@@ -29,6 +30,7 @@ type listLogsInput struct {
 }
 
 type logOutput struct {
+	ID      int64     `json:"id"`
 	Time    time.Time `json:"time"`
 	Project string    `json:"project"`
 	Level   string    `json:"level"`
@@ -81,7 +83,7 @@ func (handler *handlers) listLogs(ctx context.Context, call Call, input listLogs
 
 	for _, record := range logs {
 		item := logOutput{
-			Time: record.Timestamp, Project: handler.projectName(record.ProjectID), Level: record.Level,
+			ID: record.ID, Time: record.Timestamp, Project: handler.projectName(record.ProjectID), Level: record.Level,
 			Body: call.Text(record.Body), TraceID: call.TraceID(record.TraceID),
 		}
 
@@ -97,6 +99,28 @@ func (handler *handlers) listLogs(ctx context.Context, call Call, input listLogs
 	}
 
 	return output, nil
+}
+
+type deleteLogsInput struct {
+	LogIDs []int64 `json:"log_ids" jsonschema:"The logs to delete; logs deleted meanwhile are skipped."`
+}
+
+type deletedLogsOutput struct {
+	Deleted int `json:"deleted"`
+}
+
+// deleteLogs deletes the chosen logs; services.Logs checks the role.
+func (handler *handlers) deleteLogs(ctx context.Context, call Call, input deleteLogsInput) (deletedLogsOutput, error) {
+	switch {
+	case len(input.LogIDs) == 0:
+		return deletedLogsOutput{}, Invalid("pass log_ids")
+	case len(input.LogIDs) > services.MaxActionLogs:
+		return deletedLogsOutput{}, Invalid("at most %d logs at once", services.MaxActionLogs)
+	}
+
+	deleted, err := handler.services.Logs.Delete(ctx, call.Viewer, input.LogIDs)
+
+	return deletedLogsOutput{Deleted: deleted}, err
 }
 
 type countOutput struct {

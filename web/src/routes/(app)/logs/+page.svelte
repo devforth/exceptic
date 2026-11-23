@@ -1,12 +1,14 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import type { Item } from '#lib/api/client.ts';
 	import ActiveFilters from '#lib/components/ActiveFilters.svelte';
 	import Badge from '#lib/components/Badge.svelte';
+	import BulkBar from '#lib/components/BulkBar.svelte';
 	import Button from '#lib/components/Button.svelte';
 	import DateRange from '#lib/components/DateRange.svelte';
+	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
 	import FilterBar from '#lib/components/FilterBar.svelte';
 	import type { FilterChip } from '#lib/components/chips.ts';
 	import LevelBadge from '#lib/components/LevelBadge.svelte';
@@ -21,20 +23,34 @@
 	import { changed, cleared, daysText, type Change } from '#lib/filters.ts';
 	import { withQuery } from '#lib/nav.ts';
 	import type { PageProps } from './$types';
+	import { deleteConfirmation, deleteLogs, selectionProblem } from './logs.ts';
 
 	let { data }: PageProps = $props();
 
 	type Log = Item<'list_logs'>;
 	type LogColumn = TableColumn<'time' | 'level' | 'project' | 'message'>;
 
-	const columns: LogColumn[] = [
+	const url = $derived(page.url);
+	// Deleting logs is for admins: only they get checkboxes.
+	const canAdminister = $derived(page.data.session?.can_administer ?? false);
+
+	const columns: LogColumn[] = $derived([
 		{ key: 'time', label: 'Time' },
 		{ key: 'level', label: 'Level' },
 		{ key: 'project', label: 'Project', wideOnly: true },
 		{ key: 'message', label: 'Message' }
-	];
+	]);
 
-	const url = $derived(page.url);
+	let selected: ReadonlySet<string | number> = $state(new Set());
+	const selectedIds = $derived([...selected].map(Number));
+	const problem = $derived(selectionProblem(selectedIds.length));
+
+	/** Deletes the logs, then shows the list again; the selection empties with the new rows. */
+	async function remove(input: Parameters<typeof deleteLogs>[0]) {
+		await deleteLogs(input);
+		// The delete is done: a failed reload of the list is not a failed delete.
+		void invalidateAll();
+	}
 
 	/** Shows the list with the change; typing replaces the entry instead of adding one. */
 	function show(change: Change, replace = false) {
@@ -128,7 +144,28 @@
 
 <ActiveFilters {chips} clear={cleared(url)} />
 
-<Table {columns} rows={data.logs} label="Logs" compact>
+{#if canAdminister && data.logs.length > 0}
+	<BulkBar count={selectedIds.length} {problem}>
+		<ConfirmButton
+			confirm={deleteConfirmation(selectedIds.length)}
+			action={() => remove({ log_ids: selectedIds })}
+			disabled={problem !== undefined}
+			title={problem}
+		>
+			Delete
+		</ConfirmButton>
+	</BulkBar>
+{/if}
+
+<Table
+	{columns}
+	rows={data.logs}
+	label="Logs"
+	compact
+	rowKey={canAdminister ? (log: Log) => log.id : undefined}
+	bind:selected
+	selectLabel={(log: Log) => `Select the log ${log.body.slice(0, 80)}`}
+>
 	{#snippet cell(log: Log, column: LogColumn)}
 		{#if column.key === 'time'}
 			<Time at={log.time} />

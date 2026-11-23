@@ -143,6 +143,15 @@ func Endpoints(projects config.ProjectList, all *services.All) []Endpoint {
 			ReadOnly:    true,
 			Transports:  TransportUI,
 		}, handler.listLogLevels),
+		// The logs list: chosen lines (up to services.MaxActionLogs) or every
+		// copy of one message; not for agents, whose logs are for reading.
+		Define(Endpoint{
+			Name:        "delete_logs",
+			Description: "Delete the chosen logs, or every log of one log's project with the same message. Admins only.",
+			Transports:  TransportUI,
+			Destructive: true,
+			Admin:       true,
+		}, handler.deleteLogs),
 		Define(Endpoint{
 			Name:        "get_storage",
 			Description: "How much the database holds, each project's part and when it last received, its size limit (MAX_DATABASE_SIZE) and where the cleanup stops.",

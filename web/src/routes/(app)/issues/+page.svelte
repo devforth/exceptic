@@ -7,11 +7,12 @@
 	import ActiveFilters from '#lib/components/ActiveFilters.svelte';
 	import AgentCopyButton from '#lib/components/AgentCopyButton.svelte';
 	import Badge from '#lib/components/Badge.svelte';
+	import BulkBar from '#lib/components/BulkBar.svelte';
 	import Button from '#lib/components/Button.svelte';
 	import DateRange from '#lib/components/DateRange.svelte';
 	import FilterBar from '#lib/components/FilterBar.svelte';
 	import IssueActions from '#lib/components/IssueActions.svelte';
-	import { doneMessage, type IssueAction } from '#lib/components/issueActions.ts';
+	import { doneMessage, selectionProblem, type IssueAction } from '#lib/components/issueActions.ts';
 	import { statusLabel, statusRowTone, statusTitle } from '#lib/components/issueStatus.ts';
 	import LevelBadge from '#lib/components/LevelBadge.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
@@ -25,7 +26,6 @@
 	import { changed, cleared, type Change } from '#lib/filters.ts';
 	import { toast } from '#lib/toast.svelte.ts';
 	import type { PageProps } from './$types';
-	import BulkBar from './BulkBar.svelte';
 	import { columnSorts, issueChips, showsResolved, sortedBy, withStatus } from './issues.ts';
 
 	let { data }: PageProps = $props();
@@ -118,7 +118,7 @@
 <ActiveFilters chips={issueChips(url, data.filters)} clear={cleared(url)} />
 
 {#if data.issues.length > 0}
-	<BulkBar count={selectedIds.length}>
+	<BulkBar count={selectedIds.length} problem={selectionProblem(selectedIds.length)}>
 		<IssueActions issueIds={selectedIds} canDelete={canAdminister} ondone={acted} />
 	</BulkBar>
 {/if}
