@@ -1,7 +1,7 @@
 import { get, pageError } from '#lib/api/client.ts';
 import type { PageLoad } from './$types';
 
-/** How to connect an agent, and the connected apps of ?user= (admins; someone they may not manage is a 404). */
+/** How to connect an agent, and the connected apps of ?user= (admins; someone they may not manage is a 403). */
 export const load: PageLoad = async ({ url }) => {
 	const owner = url.searchParams.get('user');
 	const [setup, agents] = await Promise.all([

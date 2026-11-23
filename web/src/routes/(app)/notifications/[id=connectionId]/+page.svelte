@@ -5,7 +5,7 @@
 	import Breadcrumbs from '#lib/components/Breadcrumbs.svelte';
 	import Button from '#lib/components/Button.svelte';
 	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
-	import Notice from '#lib/components/Notice.svelte';
+	import FormError from '#lib/components/FormError.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import { FormState } from '#lib/form.svelte.ts';
 	import { deleteConfirmation, deleteConnection } from '#lib/notifications.ts';
@@ -49,7 +49,12 @@
 </PageHeading>
 
 {#key connection.id}
-	<ConnectionForm defaults={data.defaults} projects={data.projects} {connection} />
+	<ConnectionForm
+		defaults={data.defaults}
+		projects={data.projects}
+		viewerAll={data.session.all_projects}
+		{connection}
+	/>
 {/key}
 
 {#if connection.retrying > 0 || (connection.type === 'email' && connection.confirmed)}
@@ -63,6 +68,6 @@
 				<Button icon="send" busy={test.busy} onclick={sendTest}>Send test message</Button>
 			{/if}
 		</div>
-		{#if test.error}<Notice tone="error">{test.error}</Notice>{/if}
+		<FormError form={test} />
 	</div>
 {/if}

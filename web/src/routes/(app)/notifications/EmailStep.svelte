@@ -8,6 +8,7 @@ of saving the connection; the rest of the connection form opens once it is verif
 	import { help, limits } from '#lib/api/catalog.gen.ts';
 	import { post, type Out } from '#lib/api/client.ts';
 	import Button from '#lib/components/Button.svelte';
+	import FormError from '#lib/components/FormError.svelte';
 	import Notice from '#lib/components/Notice.svelte';
 	import TextField from '#lib/components/TextField.svelte';
 	import Time from '#lib/components/Time.svelte';
@@ -114,5 +115,5 @@ of saving the connection; the rest of the connection form opens once it is verif
 	{/if}
 	{#if request.duplicate}<DuplicateNotice duplicate={request.duplicate} />{/if}
 	{#if progress.notice}<Notice tone="success">{progress.notice}</Notice>{/if}
-	{#if request.error}<Notice tone="error">{request.error}</Notice>{/if}
+	<FormError form={request} />
 </div>

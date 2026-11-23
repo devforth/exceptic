@@ -1,12 +1,14 @@
 import { redirect } from '@sveltejs/kit';
 import { resolve } from '$app/paths';
-import { get, pageError } from '#lib/api/client.ts';
+import { get, listAll, pageError } from '#lib/api/client.ts';
 import type { PageLoad } from './$types';
 
-// An id of another shape, an unknown user and other roles get Not found from get_user.
+// The projects offered are the viewer's. An id of another shape and an unknown user get Not found
+// from get_user, other roles the no-access page.
 export const load: PageLoad = async ({ params, parent }) => {
-	const [managed, { session }] = await Promise.all([
+	const [managed, projects, { session }] = await Promise.all([
 		get('get_user', { user_id: params.id }).catch(pageError),
+		listAll('list_projects').catch(pageError),
 		parent()
 	]);
 
@@ -15,5 +17,5 @@ export const load: PageLoad = async ({ params, parent }) => {
 		redirect(307, resolve('/(app)/account'));
 	}
 
-	return { managed };
+	return { managed, projects };
 };

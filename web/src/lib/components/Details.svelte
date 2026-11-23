@@ -16,7 +16,7 @@ A part that opens and closes, its heading the toggle.
 	import type { Snippet } from 'svelte';
 	import Hint from './Hint.svelte';
 	import Icon from './Icon.svelte';
-	import { cardClasses } from './surface.ts';
+	import { boxClasses, cardClasses } from './surface.ts';
 
 	type Props = {
 		title: string;
@@ -66,7 +66,7 @@ A part that opens and closes, its heading the toggle.
 	bind:open
 	class={[
 		nested
-			? 'mt-2 rounded-box border border-border bg-surface'
+			? ['mt-2', boxClasses]
 			: card
 				? [cardClasses, 'in-[details]:border in-[details]:border-border in-[details]:shadow-none']
 				: 'my-1 text-sm',

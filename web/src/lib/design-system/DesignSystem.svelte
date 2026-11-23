@@ -29,7 +29,11 @@ Every component with its variants, on sample data. Served only by the dev server
 	import Details from '#lib/components/Details.svelte';
 	import EditableTitle from '#lib/components/EditableTitle.svelte';
 	import Dialog from '#lib/components/Dialog.svelte';
+	import FormActions from '#lib/components/FormActions.svelte';
 	import FormDialog from '#lib/components/FormDialog.svelte';
+	import StatusPage from '#lib/components/StatusPage.svelte';
+	import FilterPicker from '#lib/components/FilterPicker.svelte';
+	import { narrowFormClasses } from '#lib/components/field.ts';
 	import SubmitButton from '#lib/components/SubmitButton.svelte';
 	import Facts from '#lib/components/Facts.svelte';
 	import FilterBar from '#lib/components/FilterBar.svelte';
@@ -44,11 +48,11 @@ Every component with its variants, on sample data. Served only by the dev server
 	import LogBody from '#lib/components/LogBody.svelte';
 	import type { MenuItem } from '#lib/components/menu.ts';
 	import NavLink from '#lib/components/NavLink.svelte';
-	import NotFound from '#lib/components/NotFound.svelte';
 	import Notice from '#lib/components/Notice.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import Pager from '#lib/components/Pager.svelte';
-	import Picker from '#lib/components/Picker.svelte';
+	import ProjectsChoice from '#lib/components/ProjectsChoice.svelte';
+	import ProjectsSummary from '#lib/components/ProjectsSummary.svelte';
 	import RoleBadge from '#lib/components/RoleBadge.svelte';
 	import RoleChoices from '#lib/components/RoleChoices.svelte';
 	import type { Role } from '#lib/components/role.ts';
@@ -226,6 +230,7 @@ Every component with its variants, on sample data. Served only by the dev server
 
 	// Samples of the filter components: they change only this page's state.
 	let sampleProjects: string[] = $state(['backend']);
+	let sampleLevels: string[] = $state([]);
 	let sampleSearch = $state('');
 	let sampleDays = $state({ from: '', to: '' });
 	let samplePage = $state(2);
@@ -237,6 +242,9 @@ Every component with its variants, on sample data. Served only by the dev server
 	// SubmitButton: a form that creates something, and an edit form with nothing changed.
 	const sampleNewForm = new FormState();
 	const sampleSavedForm = new FormState(() => 'saved');
+	// FormActions: a form whose last request failed.
+	const sampleFailedForm = new FormState();
+	sampleFailedForm.error = 'Could not save: the server did not answer.';
 
 	async function sampleDialogSave() {
 		await pause();
@@ -248,6 +256,12 @@ Every component with its variants, on sample data. Served only by the dev server
 		toast.show('Saved.');
 	}
 	let sampleRole: Role = $state('user');
+	const accessProjects = [
+		{ id: 1, name: 'backend' },
+		{ id: 2, name: 'frontend' }
+	];
+	let sampleAllProjects = $state(false);
+	let sampleProjectIds: string[] = $state(['1']);
 	let sampleEmail = $state(true);
 	let sampleEventLevels: string[] = $state(['fatal', 'error']);
 	let sampleLogLevels: string[] = $state([]);
@@ -524,6 +538,19 @@ Every component with its variants, on sample data. Served only by the dev server
 			<SubmitButton form={sampleNewForm}>Add</SubmitButton>
 			<SubmitButton form={sampleSavedForm} />
 		</Row>
+		<Row
+			caption="FormActions: the end of a form, its error (FormError, announced), the submit and Cancel back"
+			wide
+		>
+			<div class={narrowFormClasses}>
+				<FormActions form={sampleFailedForm} cancel="#buttons">Add connection</FormActions>
+			</div>
+		</Row>
+		<Row caption="FormActions stretch: the submit across the form (the login, Add project)" wide>
+			<div class="{narrowFormClasses} max-w-80">
+				<FormActions form={sampleNewForm} stretch>Log in</FormActions>
+			</div>
+		</Row>
 		<Row caption="external: another site in a new tab, without referrer or opener">
 			<Button variant="info" icon="externalLink" href="https://example.com" external>
 				Find chat ID
@@ -640,6 +667,10 @@ Every component with its variants, on sample data. Served only by the dev server
 					/>
 				</ChoiceGroup>
 				<RoleChoices bind:value={sampleRole} />
+				<RoleChoices
+					value="user"
+					locked="Only someone with access to all of this user's projects can change their role."
+				/>
 			</Card>
 			<Card>
 				<ColorField bind:value={sampleColor} name="backend" hint={help.fields.Projects.Color} />
@@ -663,6 +694,11 @@ Every component with its variants, on sample data. Served only by the dev server
 						<span class="text-muted">· up to 819.2 MB</span>{/snippet}
 				</Slider>
 				<Slider label="Refused" value={50} error="Choose 5 to 100 in steps of 5." />
+				<Slider
+					label="Locked"
+					value={50}
+					locked="Only someone with access to all projects can change the disk share."
+				/>
 			</Card>
 			<Card>
 				<ChoiceGroup legend="Projects (lead, hidden legend)" hideLegend inline>
@@ -874,6 +910,34 @@ Every component with its variants, on sample data. Served only by the dev server
 				onchange={(chosen: string[]) => (sampleLogLevels = chosen)}
 			/>
 		</Details>
+		<ProjectsChoice
+			projects={accessProjects}
+			bind:allProjects={sampleAllProjects}
+			bind:projectIds={sampleProjectIds}
+			legend="Projects (ProjectsChoice)"
+			hint="The projects a user sees, or a connection sends."
+		/>
+		<ProjectsChoice
+			title="Projects: All not allowed"
+			projects={accessProjects.slice(0, 1)}
+			allProjects={false}
+			projectIds={['1']}
+			legend="Projects without All"
+			allowAll={false}
+		/>
+		<ProjectsChoice
+			title="Projects: locked"
+			projects={accessProjects}
+			allProjects
+			projectIds={[]}
+			legend="Projects locked"
+			locked="Only someone with access to all projects can change this."
+		/>
+		<p class="flex flex-wrap items-center gap-3">
+			ProjectsSummary: <ProjectsSummary all names={[]} /> ·
+			<ProjectsSummary all={false} names={['backend', 'frontend']} /> ·
+			<ProjectsSummary all={false} names={[]} />
+		</p>
 		<Details title="Projects" variant="form" invalid>
 			{#snippet summary()}<span class="text-muted">none</span>{/snippet}
 			<p class="text-error">Choose at least one project (invalid: it opens).</p>
@@ -933,8 +997,19 @@ Every component with its variants, on sample data. Served only by the dev server
 			<ConfirmButton confirm={sampleConfirm} action={pause} disabled title="Nothing to delete">
 				Delete (disabled)
 			</ConfirmButton>
+			<ConfirmButton
+				variant="default"
+				confirm={sampleReset}
+				action={pause}
+				unavailable="The user has not logged in yet"
+			>
+				Reset password (unavailable: keeps the focus, says why)
+			</ConfirmButton>
 		</Row>
-		<Row caption="Notices: info, success, warning, error; compact beside a form's fields" wide>
+		<Row
+			caption="Notices: info, success, warning, error (alert: announced as it appears); compact beside a form's fields"
+			wide
+		>
 			<div class="flex flex-col gap-2.5">
 				<Notice tone="info">Nothing is deleted: the limit is off.</Notice>
 				<Notice tone="success">Project and its data deleted.</Notice>
@@ -942,7 +1017,7 @@ Every component with its variants, on sample data. Served only by the dev server
 					This server is reached over plain HTTP, so sign-in codes and tokens cross the network
 					unencrypted.
 				</Notice>
-				<Notice tone="error">Could not delete the project: it comes from PROJECTS.</Notice>
+				<Notice tone="error" alert>Could not delete the project: it comes from PROJECTS.</Notice>
 				<Notice tone="info" compact>
 					<p>The share matters only once the database nears its limit.</p>
 					<p>100% (the default) means no limit of its own.</p>
@@ -1153,19 +1228,22 @@ Every component with its variants, on sample data. Served only by the dev server
 
 	<Section title="Filters" id="filters">
 		<Row
-			caption="FilterBar with a Picker (option snippet: badges), SearchField and DateRange (a month calendar: the first day, then the last)"
+			caption="FilterBar with FilterPicker (projects, levels: a Picker of badges), SearchField and DateRange (a month calendar: the first day, then the last)"
 			wide
 		>
 			<FilterBar label="Sample filters">
-				<Picker
-					label="Projects"
-					all="All projects"
+				<FilterPicker
+					kind="project"
 					options={['backend', 'frontend']}
 					selected={sampleProjects}
 					onchange={(selected: string[]) => (sampleProjects = selected)}
-				>
-					{#snippet option(name: string)}<Badge tone="project" label={name} />{/snippet}
-				</Picker>
+				/>
+				<FilterPicker
+					kind="level"
+					options={['fatal', 'error', 'warning']}
+					selected={sampleLevels}
+					onchange={(selected: string[]) => (sampleLevels = selected)}
+				/>
 				<SearchField
 					value={sampleSearch}
 					label="Search text"
@@ -1473,6 +1551,9 @@ Every component with its variants, on sample data. Served only by the dev server
 			{#snippet actions()}
 				<Button variant="primary" icon="add" href="#page-heading">Add project</Button>
 			{/snippet}
+			{#snippet description()}
+				description: what the page is for, under the title. Each service gets its own project.
+			{/snippet}
 		</PageHeading>
 		<EmptyState>No issues match the filters.</EmptyState>
 		<EmptyState variant="card">
@@ -1481,9 +1562,12 @@ Every component with its variants, on sample data. Served only by the dev server
 		</EmptyState>
 	</Section>
 
-	<Section title="Not found">
+	<Section title="Status page">
 		<div class="rounded-card border border-dashed border-border">
-			<NotFound />
+			<StatusPage />
+		</div>
+		<div class="rounded-card border border-dashed border-border">
+			<StatusPage status={403} detail="issue k3x9q2mf is not in your projects" />
 		</div>
 	</Section>
 </div>

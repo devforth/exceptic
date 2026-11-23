@@ -6,10 +6,9 @@
 	import Breadcrumbs from '#lib/components/Breadcrumbs.svelte';
 	import ColorField from '#lib/components/ColorField.svelte';
 	import Details from '#lib/components/Details.svelte';
+	import FormActions from '#lib/components/FormActions.svelte';
 	import FormGroup from '#lib/components/FormGroup.svelte';
-	import Notice from '#lib/components/Notice.svelte';
 	import PageTitle from '#lib/components/PageTitle.svelte';
-	import SubmitButton from '#lib/components/SubmitButton.svelte';
 	import { FormState } from '#lib/form.svelte.ts';
 	import { freeColor, projectInput, type ProjectFormValues } from '#lib/projects.ts';
 	import DiskShareField from '../DiskShareField.svelte';
@@ -69,8 +68,7 @@
 		<h1 class="text-hero font-bold">Add project</h1>
 		<p class="-mt-1.5 mb-1.5 text-muted">One project for each app or service that sends errors.</p>
 		<ProjectNameField bind:value={name} error={form.fields.name} variant="hero" />
-		<SubmitButton {form} size="large">Add project</SubmitButton>
-		{#if form.error}<Notice tone="error">{form.error}</Notice>{/if}
+		<FormActions {form} size="large" stretch>Add project</FormActions>
 	</div>
 
 	<Details title="Advanced settings" variant="disclosure" invalid={advancedInvalid}>
@@ -93,6 +91,7 @@
 				bind:value={values.diskShare}
 				storage={data.storage}
 				error={form.fields.disk_share}
+				locked={data.defaults.disk_share_locked}
 			/>
 		</FormGroup>
 	</Details>

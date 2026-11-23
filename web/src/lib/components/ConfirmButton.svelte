@@ -20,6 +20,8 @@ It looks like any Button of its variant (danger for a delete).
 		title?: string;
 		/** Nothing to act on yet (no issue chosen). */
 		disabled?: boolean;
+		/** Why it cannot act now (Button's unavailable): its tooltip, nothing asked. */
+		unavailable?: string;
 		children?: Snippet;
 	};
 
@@ -30,6 +32,7 @@ It looks like any Button of its variant (danger for a delete).
 		icon,
 		title,
 		disabled = false,
+		unavailable,
 		children
 	}: Props = $props();
 
@@ -41,6 +44,7 @@ It looks like any Button of its variant (danger for a delete).
 	{icon}
 	{title}
 	{disabled}
+	{unavailable}
 	popup="dialog"
 	onclick={() => (open = true)}
 	{children}

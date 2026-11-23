@@ -23,4 +23,12 @@ describe('RoleChoices', () => {
 
 		expect(admin.checked).toBe(true);
 	});
+
+	it('offers only the roles the viewer may give: an admin gives only user', () => {
+		render(RoleChoices, { value: 'user', roles: ['user'] });
+
+		expect(screen.getAllByRole('radio').map((radio) => (radio as HTMLInputElement).value)).toEqual([
+			'user'
+		]);
+	});
 });

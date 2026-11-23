@@ -15,6 +15,7 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 	import type { Snippet } from 'svelte';
 	import EmptyState from './EmptyState.svelte';
 	import { checkClasses } from './field.ts';
+	import { boxClasses, cardClasses } from './surface.ts';
 	import Icon from './Icon.svelte';
 	import {
 		columnSort,
@@ -68,10 +69,10 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 
 	const box = $derived(
 		scroll
-			? 'max-h-[420px] overflow-auto rounded-box border border-border bg-surface focus-ring'
+			? `max-h-[420px] overflow-auto focus-ring ${boxClasses}`
 			: flat
 				? 'overflow-x-auto'
-				: 'overflow-x-auto rounded-card border border-transparent bg-surface shadow-card'
+				: `overflow-x-auto ${cardClasses}`
 	);
 
 	const padding = $derived(compact ? 'px-2.5 py-1.5' : 'px-3 py-2.5');

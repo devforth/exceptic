@@ -2,12 +2,18 @@
 
 /** Keyboard focus of a control: an accent border and a soft ring around it (an outline only in
  * forced colors, where shadows are dropped). */
-export const focusGlow =
+const focusGlow =
 	'focus-visible:border-accent focus-visible:shadow-[0_0_0_3px_var(--color-focus)] focus-visible:outline-hidden';
 
 /** A refused value (aria-invalid): a red border and ring. */
 const invalidGlow =
 	'aria-invalid:border-error aria-invalid:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-error)_20%,transparent)] aria-invalid:focus-visible:border-error';
+
+/** A form: its fields, notes and actions one under the other, one gap in every form. */
+export const formClasses = 'flex min-w-0 flex-col gap-3.5';
+
+/** A form of a few short fields (the account, a user), no wider than they need. */
+export const narrowFormClasses = `${formClasses} max-w-xl`;
 
 /** The frame of a field, without its height. */
 export const fieldFrame = `rounded-control border border-border px-2.5 text-text ${focusGlow} ${invalidGlow}`;

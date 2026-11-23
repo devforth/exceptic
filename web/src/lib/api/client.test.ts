@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { isHttpError } from '@sveltejs/kit';
-import { ApiError, get, listAll, pageError, post, query, send } from './client.ts';
+import { ApiError, errorMessage, get, listAll, pageError, post, query, send } from './client.ts';
 
 const fetchMock = vi.fn<typeof fetch>();
 const assign = vi.fn();
@@ -139,6 +139,16 @@ describe('pageError', () => {
 
 		expect(isHttpError(thrown, 404) && thrown.body.message).toBe('not found');
 
+		try {
+			pageError(new ApiError(403, 'issue k3x9q2mf is not in your projects'));
+		} catch (caught) {
+			thrown = caught;
+		}
+
+		expect(isHttpError(thrown, 403) && thrown.body.message).toBe(
+			'issue k3x9q2mf is not in your projects'
+		);
+
 		const other = new Error('network down');
 
 		expect(() => pageError(other)).toThrow(other);
@@ -210,5 +220,15 @@ describe('an ended session', () => {
 		void page.send('personal_token');
 
 		await vi.waitFor(() => expect(assign).toHaveBeenCalledOnce());
+	});
+});
+
+describe('errorMessage', () => {
+	it("says the server's reason, or the fallback for anything else", () => {
+		expect(errorMessage(new ApiError(400, 'name: taken'))).toBe('name: taken');
+		expect(errorMessage(new TypeError('fetch failed'))).toBe('Something went wrong.');
+		expect(errorMessage(new Error('x'), 'Could not load more events.')).toBe(
+			'Could not load more events.'
+		);
 	});
 });

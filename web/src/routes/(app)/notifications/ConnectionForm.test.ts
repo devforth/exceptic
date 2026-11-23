@@ -30,6 +30,8 @@ const defaults = (issueLinks: boolean) => ({
 	types: [type('email'), type('telegram'), type('slack')],
 	default_type: 'email',
 	levels: ['error', 'fatal'],
+	all_projects: true,
+	project_ids: [],
 	issue_links_available: issueLinks
 });
 
@@ -59,7 +61,11 @@ beforeEach(() => api.post.mockReset());
 
 describe('ConnectionForm', () => {
 	it('locks a new email connection until its address is confirmed', () => {
-		const { container } = render(ConnectionForm, { defaults: defaults(true), projects });
+		const { container } = render(ConnectionForm, {
+			defaults: defaults(true),
+			projects,
+			viewerAll: true
+		});
 
 		expect(container.querySelector('fieldset[disabled]')).not.toBeNull();
 		expect(field(/^Name/).matches(':disabled')).toBe(true);
@@ -67,7 +73,11 @@ describe('ConnectionForm', () => {
 	});
 
 	it('lays the sections out as the design: type card, project names, levels in a column', () => {
-		const { container } = render(ConnectionForm, { defaults: defaults(true), projects });
+		const { container } = render(ConnectionForm, {
+			defaults: defaults(true),
+			projects,
+			viewerAll: true
+		});
 		const typeGroup = screen.getByRole('group', { name: /^Type/ });
 
 		// The options of the type stand in a column inside the card.
@@ -103,7 +113,11 @@ describe('ConnectionForm', () => {
 
 	it('lists the projects one per line as badges once All projects is off, and the chosen ones in the heading', async () => {
 		const user = userEvent.setup();
-		const { container } = render(ConnectionForm, { defaults: defaults(false), projects });
+		const { container } = render(ConnectionForm, {
+			defaults: defaults(false),
+			projects,
+			viewerAll: true
+		});
 
 		await user.click(screen.getByRole('radio', { name: 'Telegram' }));
 		await user.click(screen.getByRole('checkbox', { name: /All projects/ }));
@@ -125,13 +139,13 @@ describe('ConnectionForm', () => {
 		expect(summary?.querySelector('[data-project]')).toBeNull();
 		expect(
 			[...(summary?.querySelectorAll('span.text-muted') ?? [])].some(
-				(s) => s.textContent === 'none'
+				(s) => s.textContent === '—No projects'
 			)
 		).toBe(true);
 	});
 
 	it('hides the empty list under All projects, so it adds no gap', () => {
-		render(ConnectionForm, { defaults: defaults(true), projects });
+		render(ConnectionForm, { defaults: defaults(true), projects, viewerAll: true });
 
 		const group = screen.getByRole('group', { name: 'Projects that are sent' });
 		const empty = [...group.querySelectorAll('div')].filter((div) => div.childElementCount === 0);
@@ -143,7 +157,7 @@ describe('ConnectionForm', () => {
 	it('checks the chat fields with the server patterns and links getUpdates for a valid token', async () => {
 		const user = userEvent.setup();
 
-		render(ConnectionForm, { defaults: defaults(false), projects });
+		render(ConnectionForm, { defaults: defaults(false), projects, viewerAll: true });
 		await user.click(screen.getByRole('radio', { name: 'Telegram' }));
 
 		const token = field(/^Bot token/);
@@ -181,7 +195,7 @@ describe('ConnectionForm', () => {
 		api.post.mockRejectedValueOnce(
 			new ApiError(400, 'chat_id: wrong', { fields: { chat_id: 'Enter the chat ID.' } })
 		);
-		render(ConnectionForm, { defaults: defaults(false), projects });
+		render(ConnectionForm, { defaults: defaults(false), projects, viewerAll: true });
 		await user.click(screen.getByRole('radio', { name: 'Telegram' }));
 		await user.type(field(/^Bot token/), '123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ');
 		await user.type(field(/^Chat ID/), '-100');
@@ -206,7 +220,12 @@ describe('ConnectionForm', () => {
 		const user = userEvent.setup();
 
 		api.post.mockResolvedValue({});
-		render(ConnectionForm, { defaults: defaults(true), projects, connection: savedSlack });
+		render(ConnectionForm, {
+			defaults: defaults(true),
+			projects,
+			viewerAll: true,
+			connection: savedSlack
+		});
 
 		const webhook = field(/^Incoming webhook URL/);
 
@@ -239,7 +258,12 @@ describe('ConnectionForm', () => {
 		const save = () => screen.getByRole('button', { name: 'Save' });
 
 		api.post.mockResolvedValue({});
-		render(ConnectionForm, { defaults: defaults(true), projects, connection: savedSlack });
+		render(ConnectionForm, {
+			defaults: defaults(true),
+			projects,
+			viewerAll: true,
+			connection: savedSlack
+		});
 
 		expect(save().getAttribute('aria-disabled')).toBe('true');
 		expect(save().title).toBe('Nothing changed');
@@ -269,10 +293,24 @@ describe('ConnectionForm', () => {
 		// Saved through the API in its own order.
 		const connection = { ...savedSlack, all_projects: false, project_ids: [2, 1] };
 
-		render(ConnectionForm, { defaults: defaults(true), projects, connection });
+		render(ConnectionForm, { defaults: defaults(true), projects, viewerAll: true, connection });
 
 		await user.click(screen.getByRole('checkbox', { name: 'frontend' }));
 		await user.click(screen.getByRole('checkbox', { name: 'frontend' }));
 		expect(save().getAttribute('aria-disabled')).toBe('true');
+	});
+
+	it('starts a limited viewer at his own projects and does not let him choose All', () => {
+		render(ConnectionForm, {
+			defaults: { ...defaults(true), all_projects: false, project_ids: [1] },
+			projects: [projects[0]],
+			viewerAll: false
+		});
+
+		const all = screen.getByRole<HTMLInputElement>('checkbox', { name: /All projects/ });
+
+		expect(all.checked).toBe(false);
+		expect(all.disabled).toBe(true);
+		expect(screen.getByRole<HTMLInputElement>('checkbox', { name: 'backend' }).checked).toBe(true);
 	});
 });

@@ -1,6 +1,6 @@
 import { choices } from '#lib/api/catalog.gen.ts';
 import { get, pageError } from '#lib/api/client.ts';
-import { readChoices, readPaging } from '#lib/filters.ts';
+import { pageWithin, readChoice, readPaging } from '#lib/filters.ts';
 import type { PageLoad } from './$types';
 
 // ?connection=<id>&status=…&page=…&per_page=…: only a known connection and status are kept.
@@ -10,13 +10,12 @@ export const load: PageLoad = async ({ url }) => {
 		(connection) => ({ id: connection.id, name: connection.name })
 	);
 	const filters = {
-		connection:
-			readChoices(
-				params,
-				'connection',
-				connections.map((connection) => connection.id)
-			)[0] ?? '',
-		status: readChoices(params, 'status', choices.list_deliveries.status)[0] ?? ''
+		connection: readChoice(
+			params,
+			'connection',
+			connections.map((connection) => connection.id)
+		),
+		status: readChoice(params, 'status', choices.list_deliveries.status)
 	};
 	const input = {
 		connection_id: filters.connection || undefined,
@@ -25,7 +24,7 @@ export const load: PageLoad = async ({ url }) => {
 	const paging = readPaging(params);
 	const count = await get('count_deliveries', input).catch(pageError);
 	// A page past the end shows the last one.
-	const page = Math.min(paging.page, Math.max(1, Math.ceil(count.count / paging.perPage)));
+	const page = pageWithin(paging, count.count);
 	const deliveries = await get('list_deliveries', {
 		...input,
 		limit: paging.perPage,

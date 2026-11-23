@@ -5,7 +5,7 @@ for when the cause was fixed outside this server.
 -->
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
-	import { ApiError, post } from '#lib/api/client.ts';
+	import { post, errorMessage } from '#lib/api/client.ts';
 	import Button from '#lib/components/Button.svelte';
 	import { toast } from '#lib/toast.svelte.ts';
 
@@ -21,7 +21,7 @@ for when the cause was fixed outside this server.
 			toast.show('The waiting messages are being sent again now.');
 			await invalidateAll();
 		} catch (failure) {
-			toast.show(failure instanceof ApiError ? failure.message : 'Something went wrong.', 'error');
+			toast.show(errorMessage(failure), 'error');
 		} finally {
 			busy = false;
 		}

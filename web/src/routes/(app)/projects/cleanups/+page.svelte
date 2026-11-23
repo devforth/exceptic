@@ -79,14 +79,15 @@
 		{ label: 'Cleanup history', href: resolve('/(app)/projects/cleanups') }
 	]}
 />
-<PageHeading title="Cleanup history" />
-<p class="mb-4 text-muted">
-	When the database reaches <code>MAX_DATABASE_SIZE</code>
-	<Hint text={help.settings.MAX_DATABASE_SIZE} />, the ingest queue and the issues are compacted
-	first: deleted data keeps its space on disk until then. If the database is still at the limit,
-	data is deleted step by step until it is at {data.history.stop_percent}% of the limit. Sizes are
-	on disk; the last {data.history.kept} runs are kept.
-</p>
+<PageHeading title="Cleanup history">
+	{#snippet description()}
+		When the database reaches <code>MAX_DATABASE_SIZE</code>
+		<Hint text={help.settings.MAX_DATABASE_SIZE} />, the ingest queue and the issues are compacted
+		first: deleted data keeps its space on disk until then. If the database is still at the limit,
+		data is deleted step by step until it is at {data.history.stop_percent}% of the limit. Sizes are
+		on disk; the last {data.history.kept} runs are kept.
+	{/snippet}
+</PageHeading>
 
 <Table
 	columns={runColumns}

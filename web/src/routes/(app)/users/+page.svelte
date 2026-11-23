@@ -3,8 +3,9 @@
 	import { resolve } from '$app/paths';
 	import { post, type Item } from '#lib/api/client.ts';
 	import Button from '#lib/components/Button.svelte';
-	import type { MenuItem } from '#lib/components/menu.ts';
+	import { unavailable, type MenuItem } from '#lib/components/menu.ts';
 	import PageHeading from '#lib/components/PageHeading.svelte';
+	import ProjectsSummary from '#lib/components/ProjectsSummary.svelte';
 	import RoleBadge from '#lib/components/RoleBadge.svelte';
 	import RowMenu from '#lib/components/RowMenu.svelte';
 	import Table from '#lib/components/Table.svelte';
@@ -12,16 +13,23 @@
 	import Time from '#lib/components/Time.svelte';
 	import { handOver } from '#lib/handoff.ts';
 	import type { PageProps } from './$types';
-	import { deleteConfirmation, deleteUser, resetConfirmation } from './users.ts';
+	import {
+		deleteConfirmation,
+		deleteUser,
+		refreshingOnRefusal,
+		resetConfirmation,
+		takeOverLock
+	} from './users.ts';
 
 	let { data }: PageProps = $props();
 
 	type Row = Item<'list_users'>;
-	type UserColumn = TableColumn<'user' | 'role' | 'login' | 'added' | 'actions'>;
+	type UserColumn = TableColumn<'user' | 'role' | 'projects' | 'login' | 'added' | 'actions'>;
 
 	const columns: UserColumn[] = [
 		{ key: 'user', label: 'User' },
 		{ key: 'role', label: 'Role' },
+		{ key: 'projects', label: 'Projects' },
 		{ key: 'login', label: 'Last login' },
 		{ key: 'added', label: 'Added', wideOnly: true },
 		{ key: 'actions', label: 'Actions', actions: true }
@@ -35,7 +43,9 @@
 
 	// The new password is shown once, on the user's page.
 	async function reset(id: string) {
-		const { temporary_password } = await post('reset_user_password', { user_id: id });
+		const { temporary_password } = await refreshingOnRefusal(() =>
+			post('reset_user_password', { user_id: id })
+		);
 
 		handOver(id, temporary_password);
 		await goto(pageOf(id));
@@ -44,40 +54,40 @@
 	// The viewer's own row: name and password change on the account page.
 	const ownMenu: MenuItem[] = [{ label: 'Edit', icon: 'edit', href: resolve('/(app)/account') }];
 
-	// A row the viewer may not manage (an admin seeing the superadmin): the actions with why not.
-	const notYoursReason = 'Only the superadmin can change the superadmin.';
-	const lockedMenu: MenuItem[] = [
-		{ label: 'Edit', icon: 'edit', disabled: notYoursReason },
-		{ label: 'Reset password', icon: 'token', disabled: notYoursReason },
-		{
-			label: 'Delete',
-			icon: 'delete',
-			danger: true,
-			separatorBefore: true,
-			disabled: notYoursReason
-		}
-	];
+	// The actions of another user's row; each one the viewer may not take says why. Edit opens
+	// the user's page while their projects may change, though the rest may not.
+	function menuOf(row: Row) {
+		const { user, can_take_over, access_editable } = row;
+		const locked = takeOverLock(row);
 
-	function menuOf(id: string, username: string): MenuItem[] {
 		return [
-			{ label: 'Edit', icon: 'edit', href: pageOf(id) },
-			{
-				label: 'Reset password',
-				icon: 'token',
-				confirm: resetConfirmation(username),
-				action: () => reset(id)
-			},
-			{
-				label: 'Delete',
-				icon: 'delete',
-				danger: true,
-				separatorBefore: true,
-				confirm: deleteConfirmation(username),
-				action: async () => {
-					await deleteUser(id);
-					void invalidateAll();
-				}
-			}
+			unavailable(
+				{ label: 'Edit', icon: 'edit', href: pageOf(user.id) },
+				can_take_over || access_editable ? undefined : locked
+			),
+			unavailable(
+				{
+					label: 'Reset password',
+					icon: 'token',
+					confirm: resetConfirmation(user.username),
+					action: () => reset(user.id)
+				},
+				locked
+			),
+			unavailable(
+				{
+					label: 'Delete',
+					icon: 'delete',
+					danger: true,
+					separatorBefore: true,
+					confirm: deleteConfirmation(user.username),
+					action: async () => {
+						await refreshingOnRefusal(() => deleteUser(user.id));
+						void invalidateAll();
+					}
+				},
+				locked
+			)
 		];
 	}
 </script>
@@ -86,15 +96,15 @@
 	{#snippet actions()}
 		<Button variant="primary" icon="add" href={resolve('/(app)/users/new')}>Add user</Button>
 	{/snippet}
+	{#snippet description()}
+		Users change issue statuses, read logs and connect their own coding agents. Admins also manage
+		projects, notifications and users. There is one superadmin.
+	{/snippet}
 </PageHeading>
 
-<p class="mb-4 text-muted">
-	Users change issue statuses, read logs and connect their own coding agents. Admins also manage
-	projects, notifications and users. There is one superadmin.
-</p>
-
 <Table {columns} rows={data.users} rowKey={(row: Row) => row.user.id} label="Users">
-	{#snippet cell({ user, can_manage }: Row, column: UserColumn)}
+	{#snippet cell(row: Row, column: UserColumn)}
+		{@const user = row.user}
 		{#if column.key === 'user'}
 			{#if user.id === viewer}
 				<Button variant="title" href={resolve('/(app)/account')}>{user.display_name}</Button>
@@ -110,6 +120,9 @@
 			{#if user.must_change_password}
 				<span class="text-xs text-muted">temporary password</span>
 			{/if}
+		{:else if column.key === 'projects'}
+			<!-- The viewer's part of the user's projects: others they do not see are left out. -->
+			<ProjectsSummary all={user.all_projects} names={user.projects ?? []} />
 		{:else if column.key === 'login'}
 			{#if user.last_login_at}<Time at={user.last_login_at} />{:else}<span class="text-muted">
 					never
@@ -119,11 +132,7 @@
 		{:else}
 			<RowMenu
 				label="Actions for {user.display_name}"
-				items={user.id === viewer
-					? ownMenu
-					: can_manage
-						? menuOf(user.id, user.username)
-						: lockedMenu}
+				items={user.id === viewer ? ownMenu : menuOf(row)}
 			/>
 		{/if}
 	{/snippet}

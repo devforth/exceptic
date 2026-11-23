@@ -46,8 +46,20 @@
 		{ label: project.name, href: resolve('/(app)/projects/[id=projectId]', { id }) }
 	]}
 />
+{#snippet fromEnvNote()}
+	From PROJECTS: its DSN key comes from there, and it cannot be deleted here.
+{/snippet}
+
 {#key project.id}
-	<ProjectForm {id} name={project.name} {initial} storage={data.storage} {save}>
+	<ProjectForm
+		{id}
+		name={project.name}
+		{initial}
+		storage={data.storage}
+		diskShareLocked={project.disk_share_locked}
+		{save}
+		description={fromEnv ? fromEnvNote : undefined}
+	>
 		{#snippet actions()}
 			<!-- Disabled for a project from PROJECTS; the wrapper keeps the reason's tooltip, which a
 			     disabled button does not show in every browser. -->
@@ -61,13 +73,6 @@
 					Delete project
 				</ConfirmButton>
 			</span>
-		{/snippet}
-		{#snippet intro()}
-			{#if fromEnv}
-				<p class="-mt-2 text-label text-muted">
-					From PROJECTS: its DSN key comes from there, and it cannot be deleted here.
-				</p>
-			{/if}
 		{/snippet}
 	</ProjectForm>
 {/key}

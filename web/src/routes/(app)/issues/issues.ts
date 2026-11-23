@@ -2,12 +2,18 @@
 // what it applies. The status defaults to unresolved and the sort to last seen; neither is
 // then written in the address nor shown as a chip.
 import { choices, levels } from '#lib/api/catalog.gen.ts';
-import type { FilterChip } from '#lib/components/chips.ts';
+import {
+	appliedChips,
+	daysChip,
+	listChip,
+	textChip,
+	type FilterChip
+} from '#lib/components/chips.ts';
 import type { ColumnSort } from '#lib/components/table.ts';
 import {
 	changed,
+	type Change,
 	dayRange,
-	daysText,
 	readChoice,
 	readChoices,
 	readDays,
@@ -83,62 +89,30 @@ export function sortedBy(url: Address, sort: string): string {
 	return changed(url, { sort: sort === defaultSort ? null : sort });
 }
 
-/** The list of another status; the default status is no parameter. */
+/** The change to another status; the default status is no parameter. */
+export function statusChange(status: string): Change {
+	return { status: status === defaultStatus ? null : status };
+}
+
+/** The list of another status. */
 export function withStatus(url: Address, status: string): string {
-	return changed(url, { status: status === defaultStatus ? null : status });
+	return changed(url, statusChange(status));
 }
 
 /** The chips of the filters applied, each value removable on its own. */
 export function issueChips(url: Address, filters: IssueFilters): FilterChip[] {
-	const without = (name: 'project' | 'level', value: string) =>
-		changed(url, { [name]: filters[name].filter((other: string) => other !== value) });
-
-	const chips: FilterChip[] = [
-		{
-			label: 'Project',
-			values: filters.project.map((name) => ({
-				text: name,
-				kind: 'project' as const,
-				remove: without('project', name)
-			}))
-		},
+	return appliedChips([
+		listChip(url, 'Project', 'project', filters.project, 'project'),
 		{
 			label: 'Status',
 			values:
 				filters.status === defaultStatus
 					? []
-					: [
-							{
-								text: filters.status,
-								kind: 'status' as const,
-								remove: withStatus(url, defaultStatus)
-							}
-						]
+					: [{ text: filters.status, kind: 'status', remove: withStatus(url, defaultStatus) }]
 		},
-		{
-			label: 'Level',
-			values: filters.level.map((level) => ({
-				text: level,
-				kind: 'level' as const,
-				remove: without('level', level)
-			}))
-		},
-		{
-			label: 'Search',
-			values: filters.query ? [{ text: filters.query, remove: changed(url, { query: null }) }] : []
-		},
-		{
-			label: 'Dates',
-			values:
-				filters.from || filters.to
-					? [
-							{
-								text: daysText(filters.from, filters.to),
-								remove: changed(url, { from: null, to: null })
-							}
-						]
-					: []
-		},
+		listChip(url, 'Level', 'level', filters.level, 'level'),
+		textChip(url, 'Search', 'query', filters.query),
+		daysChip(url, filters.from, filters.to),
 		{
 			label: 'Sort',
 			values:
@@ -146,9 +120,7 @@ export function issueChips(url: Address, filters: IssueFilters): FilterChip[] {
 					? []
 					: [{ text: sortNames[filters.sort], remove: sortedBy(url, defaultSort) }]
 		}
-	];
-
-	return chips.filter((chip) => chip.values.length > 0);
+	]);
 }
 
 /** The Resolved column: only where resolved issues are listed. */

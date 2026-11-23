@@ -7,9 +7,11 @@ to go after it (a local path only); a full load opens that page with a fresh ses
 	import { page } from '$app/state';
 	import { send } from '#lib/api/client.ts';
 	import Card from '#lib/components/Card.svelte';
+	import { titleClasses } from '#lib/components/heading.ts';
+	import { formClasses } from '#lib/components/field.ts';
+	import FormActions from '#lib/components/FormActions.svelte';
 	import Notice from '#lib/components/Notice.svelte';
 	import PageTitle from '#lib/components/PageTitle.svelte';
-	import SubmitButton from '#lib/components/SubmitButton.svelte';
 	import TextField from '#lib/components/TextField.svelte';
 	import { FormState } from '#lib/form.svelte.ts';
 	import type { PageProps } from './$types';
@@ -54,14 +56,11 @@ to go after it (a local path only); a full load opens that page with a fresh ses
 
 <main class="mx-auto w-full max-w-[340px] px-4 pt-[12vh] pb-16">
 	<Card>
-		<h1 class="text-h1 font-bold wrap-break-word">{data.state.app_name}</h1>
+		<h1 class={titleClasses}>{data.state.app_name}</h1>
 		{#if data.state.disabled}
 			<Notice tone="info">{data.state.disabled}</Notice>
 		{:else}
-			<form bind:this={element} onsubmit={submit} class="flex flex-col gap-3.5">
-				{#if form.error}
-					<div role="alert"><Notice tone="error">{form.error}</Notice></div>
-				{/if}
+			<form bind:this={element} onsubmit={submit} class={formClasses}>
 				<TextField
 					label="Username"
 					name="username"
@@ -77,7 +76,7 @@ to go after it (a local path only); a full load opens that page with a fresh ses
 					autocomplete="current-password"
 					required
 				/>
-				<SubmitButton {form}>Log in</SubmitButton>
+				<FormActions {form} stretch>Log in</FormActions>
 			</form>
 		{/if}
 	</Card>

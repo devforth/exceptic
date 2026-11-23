@@ -58,4 +58,23 @@ describe('ProjectForm', () => {
 		// The focus stays on the button it pressed.
 		expect(document.activeElement).toBe(saveButton());
 	});
+
+	it('shows the disk share read-only with why to a viewer who may not change it', () => {
+		const reason = 'Only someone with access to all projects can change the disk share.';
+
+		render(ProjectForm, {
+			id: 1,
+			name: 'backend',
+			initial: { color: '#2563eb', logLevels: ['fatal', 'error'], diskShare: 100 },
+			storage,
+			diskShareLocked: reason,
+			save: vi.fn(() => Promise.resolve())
+		});
+
+		const slider = screen.getByRole<HTMLInputElement>('slider');
+
+		expect(slider.disabled).toBe(true);
+		expect(slider.getAttribute('aria-describedby')).toContain('locked');
+		expect(screen.getByText(reason)).toBeTruthy();
+	});
 });

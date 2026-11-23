@@ -2,7 +2,7 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { ApiError, get, type Item } from '#lib/api/client.ts';
+	import { get, type Item, errorMessage } from '#lib/api/client.ts';
 	import AgentCopyButton from '#lib/components/AgentCopyButton.svelte';
 	import Badge from '#lib/components/Badge.svelte';
 	import Breadcrumbs from '#lib/components/Breadcrumbs.svelte';
@@ -72,10 +72,7 @@
 
 			more = { of: details, rows: [...events, ...(next.items ?? [])], cursor: next.next_cursor };
 		} catch (failure) {
-			toast.show(
-				failure instanceof ApiError ? failure.message : 'Could not load more events.',
-				'error'
-			);
+			toast.show(errorMessage(failure, 'Could not load more events.'), 'error');
 		} finally {
 			loadingMore = false;
 		}
@@ -170,12 +167,13 @@
 	]}
 />
 
-<PageHeading title={issue.title}>
+{#snippet locationLine()}{issue.location}{/snippet}
+
+<PageHeading title={issue.title} description={issue.location ? locationLine : undefined}>
 	{#snippet leading()}
 		<LevelBadge level={issue.level} href={issuesWith({ level: issue.level })} />
 	{/snippet}
 </PageHeading>
-{#if issue.location}<p class="-mt-3 mb-2 text-muted">{issue.location}</p>{/if}
 
 <Facts facts={issueFacts}>
 	{#snippet value(fact: Fact)}

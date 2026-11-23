@@ -2,11 +2,11 @@
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { post, type Item } from '#lib/api/client.ts';
-	import Badge from '#lib/components/Badge.svelte';
 	import Button from '#lib/components/Button.svelte';
 	import LevelSummary from '#lib/components/LevelSummary.svelte';
 	import type { MenuItem } from '#lib/components/menu.ts';
 	import PageHeading from '#lib/components/PageHeading.svelte';
+	import ProjectsSummary from '#lib/components/ProjectsSummary.svelte';
 	import RowMenu from '#lib/components/RowMenu.svelte';
 	import StatusText from '#lib/components/StatusText.svelte';
 	import Table from '#lib/components/Table.svelte';
@@ -95,12 +95,11 @@
 			Add connection
 		</Button>
 	{/snippet}
+	{#snippet description()}
+		New issues and regressions are sent to every active connection that has the project and the
+		level selected.
+	{/snippet}
 </PageHeading>
-
-<p class="mb-4 text-muted">
-	New issues and regressions are sent to every active connection that has the project and the level
-	selected.
-</p>
 
 <Table
 	{columns}
@@ -116,15 +115,7 @@
 		{:else if column.key === 'destination'}
 			<span class="text-muted">{connection.destination}</span>
 		{:else if column.key === 'projects'}
-			{#if connection.all_projects}
-				All projects
-			{:else}
-				<span class="inline-flex flex-wrap gap-1">
-					{#each connection.projects ?? [] as project (project)}
-						<Badge tone="project" label={project} />
-					{/each}
-				</span>
-			{/if}
+			<ProjectsSummary all={connection.all_projects} names={connection.projects ?? []} />
 		{:else if column.key === 'levels'}
 			<LevelSummary kind="event" chosen={connection.levels ?? []} />
 		{:else if column.key === 'delivery'}

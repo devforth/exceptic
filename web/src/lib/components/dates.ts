@@ -3,7 +3,7 @@
 
 const dayMs = 86_400_000;
 
-export const monthNames = [
+const monthNames = [
 	'January',
 	'February',
 	'March',

@@ -85,13 +85,6 @@ export function readDays(params: URLSearchParams): { from: string; to: string } 
 	return from && to && from > to ? { from: to, to: from } : { from, to };
 }
 
-/** A range of days in words, for its chip: "2026-11-01 – 2026-11-10", "from …", "until …". */
-export function daysText(from: string, to: string): string {
-	if (from && to) return `${from} – ${to}`;
-
-	return from ? `from ${from}` : to ? `until ${to}` : '';
-}
-
 /** The days as the times the API filters on: since the first day, until after the last. */
 export function dayRange(from: string, to: string): { since?: string; until?: string } {
 	const range: { since?: string; until?: string } = {};

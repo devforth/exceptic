@@ -9,15 +9,17 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 	import { resolve } from '$app/paths';
 	import { help, levels, limits } from '#lib/api/catalog.gen.ts';
 	import { post, type Out } from '#lib/api/client.ts';
-	import Badge from '#lib/components/Badge.svelte';
 	import Button from '#lib/components/Button.svelte';
 	import Choice from '#lib/components/Choice.svelte';
 	import ChoiceGroup from '#lib/components/ChoiceGroup.svelte';
 	import Details from '#lib/components/Details.svelte';
+	import { formClasses } from '#lib/components/field.ts';
+	import FormActions from '#lib/components/FormActions.svelte';
 	import LevelChoices from '#lib/components/LevelChoices.svelte';
 	import LevelSummary from '#lib/components/LevelSummary.svelte';
 	import Notice from '#lib/components/Notice.svelte';
-	import SubmitButton from '#lib/components/SubmitButton.svelte';
+	import ProjectsChoice from '#lib/components/ProjectsChoice.svelte';
+	import { projectsInput } from '#lib/components/projectsChoice.ts';
 	import TextField from '#lib/components/TextField.svelte';
 	import Time from '#lib/components/Time.svelte';
 	import { FormState } from '#lib/form.svelte.ts';
@@ -29,7 +31,6 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 		typeLabel,
 		type EmailStepState
 	} from '#lib/notifications.ts';
-	import { toggled } from '#lib/selection.ts';
 	import { toast } from '#lib/toast.svelte.ts';
 	import ChatTestButton from './ChatTestButton.svelte';
 	import DuplicateNotice from './DuplicateNotice.svelte';
@@ -38,11 +39,13 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 	type Props = {
 		defaults: Out<'get_connection_defaults'>;
 		projects: { id: number; name: string }[];
+		/** The viewer has every project, so may choose All projects (get_session.all_projects). */
+		viewerAll: boolean;
 		/** A saved connection; none for a new one. */
 		connection?: Out<'get_connection'>;
 	};
 
-	let { defaults, projects, connection }: Props = $props();
+	let { defaults, projects, viewerAll, connection }: Props = $props();
 
 	// The values the form starts with: the saved connection's, or a new one's defaults.
 	function initial() {
@@ -54,8 +57,8 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 			name: connection?.name ?? '',
 			chatId: connection?.chat_id ?? '',
 			slackChannel: connection?.slack_channel ?? '',
-			allProjects: connection?.all_projects ?? true,
-			projectIds: (connection?.project_ids ?? []).map(String),
+			allProjects: connection?.all_projects ?? defaults.all_projects,
+			projectIds: (connection?.project_ids ?? defaults.project_ids ?? []).map(String),
 			levels: connection?.levels ?? defaults.levels ?? [],
 			active: connection?.active ?? true,
 			includeIssueLink:
@@ -99,10 +102,6 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 	const chosenType = $derived(typeChoices.find((choice) => choice.type === type));
 	// A new email connection is filled in once its address is confirmed.
 	const locked = $derived(isNew && type === 'email' && !emailVerified);
-	const projectIdsAll = $derived(projects.map((project) => String(project.id)));
-	const chosenProjects = $derived(
-		projects.filter((project) => projectIds.includes(String(project.id)))
-	);
 	const updatesURL = $derived(telegramUpdatesURL(botToken));
 
 	// What each chat field holds: typed, or a saved token (masked) that an empty field keeps.
@@ -147,9 +146,7 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 	function input() {
 		return {
 			name: name.trim(),
-			all_projects: allProjects,
-			// In the list's order, as the checkboxes keep it: a saved order counts as no change.
-			projects: allProjects ? [] : projectIdsAll.filter((id) => projectIds.includes(id)),
+			...projectsInput(projects, allProjects, projectIds),
 			levels: levels.event.filter((level) => chosenLevels.includes(level)),
 			active,
 			// Hidden without PUBLIC_URL: the stored value stays.
@@ -207,7 +204,7 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 	}
 </script>
 
-<div class="flex flex-col gap-3">
+<div class={formClasses}>
 	{#if isNew}
 		<ChoiceGroup legend="Type" hint={help.fields.Notifications.Type} error={form.fields.type} card>
 			{#each typeChoices as choice (choice.type)}
@@ -253,7 +250,7 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 		</Notice>
 	{/if}
 
-	<form id="connection-form" class="flex flex-col gap-3" onsubmit={save}>
+	<form id="connection-form" class={formClasses} onsubmit={save}>
 		{#if type === 'telegram'}
 			<TextField
 				label="Bot token"
@@ -294,17 +291,17 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 			<ChatTestButton ready={canTest(testNeeds.telegram, filled)} test={testChat} />
 			<p class="text-xs text-muted">
 				Create a bot with
-				<a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer">@BotFather</a>
+				<Button variant="link" href="https://t.me/BotFather" external>@BotFather</Button>
 				(send <code>/newbot</code>, it replies with the token) and add the bot to the chat. Then
 				write a message in the chat and press <b>Find chat ID</b>: the ID is
 				<code>chat.id</code> in the answer (<code>getUpdates</code>).
-				<a
+				<Button
+					variant="link"
 					href="https://core.telegram.org/bots/tutorial#obtain-your-bot-token"
-					target="_blank"
-					rel="noopener noreferrer"
+					external
 				>
 					Telegram's guide
-				</a>. Tokens are stored encrypted.
+				</Button>. Tokens are stored encrypted.
 			</p>
 		{:else if type === 'slack'}
 			<TextField
@@ -319,16 +316,12 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 				error={form.fields.webhook_url}
 			/>
 			<p class="text-xs text-muted">
-				<a href="https://api.slack.com/apps?new_app=1" target="_blank" rel="noopener noreferrer">
+				<Button variant="link" href="https://api.slack.com/apps?new_app=1" external>
 					Create a Slack app
-				</a>, turn on Incoming Webhooks and add one for the channel.
-				<a
-					href="https://api.slack.com/messaging/webhooks"
-					target="_blank"
-					rel="noopener noreferrer"
-				>
+				</Button>, turn on Incoming Webhooks and add one for the channel.
+				<Button variant="link" href="https://api.slack.com/messaging/webhooks" external>
 					Slack's guide
-				</a>. Mattermost and Rocket.Chat webhooks work too.
+				</Button>. Mattermost and Rocket.Chat webhooks work too.
 			</p>
 			<TextField
 				label="Bot token"
@@ -355,9 +348,7 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 			<ChatTestButton ready={canTest(testNeeds.slack, filled)} test={testChat} />
 			<p class="text-xs text-muted">
 				Bot:
-				<a href="https://api.slack.com/apps" target="_blank" rel="noopener noreferrer">
-					your Slack app
-				</a>
+				<Button variant="link" href="https://api.slack.com/apps" external>your Slack app</Button>
 				→ OAuth &amp; Permissions → Bot Token Scopes: <code>chat:write</code> → Install to Workspace
 				→ Bot User OAuth Token. Invite the bot to the channel (<code>/invite @app</code>); the
 				channel ID is at the bottom of the channel details. Tokens and webhooks are stored
@@ -367,7 +358,7 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 
 		{#if form.duplicate}<DuplicateNotice duplicate={form.duplicate} />{/if}
 
-		<fieldset class="flex min-w-0 flex-col gap-3 disabled:*:not-last:opacity-50" disabled={locked}>
+		<fieldset class={[formClasses, 'disabled:*:not-last:opacity-50']} disabled={locked}>
 			<TextField
 				label="Name"
 				name="name"
@@ -378,53 +369,15 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 				error={form.fields.name}
 			/>
 
-			<Details
-				title="Projects"
-				variant="form"
+			<ProjectsChoice
+				{projects}
+				bind:allProjects
+				bind:projectIds
+				legend="Projects that are sent"
 				hint={help.fields.Notifications.Projects}
-				invalid={Boolean(form.fields.projects)}
-			>
-				{#snippet summary()}
-					{#if allProjects}
-						All projects
-					{:else}
-						{#each chosenProjects as project (project.id)}
-							<Badge tone="project" label={project.name} />
-						{:else}
-							<span class="text-muted">none</span>
-						{/each}
-					{/if}
-				{/snippet}
-				<ChoiceGroup
-					legend="Projects that are sent"
-					hideLegend
-					compact
-					error={form.fields.projects}
-				>
-					{#snippet lead()}
-						<Choice
-							type="checkbox"
-							label="All projects, including ones added later"
-							checked={allProjects}
-							onchange={(checked: boolean) => (allProjects = checked)}
-						/>
-					{/snippet}
-					{#if !allProjects}
-						{#each projects as project (project.id)}
-							<Choice
-								type="checkbox"
-								value={String(project.id)}
-								label={project.name}
-								checked={projectIds.includes(String(project.id))}
-								onchange={(checked: boolean) =>
-									(projectIds = toggled(projectIdsAll, projectIds, String(project.id), checked))}
-							>
-								<Badge tone="project" label={project.name} />
-							</Choice>
-						{/each}
-					{/if}
-				</ChoiceGroup>
-			</Details>
+				allowAll={viewerAll}
+				error={form.fields.projects}
+			/>
 
 			<Details
 				title="Levels"
@@ -466,12 +419,9 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 				{/if}
 			</ChoiceGroup>
 
-			{#if form.error}<Notice tone="error">{form.error}</Notice>{/if}
-
-			<div class="flex gap-2">
-				<SubmitButton {form}>{isNew ? 'Add' : 'Save'}</SubmitButton>
-				<Button href={resolve('/(app)/notifications')}>Cancel</Button>
-			</div>
+			<FormActions {form} cancel={resolve('/(app)/notifications')}>
+				{isNew ? 'Add' : 'Save'}
+			</FormActions>
 		</fieldset>
 	</form>
 </div>

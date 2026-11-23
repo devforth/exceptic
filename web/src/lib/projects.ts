@@ -69,6 +69,11 @@ function daysBetween(time: Date, now: Date): number {
 	return Math.max(0, Math.round((midnight(now) - midnight(time)) / (24 * 60 * 60 * 1000)));
 }
 
+/** An age in calendar days: "today", "1 day", "7 days". */
+function ageText(days: number): string {
+	return days === 0 ? 'today' : `${days} ${days === 1 ? 'day' : 'days'}`;
+}
+
 /** How far back a project's records of each kind go: "since 10 Nov · 7 days", or none stored. */
 export function keptFacts(
 	oldest: Oldest | undefined,
@@ -86,10 +91,19 @@ export function keptFacts(
 		if (!time) return { label, value: 'none stored' };
 
 		const days = daysBetween(new Date(time), new Date(now));
-		const age = days === 0 ? 'today' : `${days} ${days === 1 ? 'day' : 'days'}`;
+		const age = ageText(days);
 
 		return { label, value: age, detail: `since ${shortDate(time, true)}` };
 	});
+}
+
+/** How far back a project's errors go, for the storage card: "errors kept 7 days". */
+export function errorsKept(oldest: Oldest | undefined, now = Date.now()): string | undefined {
+	if (!oldest?.errors) return undefined;
+
+	const days = daysBetween(new Date(oldest.errors), new Date(now));
+
+	return `errors kept ${ageText(days)}`;
 }
 
 /**

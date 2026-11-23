@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto, invalidateAll } from '$app/navigation';
+	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import type { Item } from '#lib/api/client.ts';
@@ -10,17 +10,18 @@
 	import DateRange from '#lib/components/DateRange.svelte';
 	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
 	import FilterBar from '#lib/components/FilterBar.svelte';
-	import type { FilterChip } from '#lib/components/chips.ts';
+	import { appliedChips, daysChip, listChip, textChip } from '#lib/components/chips.ts';
+	import FilterPicker from '#lib/components/FilterPicker.svelte';
 	import LevelBadge from '#lib/components/LevelBadge.svelte';
 	import LogBody from '#lib/components/LogBody.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import Pager from '#lib/components/Pager.svelte';
-	import Picker from '#lib/components/Picker.svelte';
 	import SearchField from '#lib/components/SearchField.svelte';
 	import Table from '#lib/components/Table.svelte';
 	import type { TableColumn } from '#lib/components/table.ts';
 	import Time from '#lib/components/Time.svelte';
-	import { changed, cleared, daysText, type Change } from '#lib/filters.ts';
+	import { changed, cleared } from '#lib/filters.ts';
+	import { showChanged } from '#lib/navigate.ts';
 	import { withQuery } from '#lib/nav.ts';
 	import type { PageProps } from './$types';
 	import { deleteConfirmation, deleteLogs, selectionProblem } from './logs.ts';
@@ -52,93 +53,46 @@
 		void invalidateAll();
 	}
 
-	/** Shows the list with the change; typing replaces the entry instead of adding one. */
-	function show(change: Change, replace = false) {
-		// eslint-disable-next-line svelte/no-navigation-without-resolve -- this page with another query
-		void goto(changed(url, change), { reset: false, replace });
-	}
-
-	const chips: FilterChip[] = $derived(
-		[
-			{
-				label: 'Project',
-				values: data.filters.project.map((name) => ({
-					text: name,
-					kind: 'project' as const,
-					remove: changed(url, { project: data.filters.project.filter((other) => other !== name) })
-				}))
-			},
-			{
-				label: 'Level',
-				values: data.filters.level.map((level) => ({
-					text: level,
-					kind: 'level' as const,
-					remove: changed(url, { level: data.filters.level.filter((other) => other !== level) })
-				}))
-			},
-			{
-				label: 'Search',
-				values: data.filters.query
-					? [{ text: data.filters.query, remove: changed(url, { query: null }) }]
-					: []
-			},
-			{
-				label: 'Trace',
-				values: data.filters.traceId
-					? [{ text: data.filters.traceId, remove: changed(url, { trace_id: null }) }]
-					: []
-			},
-			{
-				label: 'Dates',
-				values:
-					data.filters.from || data.filters.to
-						? [
-								{
-									text: daysText(data.filters.from, data.filters.to),
-									remove: changed(url, { from: null, to: null })
-								}
-							]
-						: []
-			}
-		].filter((chip) => chip.values.length > 0)
+	const chips = $derived(
+		appliedChips([
+			listChip(url, 'Project', 'project', data.filters.project, 'project'),
+			listChip(url, 'Level', 'level', data.filters.level, 'level'),
+			textChip(url, 'Search', 'query', data.filters.query),
+			textChip(url, 'Trace', 'trace_id', data.filters.traceId),
+			daysChip(url, data.filters.from, data.filters.to)
+		])
 	);
 </script>
 
 <PageHeading title="Logs" />
 
 <FilterBar label="Log filters">
-	<Picker
-		label="Projects"
-		all="All projects"
+	<FilterPicker
+		kind="project"
 		options={data.projectNames}
 		selected={data.filters.project}
-		onchange={(project: string[]) => show({ project })}
-	>
-		{#snippet option(name)}<Badge tone="project" label={name} />{/snippet}
-	</Picker>
-	<Picker
-		label="Levels"
-		all="All levels"
+		onchange={(project: string[]) => showChanged(url, { project })}
+	/>
+	<FilterPicker
+		kind="level"
 		options={data.levelChoices}
 		selected={data.filters.level}
-		onchange={(level: string[]) => show({ level })}
-	>
-		{#snippet option(level)}<LevelBadge {level} />{/snippet}
-	</Picker>
+		onchange={(level: string[]) => showChanged(url, { level })}
+	/>
 	<SearchField
 		value={data.filters.query}
 		label="Search text"
-		onchange={(query: string) => show({ query }, true)}
+		onchange={(query: string) => showChanged(url, { query }, true)}
 	/>
 	<SearchField
 		value={data.filters.traceId}
 		label="Trace ID"
-		onchange={(traceId: string) => show({ trace_id: traceId }, true)}
+		onchange={(traceId: string) => showChanged(url, { trace_id: traceId }, true)}
 	/>
 	<DateRange
 		from={data.filters.from}
 		to={data.filters.to}
-		onchange={(from: string, to: string) => show({ from, to })}
+		onchange={(from: string, to: string) => showChanged(url, { from, to })}
 	/>
 </FilterBar>
 
@@ -201,5 +155,5 @@
 	total={data.count.count}
 	more={data.count.more}
 	href={(number: number) => changed(url, { page: number > 1 ? String(number) : null })}
-	onperpage={(perPage: number) => show({ per_page: String(perPage) })}
+	onperpage={(perPage: number) => showChanged(url, { per_page: String(perPage) })}
 />

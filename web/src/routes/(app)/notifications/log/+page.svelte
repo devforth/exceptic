@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { choices } from '#lib/api/catalog.gen.ts';
@@ -16,7 +15,8 @@
 	import Table from '#lib/components/Table.svelte';
 	import type { TableColumn } from '#lib/components/table.ts';
 	import Time from '#lib/components/Time.svelte';
-	import { changed, type Change } from '#lib/filters.ts';
+	import { changed } from '#lib/filters.ts';
+	import { showChanged } from '#lib/navigate.ts';
 	import { deliveryStatus } from '#lib/notifications.ts';
 	import type { PageProps } from './$types';
 
@@ -50,11 +50,6 @@
 	}));
 	const filtered = $derived(Boolean(data.filters.connection || data.filters.status));
 
-	function show(change: Change) {
-		// eslint-disable-next-line svelte/no-navigation-without-resolve -- this page with another query
-		void goto(changed(url, change), { reset: false });
-	}
-
 	// The issues a summary stood for, in a dialog.
 	let summary: Delivery | undefined = $state();
 	let summaryOpen = $state(false);
@@ -71,14 +66,14 @@
 		{ label: 'Delivery log', href: resolve('/(app)/notifications/log') }
 	]}
 />
-<PageHeading title="Delivery log" />
-
-<p class="mb-4 text-muted">
-	Every notification message and what happened to it. Failed attempts are retried for a while (<code>
-		NOTIFY_RETRY_FOR
-	</code>); sent messages are kept for <code>NOTIFY_KEEP_SENT</code>, failed ones for
-	<code>NOTIFY_KEEP_FAILED</code>.
-</p>
+<PageHeading title="Delivery log">
+	{#snippet description()}
+		Every notification message and what happened to it. Failed attempts are retried for a while (<code>
+			NOTIFY_RETRY_FOR
+		</code>); sent messages are kept for <code>NOTIFY_KEEP_SENT</code>, failed ones for
+		<code>NOTIFY_KEEP_FAILED</code>.
+	{/snippet}
+</PageHeading>
 
 <FilterBar label="Delivery filters">
 	<Select
@@ -86,14 +81,14 @@
 		all="All connections"
 		value={data.filters.connection}
 		options={connectionOptions}
-		onchange={(connection: string) => show({ connection })}
+		onchange={(connection: string) => showChanged(url, { connection })}
 	/>
 	<Select
 		label="Status"
 		all="Any status"
 		value={data.filters.status}
 		options={statusOptions}
-		onchange={(status: string) => show({ status })}
+		onchange={(status: string) => showChanged(url, { status })}
 	/>
 </FilterBar>
 
@@ -158,7 +153,7 @@
 	perPage={data.perPage}
 	total={data.count}
 	href={(number: number) => changed(url, { page: number > 1 ? String(number) : null })}
-	onperpage={(perPage: number) => show({ per_page: String(perPage) })}
+	onperpage={(perPage: number) => showChanged(url, { per_page: String(perPage) })}
 />
 
 <Dialog title={summary?.title ?? 'Summary'} bind:open={summaryOpen}>

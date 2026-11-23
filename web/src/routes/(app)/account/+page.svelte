@@ -7,10 +7,11 @@ only the password form shows.
 	import { limits } from '#lib/api/catalog.gen.ts';
 	import { post, send } from '#lib/api/client.ts';
 	import Card from '#lib/components/Card.svelte';
+	import { narrowFormClasses } from '#lib/components/field.ts';
+	import FormActions from '#lib/components/FormActions.svelte';
 	import Notice from '#lib/components/Notice.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import RoleBadge from '#lib/components/RoleBadge.svelte';
-	import SubmitButton from '#lib/components/SubmitButton.svelte';
 	import TextField from '#lib/components/TextField.svelte';
 	import { FormState } from '#lib/form.svelte.ts';
 	import { toast } from '#lib/toast.svelte.ts';
@@ -62,19 +63,19 @@ only the password form shows.
 	}
 </script>
 
-<PageHeading title="Your account" />
-
-<p class="mb-4 text-muted">{user.username} · <RoleBadge role={user.role} /></p>
+<PageHeading title="Your account">
+	{#snippet description()}{user.username} · <RoleBadge role={user.role} />{/snippet}
+</PageHeading>
 
 {#if user.must_change_password}
-	<div role="alert" class="mb-4">
-		<Notice tone="warning">
+	<div class="mb-4">
+		<Notice tone="warning" alert>
 			You logged in with a temporary password: choose your own to continue.
 		</Notice>
 	</div>
 {:else}
 	<Card title="Name">
-		<form onsubmit={saveName} class="flex max-w-xl flex-col gap-4">
+		<form onsubmit={saveName} class={narrowFormClasses}>
 			<TextField
 				label="Name"
 				name="name"
@@ -84,14 +85,13 @@ only the password form shows.
 				autocomplete="name"
 				error={nameForm.fields.name}
 			/>
-			{#if nameForm.error}<Notice tone="error">{nameForm.error}</Notice>{/if}
-			<div><SubmitButton form={nameForm}>Save name</SubmitButton></div>
+			<FormActions form={nameForm}>Save name</FormActions>
 		</form>
 	</Card>
 {/if}
 
 <Card title="Password">
-	<form onsubmit={changePassword} class="flex max-w-xl flex-col gap-4">
+	<form onsubmit={changePassword} class={narrowFormClasses}>
 		<!-- For password managers: whose password this is. -->
 		<input type="hidden" name="username" value={user.username} autocomplete="username" />
 		<TextField
@@ -129,9 +129,6 @@ only the password form shows.
 		<p class="text-xs text-muted">
 			Your other sessions are logged out; your connected coding agents keep working.
 		</p>
-		{#if passwordForm.error}<Notice tone="error">{passwordForm.error}</Notice>{/if}
-		<div>
-			<SubmitButton form={passwordForm}>Change password</SubmitButton>
-		</div>
+		<FormActions form={passwordForm}>Change password</FormActions>
 	</form>
 </Card>

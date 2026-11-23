@@ -36,9 +36,7 @@ tooltip. With an href it is a link (the issue list of that status).
 		</span>{/if}{status}
 {/snippet}
 
-{#if href}
-	<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- callers pass resolved paths -->
-	<a {href} class={classes} title={statusTitle(status)}>{@render text()}</a>
-{:else}
-	<span class={classes} title={statusTitle(status)}>{@render text()}</span>
-{/if}
+<!-- A link with href (callers pass resolved paths), else plain text. -->
+<svelte:element this={href ? 'a' : 'span'} {href} class={classes} title={statusTitle(status)}>
+	{@render text()}
+</svelte:element>

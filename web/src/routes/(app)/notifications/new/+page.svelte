@@ -16,4 +16,8 @@
 />
 <PageHeading title="Add connection" />
 
-<ConnectionForm defaults={data.defaults} projects={data.projects} />
+<ConnectionForm
+	defaults={data.defaults}
+	projects={data.projects}
+	viewerAll={data.session.all_projects}
+/>

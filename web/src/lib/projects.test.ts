@@ -5,6 +5,7 @@ import {
 	deleteProject,
 	freeColor,
 	keptFacts,
+	errorsKept,
 	paletteName,
 	projectInput,
 	usageSegments
@@ -133,5 +134,32 @@ describe('usageSegments', () => {
 			75, 25
 		]);
 		expect(usageSegments({ ...storage, counting: true }, () => undefined)).toEqual([]);
+	});
+});
+
+describe('errorsKept', () => {
+	const now = new Date(2026, 10, 23, 12).getTime();
+
+	it('says how far back the errors go, not the logs', () => {
+		expect(
+			errorsKept(
+				{
+					errors: new Date(2026, 10, 16, 9).toISOString(),
+					logs_below_error: new Date(2026, 10, 10, 9).toISOString()
+				},
+				now
+			)
+		).toBe('errors kept 7 days');
+		expect(errorsKept({ errors: new Date(2026, 10, 22, 9).toISOString() }, now)).toBe(
+			'errors kept 1 day'
+		);
+		expect(errorsKept({ errors: new Date(2026, 10, 23, 1).toISOString() }, now)).toBe(
+			'errors kept today'
+		);
+	});
+
+	it('says nothing without errors', () => {
+		expect(errorsKept({ error_logs: new Date(2026, 10, 20).toISOString() }, now)).toBeUndefined();
+		expect(errorsKept(undefined, now)).toBeUndefined();
 	});
 });

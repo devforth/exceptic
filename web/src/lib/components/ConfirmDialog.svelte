@@ -5,7 +5,7 @@ Esc and a click beside it close it without acting. While the action runs the dia
 cannot be dismissed; it closes when the action is done, or shows why it failed.
 -->
 <script lang="ts">
-	import { ApiError } from '#lib/api/client.ts';
+	import { errorMessage } from '#lib/api/client.ts';
 	import Button from './Button.svelte';
 	import type { ConfirmedAction, Confirmation } from './confirm.ts';
 	import Dialog from './Dialog.svelte';
@@ -39,7 +39,7 @@ cannot be dismissed; it closes when the action is done, or shows why it failed.
 			await onconfirm();
 			open = false;
 		} catch (error) {
-			failure = error instanceof ApiError ? error.message : 'Something went wrong. Try again.';
+			failure = errorMessage(error, 'Something went wrong. Try again.');
 		} finally {
 			busy = false;
 		}

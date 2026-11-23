@@ -26,3 +26,12 @@ export type MenuItem = {
 			confirm?: never;
 	  }
 );
+
+/** The item, or with a reason the item disabled, saying why. */
+export function unavailable(item: MenuItem, reason?: string): MenuItem {
+	if (!reason) return item;
+
+	const { label, icon, danger, separatorBefore } = item;
+
+	return { label, icon, danger, separatorBefore, disabled: reason };
+}

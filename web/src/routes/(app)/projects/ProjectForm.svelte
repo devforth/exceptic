@@ -2,7 +2,7 @@
 @component
 The settings page of a saved project: its title (renamed in place by the pencil), color, the
 levels it records and its disk share. Save sends all of it at once; a refused field shows its
-problem beside it. `actions` go in the heading, `intro` under it.
+problem beside it. `actions` and `description` go to its PageHeading.
 -->
 <script lang="ts">
 	import { resolve } from '$app/paths';
@@ -13,9 +13,9 @@ problem beside it. `actions` go in the heading, `intro` under it.
 	import ColorField from '#lib/components/ColorField.svelte';
 	import Details from '#lib/components/Details.svelte';
 	import EditableTitle from '#lib/components/EditableTitle.svelte';
+	import { formClasses } from '#lib/components/field.ts';
+	import FormActions from '#lib/components/FormActions.svelte';
 	import LevelSummary from '#lib/components/LevelSummary.svelte';
-	import Notice from '#lib/components/Notice.svelte';
-	import SubmitButton from '#lib/components/SubmitButton.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import { FormState } from '#lib/form.svelte.ts';
 	import { formatSize } from '#lib/format.ts';
@@ -29,12 +29,14 @@ problem beside it. `actions` go in the heading, `intro` under it.
 		/** What the form starts with. */
 		initial: ProjectFormValues;
 		storage: Out<'get_storage'>;
+		/** Why the viewer may not change the disk share. */
+		diskShareLocked?: string;
 		save: (values: ProjectFormValues, name: string) => Promise<unknown>;
 		actions?: Snippet;
-		intro?: Snippet;
+		description?: Snippet;
 	};
 
-	let { id, name, initial, storage, save, actions, intro }: Props = $props();
+	let { id, name, initial, storage, diskShareLocked, save, actions, description }: Props = $props();
 
 	// The form keeps what the user changed; it starts from initial once.
 	// svelte-ignore state_referenced_locally
@@ -51,21 +53,18 @@ problem beside it. `actions` go in the heading, `intro` under it.
 	}
 </script>
 
-<form class="flex flex-col gap-3" onsubmit={submit}>
-	<div>
-		<PageHeading title={name} {actions}>
-			{#snippet heading()}
-				<EditableTitle
-					title={name}
-					bind:value={newName}
-					label="Project name"
-					{...projectNameRules}
-					error={form.fields.name}
-				/>
-			{/snippet}
-		</PageHeading>
-		{@render intro?.()}
-	</div>
+<form class={formClasses} onsubmit={submit}>
+	<PageHeading title={name} {actions} {description}>
+		{#snippet heading()}
+			<EditableTitle
+				title={name}
+				bind:value={newName}
+				label="Project name"
+				{...projectNameRules}
+				error={form.fields.name}
+			/>
+		{/snippet}
+	</PageHeading>
 	<ColorField
 		bind:value={values.color}
 		name={newName}
@@ -103,13 +102,9 @@ problem beside it. `actions` go in the heading, `intro` under it.
 			{storage}
 			projectId={id}
 			error={form.fields.disk_share}
+			locked={diskShareLocked}
 		/>
 	</Details>
 
-	{#if form.error}<Notice tone="error">{form.error}</Notice>{/if}
-
-	<div class="flex flex-wrap gap-2">
-		<SubmitButton {form} />
-		<Button href={resolve('/(app)/projects')}>Cancel</Button>
-	</div>
+	<FormActions {form} cancel={resolve('/(app)/projects')} />
 </form>

@@ -20,7 +20,7 @@ export async function deleteConnection(id: string): Promise<void> {
 	toast.show('Connection deleted.');
 }
 
-export const typeLabels: Record<string, string> = {
+const typeLabels: Record<string, string> = {
 	email: 'Email',
 	telegram: 'Telegram',
 	slack: 'Slack'

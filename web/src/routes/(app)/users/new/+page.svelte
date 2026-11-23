@@ -10,9 +10,12 @@ A new user, with a temporary password shown once on their page.
 	import { handOver } from '#lib/handoff.ts';
 	import UserForm from '../UserForm.svelte';
 	import type { UserInput } from '../users.ts';
+	import type { PageProps } from './$types';
 
-	async function create(input: UserInput) {
-		const { user, temporary_password } = await post('create_user', input);
+	let { data }: PageProps = $props();
+
+	async function create({ access, ...input }: UserInput) {
+		const { user, temporary_password } = await post('create_user', { ...input, ...access });
 
 		handOver(user.id, temporary_password);
 		// Back from the user's page skips the form, so it is not sent again.
@@ -28,4 +31,10 @@ A new user, with a temporary password shown once on their page.
 />
 <PageHeading title="Add user" />
 
-<UserForm submitLabel="Add user" save={create} />
+<UserForm
+	projects={data.projects}
+	viewerAll={data.session.all_projects}
+	roles={data.session.assignable_roles ?? []}
+	submitLabel="Add user"
+	save={create}
+/>

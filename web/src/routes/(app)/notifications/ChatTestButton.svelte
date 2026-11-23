@@ -4,7 +4,7 @@
 saved, and says beside it what happened. It works once the fields it needs are filled.
 -->
 <script lang="ts">
-	import { ApiError } from '#lib/api/client.ts';
+	import { errorMessage } from '#lib/api/client.ts';
 	import Button from '#lib/components/Button.svelte';
 
 	type Props = {
@@ -26,7 +26,7 @@ saved, and says beside it what happened. It works once the fields it needs are f
 		} catch (failure) {
 			result = {
 				sent: false,
-				message: failure instanceof ApiError ? failure.message : 'Something went wrong.'
+				message: errorMessage(failure)
 			};
 		} finally {
 			busy = false;

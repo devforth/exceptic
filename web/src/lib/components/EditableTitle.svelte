@@ -8,7 +8,7 @@ sends it (Enter too), Esc goes back to the title and drops what was typed. A ref
 	import { tick } from 'svelte';
 	import Button from './Button.svelte';
 	import { fieldFrame } from './field.ts';
-	import type { TitleField } from './heading.ts';
+	import { titleClasses, type TitleField } from './heading.ts';
 
 	type Props = TitleField & { title: string; value: string };
 
@@ -73,13 +73,13 @@ sends it (Enter too), Esc goes back to the title and drops what was typed. A ref
 			aria-describedby={error ? `${id}-error` : undefined}
 			onkeydown={keydown}
 			{@attach selectAll}
-			class={[fieldFrame, 'h-10 w-80 max-w-full bg-surface text-h1 font-bold']}
+			class={[fieldFrame, 'h-10 w-80 max-w-full bg-surface', titleClasses]}
 		/>
 		{#if error}<p id="{id}-error" class="text-xs text-error">{error}</p>{/if}
 	</div>
 {:else}
 	<div class="flex min-w-0 items-center gap-1">
-		<h1 class="text-h1 font-bold wrap-break-word">{title}</h1>
+		<h1 class={titleClasses}>{title}</h1>
 		<span bind:this={pencil}>
 			<Button variant="ghost" icon="edit" title="Rename" onclick={() => (editing = true)} />
 		</span>

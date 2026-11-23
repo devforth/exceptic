@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { columnSort } from '#lib/components/table.ts';
 import {
 	columnSorts,
@@ -75,6 +75,9 @@ describe('the chips of the issue list', () => {
 	});
 
 	it('remove one value each, from the first page', () => {
+		vi.useFakeTimers({ toFake: ['Date'] });
+		vi.setSystemTime(new Date('2026-11-23T12:00:00Z'));
+
 		const url = address(
 			'project=backend&project=frontend&status=resolved&level=error&sort=event_count&from=2026-11-01&per_page=50&page=2'
 		);
@@ -94,7 +97,8 @@ describe('the chips of the issue list', () => {
 				'/issues?status=resolved&level=error&sort=event_count&from=2026-11-01&per_page=50&project=frontend'
 		});
 		expect(chips[1].values[0]).toMatchObject({ text: 'resolved', kind: 'status' });
-		expect(chips[3].values[0].text).toBe('from 2026-11-01');
+		expect(chips[3].values[0].text).toBe('from 1 Nov');
+		vi.useRealTimers();
 		expect(chips[4].values[0]).toEqual({
 			text: 'most events',
 			remove:

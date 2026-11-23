@@ -9,7 +9,7 @@ there is no room below), so a table's scroll box does not cut it.
 -->
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { ApiError } from '#lib/api/client.ts';
+	import { errorMessage } from '#lib/api/client.ts';
 	import { movedIndex } from '#lib/roving.ts';
 	import { toast } from '#lib/toast.svelte.ts';
 	import Button from './Button.svelte';
@@ -112,10 +112,7 @@ there is no room below), so a table's scroll box does not cut it.
 				await item.action();
 			} catch (failure) {
 				// Without a confirmation there is no dialog to show it in.
-				toast.show(
-					failure instanceof ApiError ? failure.message : 'Something went wrong.',
-					'error'
-				);
+				toast.show(errorMessage(failure), 'error');
 			}
 		}
 	}

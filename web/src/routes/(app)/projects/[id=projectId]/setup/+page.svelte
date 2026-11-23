@@ -4,6 +4,7 @@
 	import BackButton from '#lib/components/BackButton.svelte';
 	import Breadcrumbs from '#lib/components/Breadcrumbs.svelte';
 	import Badge from '#lib/components/Badge.svelte';
+	import { titleClasses } from '#lib/components/heading.ts';
 	import CodeBlock from '#lib/components/CodeBlock.svelte';
 	import CopyButton from '#lib/components/CopyButton.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
@@ -54,7 +55,7 @@
 			<BackButton fallback={crumbs[crumbs.length - 2].href} />
 		{/snippet}
 		{#snippet heading()}
-			<h1 class="flex items-center gap-2.5 text-h1 font-bold">
+			<h1 class={[titleClasses, 'flex items-center gap-2.5']}>
 				Connect <Badge tone="project" label={setup.name} size="heading" />
 			</h1>
 		{/snippet}
@@ -68,9 +69,9 @@
 				/>
 			{/if}
 		{/snippet}
+		{#snippet description()}Pick what the app is written in, add these lines, and run it.{/snippet}
 	</PageHeading>
 </div>
-<p class="mb-4 text-muted">Pick what the app is written in, add these lines, and run it.</p>
 
 <Tabs label="Platform" {tabs} param="platform" bind:selected={platformID}>
 	{#snippet panel(tabID: string)}

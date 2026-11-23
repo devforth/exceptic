@@ -6,7 +6,7 @@ component: gone after a reload or leaving the page, never in the address or stor
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import type { PlainRequests } from '#lib/api/catalog.gen.ts';
-	import { ApiError, send, type Out } from '#lib/api/client.ts';
+	import { type Out, errorMessage, send } from '#lib/api/client.ts';
 	import Button from '#lib/components/Button.svelte';
 	import CodeBlock from '#lib/components/CodeBlock.svelte';
 	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
@@ -45,10 +45,7 @@ component: gone after a reload or leaving the page, never in the address or stor
 		try {
 			await generate();
 		} catch (failure) {
-			toast.show(
-				failure instanceof ApiError ? failure.message : 'Could not generate the token.',
-				'error'
-			);
+			toast.show(errorMessage(failure, 'Could not generate the token.'), 'error');
 		} finally {
 			generating = false;
 		}
@@ -64,8 +61,8 @@ component: gone after a reload or leaving the page, never in the address or stor
 <p class="mb-1">Connect an MCP client to {appName}.</p>
 
 {#if setup.unencrypted}
-	<div role="alert" class="mb-1.5">
-		<Notice tone="error">
+	<div class="mb-1.5">
+		<Notice tone="error" alert>
 			This server is reached over plain HTTP, so sign-in codes and tokens cross the network
 			unencrypted. Serve it over HTTPS and set <code>PUBLIC_URL</code> to the https address.
 		</Notice>

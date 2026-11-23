@@ -11,7 +11,8 @@ text field is selected when it opens.
 	import type { FormState } from '#lib/form.svelte.ts';
 	import Button from './Button.svelte';
 	import Dialog from './Dialog.svelte';
-	import Notice from './Notice.svelte';
+	import { formClasses } from './field.ts';
+	import FormError from './FormError.svelte';
 	import SubmitButton from './SubmitButton.svelte';
 
 	type Props = {
@@ -41,9 +42,9 @@ text field is selected when it opens.
 </script>
 
 <Dialog {title} bind:open size="narrow" dismissible={!form.busy} onopen={selectFirstField}>
-	<form bind:this={element} id="{id}-form" class="flex flex-col gap-3.5" onsubmit={submit}>
+	<form bind:this={element} id="{id}-form" class={formClasses} onsubmit={submit}>
 		{@render children()}
-		{#if form.error}<Notice tone="error">{form.error}</Notice>{/if}
+		<FormError {form} />
 	</form>
 	{#snippet actions()}
 		<Button disabled={form.busy} onclick={() => (open = false)}>Cancel</Button>

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto, invalidateAll } from '$app/navigation';
+	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { choices } from '#lib/api/catalog.gen.ts';
@@ -11,22 +11,23 @@
 	import Button from '#lib/components/Button.svelte';
 	import DateRange from '#lib/components/DateRange.svelte';
 	import FilterBar from '#lib/components/FilterBar.svelte';
+	import FilterPicker from '#lib/components/FilterPicker.svelte';
 	import IssueActions from '#lib/components/IssueActions.svelte';
 	import { doneMessage, selectionProblem, type IssueAction } from '#lib/components/issueActions.ts';
 	import { statusLabel, statusRowTone, statusTitle } from '#lib/components/issueStatus.ts';
 	import LevelBadge from '#lib/components/LevelBadge.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import Pager from '#lib/components/Pager.svelte';
-	import Picker from '#lib/components/Picker.svelte';
 	import SearchField from '#lib/components/SearchField.svelte';
 	import Select from '#lib/components/Select.svelte';
 	import Table from '#lib/components/Table.svelte';
 	import type { TableColumn } from '#lib/components/table.ts';
 	import Time from '#lib/components/Time.svelte';
-	import { changed, cleared, type Change } from '#lib/filters.ts';
+	import { changed, cleared } from '#lib/filters.ts';
+	import { showChanged } from '#lib/navigate.ts';
 	import { toast } from '#lib/toast.svelte.ts';
 	import type { PageProps } from './$types';
-	import { columnSorts, issueChips, showsResolved, sortedBy, withStatus } from './issues.ts';
+	import { columnSorts, issueChips, showsResolved, sortedBy, statusChange } from './issues.ts';
 
 	let { data }: PageProps = $props();
 
@@ -58,12 +59,6 @@
 	let selected: ReadonlySet<string | number> = $state(new Set());
 	const selectedIds = $derived([...selected].map(String));
 
-	/** Shows the list with the change; typing replaces the entry instead of adding one. */
-	function show(change: Change, replace = false) {
-		// eslint-disable-next-line svelte/no-navigation-without-resolve -- this page with another query
-		void goto(changed(url, change), { reset: false, replace });
-	}
-
 	async function acted(action: IssueAction) {
 		toast.show(doneMessage(action, selectedIds.length));
 		// The same list again (and the menu's count); the selection empties with the new rows.
@@ -76,42 +71,33 @@
 <PageHeading title="Issues" />
 
 <FilterBar label="Issue filters">
-	<Picker
-		label="Projects"
-		all="All projects"
+	<FilterPicker
+		kind="project"
 		options={data.projectNames}
 		selected={data.filters.project}
-		onchange={(project: string[]) => show({ project })}
-	>
-		{#snippet option(name)}<Badge tone="project" label={name} />{/snippet}
-	</Picker>
+		onchange={(project: string[]) => showChanged(url, { project })}
+	/>
 	<Select
 		label="Status"
 		value={data.filters.status}
 		options={statusOptions}
-		onchange={(status: string) => {
-			// eslint-disable-next-line svelte/no-navigation-without-resolve -- this page with another query
-			void goto(withStatus(url, status), { reset: false });
-		}}
+		onchange={(status: string) => showChanged(url, statusChange(status))}
 	/>
-	<Picker
-		label="Levels"
-		all="All levels"
+	<FilterPicker
+		kind="level"
 		options={data.levelChoices}
 		selected={data.filters.level}
-		onchange={(level: string[]) => show({ level })}
-	>
-		{#snippet option(level)}<LevelBadge {level} />{/snippet}
-	</Picker>
+		onchange={(level: string[]) => showChanged(url, { level })}
+	/>
 	<SearchField
 		value={data.filters.query}
 		label="Search title or location"
-		onchange={(query: string) => show({ query }, true)}
+		onchange={(query: string) => showChanged(url, { query }, true)}
 	/>
 	<DateRange
 		from={data.filters.from}
 		to={data.filters.to}
-		onchange={(from: string, to: string) => show({ from, to })}
+		onchange={(from: string, to: string) => showChanged(url, { from, to })}
 	/>
 </FilterBar>
 
@@ -181,5 +167,5 @@
 	perPage={data.perPage}
 	total={data.count}
 	href={(number: number) => changed(url, { page: number > 1 ? String(number) : null })}
-	onperpage={(perPage: number) => show({ per_page: String(perPage) })}
+	onperpage={(perPage: number) => showChanged(url, { per_page: String(perPage) })}
 />

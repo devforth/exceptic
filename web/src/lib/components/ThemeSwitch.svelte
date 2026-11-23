@@ -5,8 +5,15 @@ is and the system is dark (followed as it changes). Toggling stores light or dar
 in another tab applies here too.
 -->
 <script lang="ts">
-	import { applyTheme, isDark, readTheme, saveTheme, systemDarkQuery } from '#lib/theme.ts';
-	import { themeKey, type Theme } from '#lib/theme.ts';
+	import {
+		applyTheme,
+		isDark,
+		readTheme,
+		saveTheme,
+		systemDarkQuery,
+		themeKey,
+		type Theme
+	} from '#lib/theme.ts';
 	import NavLink from './NavLink.svelte';
 
 	let { collapsed = false }: { collapsed?: boolean } = $props();

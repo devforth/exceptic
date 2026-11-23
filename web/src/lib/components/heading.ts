@@ -1,4 +1,7 @@
-// The types of PageHeading and EditableTitle (a .ts module, so pages and eslint resolve them).
+// The page title's look and EditableTitle's types (a .ts module, so pages and eslint resolve them).
+
+/** A page's title: the h1 of PageHeading, EditableTitle, the login and the 404 page. */
+export const titleClasses = 'text-h1 font-bold wrap-break-word';
 
 /** A title renamed in place as a field of the page's form: its name, rules and problem. */
 export type TitleField = {

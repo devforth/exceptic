@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ApiError, send } from '#lib/api/client.ts';
+	import { errorMessage, send } from '#lib/api/client.ts';
 	import Button from '#lib/components/Button.svelte';
 	import Card from '#lib/components/Card.svelte';
 	import Notice from '#lib/components/Notice.svelte';
@@ -27,7 +27,7 @@
 
 			location.assign(target.redirect_url);
 		} catch (failure) {
-			error = failure instanceof ApiError ? failure.message : 'Could not send the answer.';
+			error = errorMessage(failure, 'Could not send the answer.');
 			deciding = undefined;
 		}
 	}
@@ -54,7 +54,7 @@
 				{request.redirect_uri}
 			</code>.
 		</p>
-		{#if error}<Notice tone="error">{error}</Notice>{/if}
+		{#if error}<Notice tone="error" alert>{error}</Notice>{/if}
 		<div class="flex flex-wrap gap-2">
 			<Button
 				variant="primary"
@@ -73,6 +73,6 @@
 			</Button>
 		</div>
 	{:else}
-		<div role="alert"><Notice tone="error">{data.refused}</Notice></div>
+		<Notice tone="error" alert>{data.refused}</Notice>
 	{/if}
 </Card>

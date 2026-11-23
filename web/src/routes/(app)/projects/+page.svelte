@@ -21,6 +21,7 @@
 		deleteConfirmation,
 		deleteProject,
 		fromEnvDeleteReason,
+		errorsKept,
 		usageSegments
 	} from '#lib/projects.ts';
 	import { FormState } from '#lib/form.svelte.ts';
@@ -150,6 +151,10 @@
 			</Button>
 		{/if}
 	{/snippet}
+	{#snippet description()}
+		Each service (backend, frontend, …) gets its own project. Its installation code connects the
+		service's Sentry SDK to it.
+	{/snippet}
 </PageHeading>
 
 <Card title="Storage">
@@ -171,9 +176,9 @@
 						<Badge
 							tone="project"
 							label={part.name}
-							href={withQuery(resolve('/(app)/logs'), { project: part.name })}
-							title="Logs of {part.name}"
-						/>{part.size}
+							href={withQuery(resolve('/(app)/issues'), { project: part.name })}
+							title="Issues of {part.name}"
+						/>{[part.size, errorsKept(part.oldest)].filter(Boolean).join(' · ')}
 					</span>
 				{/if}
 			{/each}
@@ -196,11 +201,6 @@
 		<Hint text={help.settings.MAX_DATABASE_SIZE} />
 	</p>
 </Card>
-
-<p class="mb-4 text-muted">
-	Each service (backend, frontend, …) gets its own project. Its installation code connects the
-	service's Sentry SDK to it.
-</p>
 
 <Table {columns} rows={data.projects} rowKey={(project: Project) => project.id} label="Projects">
 	{#snippet cell(project: Project, column: ProjectColumn)}

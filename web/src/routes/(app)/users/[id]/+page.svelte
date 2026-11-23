@@ -1,6 +1,7 @@
 <!--
 A user as an administrator sees them: name and role to change, the password to reset, the
-user to delete; read-only when the viewer may not change them (the superadmin for an admin).
+user to delete; for a user with projects the viewer lacks only their projects, and read-only when
+the viewer may change nothing (another admin or the superadmin for an admin).
 A temporary password made here or on the way here is shown once.
 -->
 <script lang="ts">
@@ -17,12 +18,22 @@ A temporary password made here or on the way here is shown once.
 	import { takeOver } from '#lib/handoff.ts';
 	import { toast } from '#lib/toast.svelte.ts';
 	import UserForm from '../UserForm.svelte';
-	import { deleteConfirmation, deleteUser, resetConfirmation, type UserInput } from '../users.ts';
+	import {
+		deleteConfirmation,
+		deleteUser,
+		refreshingOnRefusal,
+		resetConfirmation,
+		takeOverLock,
+		type UserInput
+	} from '../users.ts';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
 	const user = $derived(data.managed.user);
+	// Why the viewer may not rename, delete or reset the user, or change their role.
+	const takeOverLocked = $derived(takeOverLock(data.managed));
+	const editable = $derived(data.managed.can_take_over || data.managed.access_editable);
 
 	// The temporary password, in this component only: shown for its own user, gone on leaving.
 	let temporary: { owner: string; secret: string } | undefined = $state(handedOver());
@@ -35,21 +46,25 @@ A temporary password made here or on the way here is shown once.
 		return handed ? { owner, secret: handed } : undefined;
 	}
 
-	async function save(input: UserInput) {
-		await post('update_user', { user_id: user.id, name: input.name, role: input.role });
+	async function save({ name, role, access }: UserInput) {
+		await refreshingOnRefusal(() =>
+			post('update_user', { user_id: user.id, name, role, ...access })
+		);
 		toast.show('Saved.');
 		await invalidateAll();
 	}
 
 	async function reset() {
-		const { temporary_password } = await post('reset_user_password', { user_id: user.id });
+		const { temporary_password } = await refreshingOnRefusal(() =>
+			post('reset_user_password', { user_id: user.id })
+		);
 
 		temporary = { owner: user.id, secret: temporary_password };
 		void invalidateAll();
 	}
 
 	async function remove() {
-		await deleteUser(user.id);
+		await refreshingOnRefusal(() => deleteUser(user.id));
 		await goto(resolve('/(app)/users'));
 	}
 
@@ -67,7 +82,11 @@ A temporary password made here or on the way here is shown once.
 <PageHeading title={user.display_name}>
 	{#snippet actions()}
 		{#if data.managed.can_manage}
-			<ConfirmButton confirm={deleteConfirmation(user.username)} action={remove}>
+			<ConfirmButton
+				confirm={deleteConfirmation(user.username)}
+				action={remove}
+				unavailable={takeOverLocked}
+			>
 				Delete
 			</ConfirmButton>
 		{/if}
@@ -88,14 +107,31 @@ A temporary password made here or on the way here is shown once.
 	</div>
 {/if}
 
-{#if data.managed.can_manage}
+{#if editable}
 	<UserForm
-		user={{ username: user.username, name: user.display_name, role: user.role }}
+		projects={data.projects}
+		viewerAll={data.session.all_projects}
+		roles={data.session.assignable_roles ?? []}
+		user={{
+			username: user.username,
+			name: user.display_name,
+			role: user.role,
+			allProjects: user.all_projects,
+			projectIds: user.project_ids ?? [],
+			accessEditable: data.managed.access_editable,
+			accessReason: data.managed.access_reason,
+			takeOverLocked
+		}}
 		submitLabel="Save"
 		{save}
 	/>
 	<div class="mt-6">
-		<ConfirmButton variant="default" confirm={resetConfirmation(user.username)} action={reset}>
+		<ConfirmButton
+			variant="default"
+			confirm={resetConfirmation(user.username)}
+			action={reset}
+			unavailable={takeOverLocked}
+		>
 			Reset password
 		</ConfirmButton>
 	</div>
@@ -105,5 +141,5 @@ A temporary password made here or on the way here is shown once.
 			{#if fact.label === 'Username'}{user.username}{:else}<RoleBadge role={user.role} />{/if}
 		{/snippet}
 	</Facts>
-	<p class="text-muted">Your role cannot change this user.</p>
+	<p class="text-muted">{takeOverLocked}</p>
 {/if}

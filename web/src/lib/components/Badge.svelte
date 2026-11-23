@@ -47,13 +47,14 @@ allows), with `size="heading"` beside a page's title. With an href it is a link.
 	);
 </script>
 
-{#if href}
-	<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- callers pass resolved paths -->
-	<a {href} class={classes} {title} data-project={project} style:--project-color={color}>
-		{label}
-	</a>
-{:else}
-	<span class={classes} {title} data-project={project} style:--project-color={color}>
-		{label}
-	</span>
-{/if}
+<!-- A link with href (callers pass resolved paths), else plain text. -->
+<svelte:element
+	this={href ? 'a' : 'span'}
+	{href}
+	class={classes}
+	{title}
+	data-project={project}
+	style:--project-color={color}
+>
+	{label}
+</svelte:element>

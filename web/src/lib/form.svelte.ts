@@ -2,7 +2,7 @@
 // split into the problems of each field (shown by TextField), the record that already does
 // what was asked (duplicate) and a message for the rest. A form that edits a saved record
 // gives its values: it sends nothing while they are the saved ones (SubmitButton shows it).
-import { ApiError } from '#lib/api/client.ts';
+import { ApiError, errorMessage } from '#lib/api/client.ts';
 
 const serialized = (values: unknown) => JSON.stringify($state.snapshot(values));
 
@@ -68,7 +68,7 @@ export class FormState {
 			) {
 				this.fields = failure.fields;
 			} else {
-				this.error = failure instanceof ApiError ? failure.message : 'Something went wrong.';
+				this.error = errorMessage(failure);
 			}
 
 			return false;

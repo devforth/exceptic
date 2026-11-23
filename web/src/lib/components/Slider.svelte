@@ -2,7 +2,7 @@
 @component
 A number chosen on a scale (a range input), with its label and Hint, marks under the thumb
 positions of their values, and what the value means beside it (output). The scale may start below
-the least value it takes (least): the thumb stops there.
+the least value it takes (least): the thumb stops there. `locked` disables it with why.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -26,6 +26,8 @@ the least value it takes (least): the thumb stops there.
 		error?: string;
 		/** What the value means, beside the scale. */
 		output?: Snippet;
+		/** Why it cannot be changed: disabled, the reason under it. */
+		locked?: string;
 	};
 
 	let {
@@ -40,7 +42,8 @@ the least value it takes (least): the thumb stops there.
 		unit = '',
 		hint,
 		error,
-		output
+		output,
+		locked
 	}: Props = $props();
 
 	const id = $props.id();
@@ -68,13 +71,14 @@ the least value it takes (least): the thumb stops there.
 				{max}
 				{step}
 				{value}
+				disabled={Boolean(locked)}
 				oninput={input}
-				aria-describedby={[output && `${id}-out`, error && `${id}-error`]
+				aria-describedby={[output && `${id}-out`, locked && `${id}-locked`, error && `${id}-error`]
 					.filter(Boolean)
 					.join(' ') || undefined}
 				aria-invalid={error ? 'true' : undefined}
 				class={[
-					'block h-2.5 w-full cursor-pointer appearance-none rounded-full focus-visible:shadow-[0_0_0_3px_var(--color-focus)] focus-visible:outline-hidden',
+					'block h-2.5 w-full cursor-pointer appearance-none rounded-full focus-visible:shadow-[0_0_0_3px_var(--color-focus)] focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-60',
 					'bg-[linear-gradient(to_right,var(--color-accent)_var(--fill),color-mix(in_srgb,var(--color-muted)_25%,var(--color-surface))_var(--fill))]',
 					'[&::-webkit-slider-thumb]:size-5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-accent [&::-webkit-slider-thumb]:bg-surface [&::-webkit-slider-thumb]:shadow-[0_1px_3px_rgb(0_0_0/0.25)]',
 					'[&::-moz-range-thumb]:box-border [&::-moz-range-thumb]:size-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-accent [&::-moz-range-thumb]:bg-surface [&::-moz-range-thumb]:shadow-[0_1px_3px_rgb(0_0_0/0.25)]',
@@ -96,6 +100,9 @@ the least value it takes (least): the thumb stops there.
 			</output>
 		{/if}
 	</div>
+	{#if locked}
+		<p id="{id}-locked" class="text-xs text-muted">{locked}</p>
+	{/if}
 	{#if error}
 		<p id="{id}-error" class="text-xs text-error">{error}</p>
 	{/if}

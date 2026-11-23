@@ -41,9 +41,10 @@ export type PlainName = keyof PlainRequests;
 type Args<Input> = Record<never, never> extends Input ? [input?: Input] : [input: Input];
 
 /**
- * A refused request: status and the server's message. 404 also stands for "not allowed".
- * A refused form names the problem of each field by its input name, and a record that
- * already does what was asked (duplicate).
+ * A refused request: status and the server's message (400 a wrong input, 403 not allowed:
+ * another project's record or not for the role, 404 missing, 409 a record in the way, 429
+ * too many attempts). A refused form names the problem of each field by its input name,
+ * whatever the status, and a record that already does what was asked (duplicate).
  */
 export class ApiError extends Error {
 	readonly fields?: Record<string, string>;
@@ -60,7 +61,13 @@ export class ApiError extends Error {
 	}
 }
 
-/** For load functions: a refused request shows the error page with its status (404: not found). */
+/** What to tell about a failure: the server's reason, or fallback for anything else. */
+export function errorMessage(failure: unknown, fallback = 'Something went wrong.'): string {
+	return failure instanceof ApiError ? failure.message : fallback;
+}
+
+/** For load functions: a refused request shows the error page with its status (404: not found,
+ * 403: no access). */
 export function pageError(failure: unknown): never {
 	if (failure instanceof ApiError) {
 		error(failure.status, failure.message);

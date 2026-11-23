@@ -2,15 +2,16 @@
 @component
 A note in its tone. Information, a warning and an error are tinted callouts with a bar in their
 tone at the left; a success is a short message in the info tint, as the toast is. `compact` sets
-the text a size smaller (a note beside a form's fields). Paragraphs inside are spaced.
+the text a size smaller (a note beside a form's fields); `alert` announces it to screen readers
+as it appears (a refusal, a warning the page opens with). Paragraphs inside are spaced.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { NoticeTone } from './notice.ts';
 
-	type Props = { tone: NoticeTone; compact?: boolean; children: Snippet };
+	type Props = { tone: NoticeTone; compact?: boolean; alert?: boolean; children: Snippet };
 
-	let { tone, compact = false, children }: Props = $props();
+	let { tone, compact = false, alert = false, children }: Props = $props();
 
 	const callout =
 		'relative rounded-popup py-3 pr-4 pl-5 text-text before:absolute before:inset-y-2 before:left-0 before:w-1 before:rounded-r-[4px] forced-colors:border-l-4 forced-colors:before:hidden';
@@ -23,6 +24,9 @@ the text a size smaller (a note beside a form's fields). Paragraphs inside are s
 	};
 </script>
 
-<div class={['min-w-0 [&_p+p]:mt-1.5', compact && 'text-label', tones[tone]]}>
+<div
+	role={alert ? 'alert' : undefined}
+	class={['min-w-0 [&_p+p]:mt-1.5', compact && 'text-label', tones[tone]]}
+>
 	{@render children()}
 </div>
