@@ -86,13 +86,13 @@ the generated steps and rules of the cleanup.
 		/>
 	{/if}
 
-	<Notice tone="info">
-		<div class="flex flex-col gap-1.5 text-label">
+	<Notice tone="info" compact>
+		<div class="flex flex-col gap-1.5">
 			<p>
 				<b>How it works.</b> Errors and logs are kept until the database reaches
-				{cleanupRules.startPercent}% of its limit; nothing is deleted before that. Then the cleanup
-				deletes {always.join(', ')}; while the database is still above {cleanupRules.stopPercent}%,
-				it goes on, one step after another, with {rest.join(', ')}.
+				{cleanupRules.startPercent}% of its limit. Then the cleanup deletes {always.join(', ')};
+				while the database is still above {cleanupRules.stopPercent}%, it goes on, one step after
+				another, with {rest.join(', ')}.
 			</p>
 			<p>
 				A month there is {cleanupRules.ageDays} days and a week {cleanupRules.recentAgeDays}; an
@@ -100,9 +100,10 @@ the generated steps and rules of the cleanup.
 				its latest.
 			</p>
 			<p>
-				The share matters only then: the project keeps no more than this share of the budget, its
-				oldest records going first, so one flooded project cannot push out the older, still
-				important records of the others.
+				The share applies on its own, even while the database is under its limit: once the project
+				reaches it, the same steps delete only this project's records, down to
+				{cleanupRules.stopPercent}% of its share, so one flooded project cannot push out the older,
+				still important records of the others.
 			</p>
 			<p class="text-muted">{diskShare.max}% (the default) means no limit of its own.</p>
 		</div>

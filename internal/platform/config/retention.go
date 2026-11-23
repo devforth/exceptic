@@ -26,6 +26,9 @@ const (
 	CleanupAge          = 30 * 24 * time.Hour
 	CleanupRecentAge    = 7 * 24 * time.Hour
 	OldEventsPerIssue   = 20
+	// StalePercent: once deleted and replaced records may take more than
+	// this part of the bytes counted, the size check compacts them away.
+	StalePercent = 10
 )
 
 // DefaultMaxDatabaseBytes is the default of MAX_DATABASE_SIZE.

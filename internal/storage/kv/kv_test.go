@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"testing"
+	"time"
 )
 
 // item is a record of the test collection.
@@ -315,7 +316,7 @@ func TestDelete(t *testing.T) {
 	iterator := store.db.Iterate(nil, nil)
 
 	for valid := iterator.First(); valid; valid = iterator.Next() {
-		if !bytes.HasPrefix(iterator.Key(), []byte("meta/")) {
+		if !bytes.HasPrefix(iterator.Key(), []byte("meta/")) && !bytes.HasPrefix(iterator.Key(), []byte("stale/")) {
 			t.Errorf("left after deleting everything: %q", iterator.Key())
 		}
 	}
@@ -324,6 +325,10 @@ func TestDelete(t *testing.T) {
 
 	if counters := store.db.Counters(); len(counters) != 0 {
 		t.Errorf("counters %v", counters)
+	}
+
+	if store.items.Stale(store.db) == 0 {
+		t.Error("the deletes left nothing stale")
 	}
 }
 
@@ -391,5 +396,119 @@ func TestHas(t *testing.T) {
 		if found, err := store.items.Has(store.db, Key(key)); err != nil || found != want {
 			t.Errorf("Has(%x) = %v, %v; want %v", key, found, err, want)
 		}
+	}
+}
+
+// compactingEngine runs during on every CompactRange, as a write that comes while a compaction runs.
+type compactingEngine struct {
+	*memoryEngine
+	during func()
+}
+
+func (engine compactingEngine) CompactRange(lower, upper []byte) error {
+	if engine.during != nil {
+		engine.during()
+	}
+
+	return engine.memoryEngine.CompactRange(lower, upper)
+}
+
+// Deletes and rewrites count as stale, in the bytes their counters lose,
+// across a restart; Compact takes off what was stale when it started, and
+// a delete written while it runs stays counted.
+func TestStale(t *testing.T) {
+	engine := &compactingEngine{memoryEngine: newMemoryEngine()}
+	store := openStore(t, engine)
+	store.insert(t, item{ID: 1, Level: 1, Name: "one"}, item{ID: 2, Level: 1}, item{ID: 3, Level: 1})
+
+	counted := store.db.Counter(K(Text("item"), U8(1)))
+	update := func(change func(batch *Batch) error) {
+		t.Helper()
+
+		if err := store.db.Update(false, change); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	update(func(batch *Batch) error {
+		_, err := store.items.DeleteKey(batch, K(U64(2)))
+
+		return err
+	})
+
+	// Items 2 and 3 take the same bytes; a rewrite leaves the whole old version.
+	size := counted - store.db.Counter(K(Text("item"), U8(1)))
+
+	update(func(batch *Batch) error { return store.items.Save(batch, item{ID: 1, Level: 1, Name: "one"}) })
+
+	if want := counted - size; store.items.Stale(store.db) != want {
+		t.Fatalf("stale %d, want %d: item 2 and the old version of item 1", store.items.Stale(store.db), want)
+	}
+
+	before := store.items.Stale(store.db)
+	store = openStore(t, engine)
+
+	if store.items.Stale(store.db) != before {
+		t.Fatalf("stale %d after a restart, %d before", store.items.Stale(store.db), before)
+	}
+
+	var during int64
+
+	engine.during = func() {
+		engine.during = nil
+
+		update(func(batch *Batch) error {
+			_, err := store.items.DeleteKey(batch, K(U64(3)))
+
+			return err
+		})
+
+		during = store.items.Stale(store.db) - before
+	}
+
+	if err := store.items.Compact(store.db); err != nil {
+		t.Fatal(err)
+	}
+
+	if during <= 0 || store.items.Stale(store.db) != during {
+		t.Errorf("stale %d after compacting, %d deleted while it ran", store.items.Stale(store.db), during)
+	}
+}
+
+// Two compactions at once (a project's purge beside the size check) take
+// off what was stale once, not twice.
+func TestStaleCompactedTwiceAtOnce(t *testing.T) {
+	engine := &compactingEngine{memoryEngine: newMemoryEngine()}
+	store := openStore(t, engine)
+	store.insert(t, item{ID: 1}, item{ID: 2})
+
+	if err := store.db.Update(false, func(batch *Batch) error {
+		_, err := store.items.DeleteKey(batch, K(U64(1)))
+
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	other := make(chan error, 1)
+
+	engine.during = func() {
+		engine.during = nil
+
+		go func() { other <- store.items.Compact(store.db) }()
+
+		time.Sleep(50 * time.Millisecond) // the other compaction would read the count meanwhile
+	}
+
+	if err := store.items.Compact(store.db); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := <-other; err != nil {
+		t.Fatal(err)
+	}
+
+	if stale := store.items.Stale(store.db); stale != 0 {
+		t.Errorf("stale %d after two compactions", stale)
 	}
 }

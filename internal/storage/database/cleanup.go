@@ -1,7 +1,6 @@
 package database
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"errors"
@@ -59,7 +58,7 @@ func (database *Store) CompactInbox(context.Context) error {
 		return nil
 	}
 
-	return database.compactInbox()
+	return database.compact(database.inbox)
 }
 
 // CleanupWake ticks after every config.CleanupWritten bytes written.
@@ -109,27 +108,18 @@ func (database *Store) CheckSize(ctx context.Context, maxBytes int64, logger *sl
 	return err
 }
 
-// runFailed labels an error of a run with its scope and step.
+// runFailed labels an error of a run with its scope and step; nil stays nil.
 func (database *Store) runFailed(run CleanupRun, err error) error {
-	return fmt.Errorf("cleanup of %s, step %d: %w", database.scopeName(run.Project), run.Reached, err)
-}
-
-// scopeName names a run's scope in the log.
-func (database *Store) scopeName(project int) string {
-	if project == AllProjects {
-		return "all projects"
+	if err == nil {
+		return nil
 	}
 
-	if stored, err := database.projects.Get(database.db, projectKey(project)); err == nil {
-		return stored.Name
-	}
-
-	return fmt.Sprintf("project %d", project)
+	return fmt.Errorf("cleanup of %s, step %d: %w", database.scope(run.Project).name(), run.Reached, err)
 }
 
 // logCleanup writes a run as one record: sizes, the last step reached and a line per step that deleted something.
 func (database *Store) logCleanup(logger *slog.Logger, run CleanupRun) {
-	attributes := []any{logging.Block, "scope", database.scopeName(run.Project), "limit", config.FormatSize(run.Limit), "size_before", config.FormatSize(run.SizeBefore),
+	attributes := []any{logging.Block, "scope", database.scope(run.Project).name(), "limit", config.FormatSize(run.Limit), "size_before", config.FormatSize(run.SizeBefore),
 		"compacted", config.FormatSize(run.Compacted), "size_after", config.FormatSize(run.SizeAfter)}
 
 	if run.Reached > 0 {
@@ -159,12 +149,6 @@ func stepLine(step CleanupStep) string {
 		strings.Join(projects, "; "))
 }
 
-// compactInbox takes processed envelopes, credentials included, out of the
-// files: a deleted record keeps its bytes until a compaction reaches its key.
-func (database *Store) compactInbox() error {
-	return database.db.CompactRange(database.inbox.KeyRange())
-}
-
 func (database *Store) noteWritten() {
 	written := database.db.Written()
 
@@ -180,69 +164,37 @@ func (database *Store) noteWritten() {
 	}
 }
 
-// cleanupPass is one pass of the size check: it first goes on with a run a
-// restart stopped (unless its limit changed meanwhile), then cleans each
-// project over its disk share, the smallest share first, then all projects
-// if the database is still at maxBytes (0: no limit). The runs go one after
-// another, never two at once; a run stopped by ctx stays running and goes on
-// at the next pass. It returns the runs that ran.
+// cleanupPass is one pass of the size check: it goes on with a run left
+// running, then starts the runs of cleanupTargets that are due, one after
+// another. A run stopped by ctx stays running for the next pass. It returns
+// the runs that ran.
 func (database *Store) cleanupPass(ctx context.Context, maxBytes int64) ([]CleanupRun, error) {
-	var runs []CleanupRun
-
-	run, err := database.runningCleanup()
-
-	if err != nil {
+	// Deleted issues, a purge or thinned events since the last pass.
+	if err := database.compactStale(); err != nil {
 		return nil, fmt.Errorf("cleanup: %w", err)
 	}
 
-	if run.Status == cleanupRunning {
-		limit, reason, err := database.scopeLimit(run, maxBytes)
+	runs, err := database.resumeCleanup(ctx, maxBytes)
 
-		if err != nil {
-			return nil, database.runFailed(run, err)
-		}
-
-		if run.Limit != limit {
-			// Its goal came from another limit: it ends, and the targets below start from the new one.
-			if err := database.finishCleanup(&run, nil, reason); err != nil {
-				return nil, database.runFailed(run, err)
-			}
-		} else {
-			err = database.advance(ctx, &run)
-
-			if ctx.Err() == nil {
-				err = database.finishCleanup(&run, err, "")
-			}
-
-			if runs = append(runs, run); err != nil {
-				return runs, database.runFailed(run, err)
-			}
-
-			if ctx.Err() != nil {
-				return runs, nil
-			}
-		}
+	if err != nil || ctx.Err() != nil {
+		return runs, err
 	}
 
-	if maxBytes <= 0 {
-		return runs, nil
-	}
-
-	targets, err := database.shareTargets(maxBytes)
+	targets, err := database.cleanupTargets(maxBytes)
 
 	if err != nil {
 		return runs, fmt.Errorf("cleanup: %w", err)
 	}
 
-	for _, target := range append(targets, cleanupTarget{AllProjects, maxBytes}) {
-		run, err := database.cleanup(ctx, target.project, target.limit)
+	for _, target := range targets {
+		run, err := database.cleanup(ctx, target)
 
 		if run.Status != "" {
 			runs = append(runs, run)
 		}
 
 		if err != nil {
-			return runs, database.runFailed(CleanupRun{Project: target.project, Reached: run.Reached}, err)
+			return runs, database.runFailed(run, err)
 		}
 
 		if ctx.Err() != nil {
@@ -251,6 +203,38 @@ func (database *Store) cleanupPass(ctx context.Context, maxBytes int64) ([]Clean
 	}
 
 	return runs, nil
+}
+
+// resumeCleanup goes on with the run a restart or the pass's time limit
+// stopped, or ends it when its scope's limit changed meanwhile.
+func (database *Store) resumeCleanup(ctx context.Context, maxBytes int64) ([]CleanupRun, error) {
+	run, err := database.runningCleanup()
+
+	if err != nil {
+		return nil, fmt.Errorf("cleanup: %w", err)
+	}
+
+	if run.Status != cleanupRunning {
+		return nil, nil
+	}
+
+	reason, err := database.stopReason(run, maxBytes)
+
+	if err == nil && reason != "" {
+		err = database.finishCleanup(&run, nil, reason)
+	}
+
+	if err != nil || reason != "" {
+		return nil, database.runFailed(run, err)
+	}
+
+	err = database.advance(ctx, &run)
+
+	if ctx.Err() == nil {
+		err = database.finishCleanup(&run, err, "")
+	}
+
+	return []CleanupRun{run}, database.runFailed(run, err)
 }
 
 // runningCleanup is the newest run when it is still running, a zero run otherwise.
@@ -264,67 +248,6 @@ func (database *Store) runningCleanup() (CleanupRun, error) {
 	return latest.Record, err
 }
 
-// cleanupTarget is what a run cleans and down from which limit.
-type cleanupTarget struct {
-	project int
-	limit   int64
-}
-
-// shareTargets are the projects with a disk share below 100%, the smallest
-// first, each with its limit. None while data stored before the project
-// counters is still counted: their bytes and the events' project index fall short.
-func (database *Store) shareTargets(maxBytes int64) ([]cleanupTarget, error) {
-	if !database.backfilled() {
-		return nil, nil
-	}
-
-	projects, err := database.projects.Primary().All(database.db)
-
-	if err != nil {
-		return nil, err
-	}
-
-	slices.SortFunc(projects, func(first, second store.Project) int {
-		return cmp.Or(cmp.Compare(first.Share(), second.Share()), cmp.Compare(first.ID, second.ID))
-	})
-
-	var targets []cleanupTarget
-
-	for _, project := range projects {
-		if limit := store.ShareLimit(maxBytes, project.Share()); limit > 0 {
-			targets = append(targets, cleanupTarget{project.ID, limit})
-		}
-	}
-
-	return targets, nil
-}
-
-// scopeLimit is the limit a run's scope has now (0: none), and why a run
-// from another limit stops.
-func (database *Store) scopeLimit(run CleanupRun, maxBytes int64) (int64, string, error) {
-	if run.Project == AllProjects || maxBytes <= 0 {
-		return max(maxBytes, 0), limitChanged(maxBytes), nil
-	}
-
-	project, err := database.projects.Get(database.db, projectKey(run.Project))
-
-	if errors.Is(err, kv.ErrNotFound) {
-		return 0, "stopped: the project was deleted", nil
-	}
-
-	if err != nil {
-		return 0, "", err
-	}
-
-	limit := store.ShareLimit(maxBytes, project.Share())
-
-	if run.Share != project.Share() {
-		return limit, fmt.Sprintf("stopped: the disk share of %s changed to %d%%", project.Name, project.Share()), nil
-	}
-
-	return limit, limitChanged(maxBytes), nil
-}
-
 // errCleanupRunning: a run stopped by a restart or ctx is still to finish.
 var errCleanupRunning = errors.New("a cleanup is still running")
 
@@ -334,19 +257,18 @@ func (database *Store) Cleanup(ctx context.Context, project int, limit int64) (C
 		return CleanupRun{}, cmp.Or(err, errCleanupRunning)
 	}
 
-	return database.cleanup(ctx, project, limit)
+	return database.cleanup(ctx, cleanupTarget{project, limit})
 }
 
-// cleanup cleans one scope, a project (its ID) or AllProjects, when it is at
-// cleanupStart of limit and no backup runs: it starts a run, takes it as far
-// as needed and saves it. A run stopped by ctx stays running; cleanupPass goes on with it.
-func (database *Store) cleanup(ctx context.Context, project int, limit int64) (CleanupRun, error) {
+// cleanup starts a run when its scope is due and no backup runs, takes it
+// as far as needed and saves it. A run stopped by ctx stays running.
+func (database *Store) cleanup(ctx context.Context, target cleanupTarget) (CleanupRun, error) {
 	// A backup's snapshot keeps deleted records on disk, which would make the goal too low.
-	if limit <= 0 || database.backups.Load() > 0 {
+	if target.limit <= 0 || database.backups.Load() > 0 {
 		return CleanupRun{}, nil
 	}
 
-	run, err := database.startCleanup(project, limit)
+	run, err := database.startCleanup(target)
 
 	if err != nil || run.Status != cleanupRunning {
 		return run, err
@@ -361,132 +283,62 @@ func (database *Store) cleanup(ctx context.Context, project int, limit int64) (C
 	return run, database.finishCleanup(&run, err, "")
 }
 
-// startCleanup saves a run whose goal is cleanupStop of limit when its
-// scope is at cleanupStart of it. Over all projects it first compacts, when
-// ingest is quiet, what collects deleted and replaced records (the inbox,
-// the issues rewritten with every event): that may be enough.
-func (database *Store) startCleanup(project int, limit int64) (CleanupRun, error) {
-	run := CleanupRun{StartedAt: database.now().UTC(), Limit: limit, Project: project}
+// startCleanup saves a run when its scope is at cleanupStart of the limit
+// on disk (after compactBefore), with the goal of cleanupStop of it in bytes
+// counted; a deleted project gets none.
+func (database *Store) startCleanup(target cleanupTarget) (CleanupRun, error) {
+	run := CleanupRun{StartedAt: database.now().UTC(), Limit: target.limit, Project: target.project}
+	scope := database.scope(target.project)
+	due := func(size int64) bool { return float64(size) >= cleanupStart*float64(run.Limit) }
 
-	if project != AllProjects {
-		return run, database.startProjectCleanup(&run)
-	}
+	share, found, err := scope.share()
 
-	size, err := database.db.Size()
-
-	if err != nil || float64(size) < cleanupStart*float64(limit) {
+	if err != nil || !found {
 		return run, err
 	}
 
-	run.SizeBefore = size
+	run.Share = share
+	size, ratio, err := scope.onDisk()
 
-	if database.quiet() {
-		ranges := []func() ([]byte, []byte){database.inbox.KeyRange, database.issues.KeyRange, database.status.KeyRange}
-
-		if err := database.compact(append(ranges, database.uncompactedRanges()...)); err != nil {
-			return run, err
-		}
-	}
-
-	if run.Compacted, err = database.db.Size(); err != nil {
+	if err != nil || !due(size) {
 		return run, err
 	}
 
-	if float64(run.Compacted) < cleanupStart*float64(limit) {
+	run.SizeBefore, run.Compacted = size, size
+	compacted, err := scope.compactBefore()
+
+	if err == nil && compacted {
+		run.Compacted, ratio, err = scope.onDisk()
+	}
+
+	if err != nil {
+		return run, err
+	}
+
+	if !due(run.Compacted) {
 		run.Status, run.SizeAfter = cleanupDone, run.Compacted
 		run.Duration = database.now().Sub(run.StartedAt)
 
 		return run, database.saveCleanup(&run)
 	}
 
-	// The counters count bytes before compression; the ratio converts.
-	logical := database.logicalSize()
-	ratio := float64(run.Compacted) / float64(max(logical, 1))
-	run.Goal = logical - int64((float64(run.Compacted)-cleanupStop*float64(limit))/ratio)
+	run.Goal = scope.counted() - int64((float64(run.Compacted)-cleanupStop*float64(run.Limit))/ratio)
 	run.Status, run.Reached = cleanupRunning, 1
 
 	return run, database.saveCleanup(&run)
 }
 
-// startProjectCleanup starts the run of a project at cleanupStart of its
-// limit, by its part of the size on disk as the Projects page shows it;
-// compacting is left to the run over all projects.
-func (database *Store) startProjectCleanup(run *CleanupRun) error {
-	project, err := database.projects.Get(database.db, projectKey(run.Project))
-
-	if errors.Is(err, kv.ErrNotFound) {
-		return nil
-	}
-
-	if err != nil {
-		return err
-	}
-
-	run.Share = project.Share()
-	onDisk, ratio, err := database.projectOnDisk(run.Project)
-
-	if err != nil || float64(onDisk) < cleanupStart*float64(run.Limit) {
-		return err
-	}
-
-	run.SizeBefore, run.Compacted = onDisk, onDisk
-	run.Goal = int64(cleanupStop * float64(run.Limit) / ratio)
-	run.Status, run.Reached = cleanupRunning, 1
-
-	return database.saveCleanup(run)
-}
-
-// projectOnDisk is a project's part of the size on disk, its bytes counted
-// times diskRatio, and that ratio.
-func (database *Store) projectOnDisk(project int) (int64, float64, error) {
-	ratio, err := database.diskRatio()
-
-	return int64(float64(database.projectBytes(project)) * ratio), ratio, err
-}
-
-// diskRatio is the size on disk of a byte counted. The inbox's files, with
-// the envelopes processed but not compacted away, are no project's; what
-// single projects' runs deleted is still in the files, so it is counted as
-// if it were there, until compacted.
-func (database *Store) diskRatio() (float64, error) {
-	size, err := database.db.Size()
-
-	if err != nil {
-		return 0, err
-	}
-
-	inbox, err := database.db.SizeOf(database.inbox.KeyRange())
-
-	if err != nil {
-		return 0, err
-	}
-
-	return float64(max(size-inbox, 0)) / float64(max(database.logicalSize()+database.uncompacted.Load(), 1)), nil
-}
-
-// scopeBytes is what a run's scope holds, before compression.
-func (database *Store) scopeBytes(project int) int64 {
-	if project == AllProjects {
-		return database.logicalSize()
-	}
-
-	return database.projectBytes(project)
-}
-
 // finishCleanup saves a run, failed with err or the reason it was stopped,
-// otherwise done. A run over all projects first compacts what it deleted
-// from. A project's run does not: compacting a collection rewrites every
-// project's records in it, so the space comes back when the database
-// compacts those keys on its own or the run over all projects does.
+// otherwise done, after compactAfter.
 func (database *Store) finishCleanup(run *CleanupRun, err error, stopped string) error {
-	if err == nil && run.Project == AllProjects {
-		err = database.compactCleaned(run)
+	scope := database.scope(run.Project)
+
+	if err == nil {
+		err = scope.compactAfter(*run)
 	}
 
-	if err == nil && run.Project == AllProjects {
-		run.SizeAfter, err = database.db.Size()
-	} else if err == nil {
-		run.SizeAfter, _, err = database.projectOnDisk(run.Project)
+	if err == nil {
+		run.SizeAfter, _, err = scope.onDisk()
 	}
 
 	run.Status, run.Duration, run.Error = cleanupDone, database.now().Sub(run.StartedAt), stopped
@@ -500,15 +352,6 @@ func (database *Store) finishCleanup(run *CleanupRun, err error, stopped string)
 	}
 
 	return errors.Join(err, database.db.Update(true, func(batch *kv.Batch) error { return database.cleanups.Save(batch, *run) }))
-}
-
-// limitChanged is why a run whose goal came from another limit than maxBytes stops.
-func limitChanged(maxBytes int64) string {
-	if maxBytes <= 0 {
-		return "stopped: MAX_DATABASE_SIZE turned off"
-	}
-
-	return "stopped: MAX_DATABASE_SIZE changed to " + config.FormatSize(maxBytes)
 }
 
 // saveCleanup stores a new run and keeps the newest store.CleanupRunsKept of them.
@@ -548,91 +391,32 @@ func (database *Store) CleanupHistory(_ context.Context, limit int) ([]CleanupRu
 	return database.cleanups.Primary().Newest().Limit(limit).All(database.db)
 }
 
-// compactCleaned compacts the collections the run deleted from, and those
-// projects' runs deleted from, so the disk space comes back now.
-func (database *Store) compactCleaned(run *CleanupRun) error {
-	var logs, events, issues bool
+// compactable is a collection: compacting it frees what its deletes and rewrites left in the files.
+type compactable interface{ Compact(db *kv.DB) error }
 
-	for _, step := range run.Steps {
-		for _, counts := range step.Projects {
-			logs = logs || counts.Logs > 0
-			events = events || counts.Events > 0 || counts.Thinned > 0
-			issues = issues || counts.Issues > 0
-		}
-	}
-
-	pending := database.uncompacted.Load() > 0
-
-	var ranges []func() ([]byte, []byte)
-
-	if logs || pending {
-		ranges = append(ranges, database.logs.KeyRange)
-	}
-
-	if events || pending {
-		ranges = append(ranges, database.events.KeyRange)
-	}
-
-	if issues {
-		ranges = append(ranges, database.issues.KeyRange, database.status.KeyRange)
-	}
-
-	return database.compact(ranges)
-}
-
-// uncompactedRanges are the logs and events, when projects' runs deleted from them since they were last compacted.
-func (database *Store) uncompactedRanges() []func() ([]byte, []byte) {
-	if database.uncompacted.Load() == 0 {
-		return nil
-	}
-
-	return []func() ([]byte, []byte){database.logs.KeyRange, database.events.KeyRange}
-}
-
-// compact compacts key ranges; with the logs and events among them, what
-// projects' runs deleted is out of the files.
-func (database *Store) compact(ranges []func() ([]byte, []byte)) error {
-	logs, _ := database.logs.KeyRange()
-	events, _ := database.events.KeyRange()
-	compacted := 0
-
-	for _, keyRange := range ranges {
-		lower, upper := keyRange()
-
-		if err := database.db.CompactRange(lower, upper); err != nil {
+func (database *Store) compact(collections ...compactable) error {
+	for _, collection := range collections {
+		if err := collection.Compact(database.db); err != nil {
 			return err
 		}
-
-		if bytes.Equal(lower, logs) || bytes.Equal(lower, events) {
-			compacted++
-		}
-	}
-
-	if compacted == 2 {
-		database.uncompacted.Store(0)
 	}
 
 	return nil
 }
 
-// loadUncompacted adds up what the runs of single projects freed since the
-// newest run over all projects, which compacted what they deleted.
-func (database *Store) loadUncompacted() error {
-	var freed int64
+// staleData is the logs and events, of those that hold deleted or replaced records.
+func (database *Store) staleData() []compactable {
+	var stale []compactable
 
-	err := database.cleanups.Primary().Newest().Each(database.db, func(entry kv.Entry[CleanupRun]) (bool, error) {
-		if entry.Record.Project == AllProjects {
-			return false, nil
-		}
+	if database.logs.Stale(database.db) > 0 {
+		stale = append(stale, database.logs)
+	}
 
-		freed += freedBy(entry.Record)
+	if database.events.Stale(database.db) > 0 {
+		stale = append(stale, database.events)
+	}
 
-		return true, nil
-	})
-
-	database.uncompacted.Store(freed)
-
-	return err
+	return stale
 }
 
 func (database *Store) logicalSize() int64 {
@@ -687,9 +471,9 @@ func (cursor *cleanupCursor) number(offset int) uint64 {
 // number is their place. Each reads and deletes only the records of project
 // (AllProjects: every record).
 func (database *Store) cleanupSteps(project int) []cleanupStep {
+	scope := database.scope(project)
 	now := database.now()
 	month, week := now.Add(-config.CleanupAge), now.Add(-config.CleanupRecentAge)
-	scope := cleanupScope{database: database, project: project}
 
 	return []cleanupStep{
 		{"logs older than a month", true, scope.deleteLogs(allRanks, func() uint64 { return database.sequenceFrom(month) })},
@@ -727,11 +511,121 @@ func CleanupSteps() []CleanupStepName {
 	return names
 }
 
-// cleanupScope reads the records of one project, or of all (AllProjects).
+// cleanupScope is what a run cleans: one project's records, or all of them
+// (AllProjects). Its methods hold every difference between the two runs.
 type cleanupScope struct {
 	database *Store
 
 	project int
+}
+
+func (database *Store) scope(project int) cleanupScope {
+	return cleanupScope{database: database, project: project}
+}
+
+func (scope cleanupScope) all() bool { return scope.project == AllProjects }
+
+// name names the scope in the log.
+func (scope cleanupScope) name() string {
+	if scope.all() {
+		return "all projects"
+	}
+
+	if stored, err := scope.database.projects.Get(scope.database.db, projectKey(scope.project)); err == nil {
+		return stored.Name
+	}
+
+	return fmt.Sprintf("project %d", scope.project)
+}
+
+// share is a project's disk share, 0 over all projects; found is false
+// for a project deleted meanwhile.
+func (scope cleanupScope) share() (int, bool, error) {
+	if scope.all() {
+		return 0, true, nil
+	}
+
+	project, err := scope.database.projects.Get(scope.database.db, projectKey(scope.project))
+
+	if errors.Is(err, kv.ErrNotFound) {
+		return 0, false, nil
+	}
+
+	return project.Share(), err == nil, err
+}
+
+// counted is what the scope holds, in bytes before compression.
+func (scope cleanupScope) counted() int64 {
+	if scope.all() {
+		return scope.database.logicalSize()
+	}
+
+	return scope.database.projectBytes(scope.project)
+}
+
+// onDisk is the scope's size on disk, all the files or a project's part of
+// them (projectOnDisk), and the size on disk of a byte counted.
+func (scope cleanupScope) onDisk() (int64, float64, error) {
+	if !scope.all() {
+		return scope.database.projectOnDisk(scope.project)
+	}
+
+	size, err := scope.database.db.Size()
+
+	return size, float64(size) / float64(max(scope.database.logicalSize(), 1)), err
+}
+
+// compactBefore compacts, over all projects, what may hold enough deleted
+// records to bring the files under the limit: the logs and events with
+// deleted or replaced records in them and, when ingest is quiet, the inbox
+// and the issues rewritten with every event. It says whether it compacted.
+// A project's run compacts nothing before: that would rewrite every
+// project's records, and its size leaves out what they hold (diskRatio).
+func (scope cleanupScope) compactBefore() (bool, error) {
+	database := scope.database
+
+	if !scope.all() {
+		return false, nil
+	}
+
+	collections := database.staleData()
+
+	if database.quiet() {
+		collections = append(collections, database.inbox, database.issues, database.status)
+	}
+
+	return len(collections) > 0, database.compact(collections...)
+}
+
+// compactAfter compacts what the run deleted from, so the space comes back
+// now: over all projects always, after a project's run only once the stale
+// records are a sizable part of the files (compactStale).
+func (scope cleanupScope) compactAfter(run CleanupRun) error {
+	database := scope.database
+
+	if !scope.all() {
+		return database.compactStale()
+	}
+
+	collections := database.staleData()
+
+	if issuesDeleted(run) {
+		collections = append(collections, database.issues, database.status)
+	}
+
+	return database.compact(collections...)
+}
+
+func issuesDeleted(run CleanupRun) bool {
+	for _, step := range run.Steps {
+		for _, counts := range step.Projects {
+			if counts.Issues > 0 {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 // logs walks the logs of a level by arrival.
@@ -810,6 +704,7 @@ func (database *Store) ReduceAging(ctx context.Context) ([]CleanupStep, error) {
 // advance runs the run's steps batch by batch from where it is; each batch
 // saves the run with it, so the progress and the deletes are written together.
 func (database *Store) advance(ctx context.Context, run *CleanupRun) error {
+	scope := database.scope(run.Project)
 	steps := database.cleanupSteps(run.Project)
 
 	for ctx.Err() == nil {
@@ -820,7 +715,7 @@ func (database *Store) advance(ctx context.Context, run *CleanupRun) error {
 		}
 
 		step := steps[run.Reached-1]
-		need := database.scopeBytes(run.Project) - run.Goal
+		need := scope.counted() - run.Goal
 
 		if !step.always && need <= 0 {
 			// A step started has a position or deleted something; one not started does not count.
@@ -858,10 +753,6 @@ func (database *Store) advance(ctx context.Context, run *CleanupRun) error {
 			return err
 		}
 
-		if run.Project != AllProjects {
-			database.uncompacted.Add(freedBy(next) - freedBy(*run))
-		}
-
 		*run = next
 
 		select {
@@ -871,17 +762,6 @@ func (database *Store) advance(ctx context.Context, run *CleanupRun) error {
 	}
 
 	return ctx.Err()
-}
-
-// freedBy is what a run freed so far, in bytes of the counters.
-func freedBy(run CleanupRun) int64 {
-	var freed int64
-
-	for _, step := range run.Steps {
-		freed += step.Freed
-	}
-
-	return freed
 }
 
 // withBatch returns a copy of the run with a batch of its current step added.

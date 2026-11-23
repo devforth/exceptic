@@ -9,6 +9,7 @@ type Batch struct {
 	latest map[string]write
 	counts map[string]int64 // counter -> change; written by DB.Update
 	groups map[string]int64 // group counter -> change
+	stale  map[string]int64 // collection -> bytes its deletes and rewrites leave in the files
 	total  int64            // sum of counts
 	after  []func()
 }
@@ -20,7 +21,7 @@ type write struct {
 
 // NewBatch starts a batch of engine.
 func NewBatch(engine Engine) *Batch {
-	return &Batch{reader: engine, native: engine.NewWriteBatch(), latest: map[string]write{}, counts: map[string]int64{}, groups: map[string]int64{}}
+	return &Batch{reader: engine, native: engine.NewWriteBatch(), latest: map[string]write{}, counts: map[string]int64{}, groups: map[string]int64{}, stale: map[string]int64{}}
 }
 
 // Put writes key. The batch keeps key and value without copying them: the
@@ -48,6 +49,12 @@ func (batch *Batch) Count(counter Key, delta int64) {
 func (batch *Batch) Group(counter Key, delta int64) {
 	if delta != 0 {
 		batch.groups[string(counter)] += delta
+	}
+}
+
+func (batch *Batch) addStale(collection string, delta int64) {
+	if delta != 0 {
+		batch.stale[collection] += delta
 	}
 }
 

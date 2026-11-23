@@ -14,16 +14,21 @@ type DB struct {
 
 	counterPrefix Key
 	groupPrefix   Key
+	stalePrefix   Key
 	meta          Key
 	sequenceKey   Key
 	// fresh: the engine held no key when opened.
 	fresh bool
 
-	writeMutex sync.Mutex // one DB.Update at a time
+	writeMutex   sync.Mutex // one DB.Update at a time
+	compactMutex sync.Mutex // one Collection.Compact at a time, so none takes off what another did
 
 	countersMutex sync.RWMutex
 	counters      map[string]int64
 	groups        map[string]int64
+	// stale is per collection what its deletes and rewrites left in the
+	// files since Collection.Compact last compacted it, in bytes counted.
+	stale map[string]int64
 
 	written atomic.Int64
 
@@ -39,8 +44,8 @@ const sequenceBlock = 10_000
 func OpenDB(engine Engine, schema *Schema) (*DB, error) {
 	meta := schema.Reserve("meta")
 	db := &DB{
-		Engine: engine, counterPrefix: schema.Reserve("count"), groupPrefix: schema.Reserve("group"), meta: meta,
-		sequenceKey: meta.With(Text("sequence")), counters: map[string]int64{}, groups: map[string]int64{},
+		Engine: engine, counterPrefix: schema.Reserve("count"), groupPrefix: schema.Reserve("group"), stalePrefix: schema.Reserve("stale"),
+		meta: meta, sequenceKey: meta.With(Text("sequence")), counters: map[string]int64{}, groups: map[string]int64{}, stale: map[string]int64{},
 	}
 
 	iterator := engine.Iterate(nil, nil)
@@ -63,7 +68,9 @@ func OpenDB(engine Engine, schema *Schema) (*DB, error) {
 
 	db.reserved = db.next
 
-	for prefix, values := range map[string]map[string]int64{string(db.counterPrefix): db.counters, string(db.groupPrefix): db.groups} {
+	for prefix, values := range map[string]map[string]int64{
+		string(db.counterPrefix): db.counters, string(db.groupPrefix): db.groups, string(db.stalePrefix): db.stale,
+	} {
 		iterator := engine.Iterate([]byte(prefix), prefixEnd([]byte(prefix)))
 
 		for valid := iterator.First(); valid; valid = iterator.Next() {
@@ -131,6 +138,7 @@ func (db *DB) Update(sync bool, change func(batch *Batch) error) error {
 	db.countersMutex.RLock()
 	totals := db.totals(batch, db.counterPrefix, db.counters, batch.counts)
 	groupTotals := db.totals(batch, db.groupPrefix, db.groups, batch.groups)
+	staleTotals := db.totals(batch, db.stalePrefix, db.stale, batch.stale)
 	db.countersMutex.RUnlock()
 
 	if err := db.Write(batch, sync); err != nil {
@@ -144,6 +152,7 @@ func (db *DB) Update(sync bool, change func(batch *Batch) error) error {
 	db.countersMutex.Lock()
 	keep(db.counters, totals)
 	keep(db.groups, groupTotals)
+	keep(db.stale, staleTotals)
 	db.countersMutex.Unlock()
 
 	for _, apply := range batch.after {

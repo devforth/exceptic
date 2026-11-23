@@ -38,7 +38,7 @@ func (project Project) Share() int {
 // ShareLimit is the size a disk share of maxBytes allows; 0 (no limit of
 // its own) at 100% or above, without a share or without maxBytes.
 func ShareLimit(maxBytes int64, share int) int64 {
-	if share <= 0 || share >= 100 || maxBytes <= 0 {
+	if share <= 0 || share >= MaxDiskShare || maxBytes <= 0 {
 		return 0
 	}
 

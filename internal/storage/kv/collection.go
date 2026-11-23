@@ -101,6 +101,38 @@ func (collection *Collection[T]) KeyRange() (lower, upper []byte) {
 	return []byte(collection.name + "."), prefixEnd(collection.prefix)
 }
 
+// Stale is what the collection's deletes and rewrites left in the files
+// since Compact last ran, in bytes counted: the engine frees a deleted
+// record's space only when a compaction reaches it. Its own compactions are
+// not told, so it may count bytes they freed.
+func (collection *Collection[T]) Stale(db *DB) int64 {
+	db.countersMutex.RLock()
+
+	defer db.countersMutex.RUnlock()
+
+	return db.stale[collection.name]
+}
+
+// Compact compacts the collection's keys, which frees what its deletes and
+// rewrites left in the files, and takes that off Stale. What is deleted
+// while it runs stays counted: the compaction may not have reached it.
+func (collection *Collection[T]) Compact(db *DB) error {
+	db.compactMutex.Lock()
+	defer db.compactMutex.Unlock()
+
+	stale := collection.Stale(db)
+
+	if err := db.CompactRange(collection.KeyRange()); err != nil || stale == 0 {
+		return err
+	}
+
+	return db.Update(true, func(batch *Batch) error {
+		batch.addStale(collection.name, -stale)
+
+		return nil
+	})
+}
+
 // KeyOf returns the primary key of record, without the prefix.
 func (collection *Collection[T]) KeyOf(record T) Key { return collection.definition.Key(record) }
 
@@ -405,6 +437,10 @@ func (collection *Collection[T]) tally(batch *Batch, record T, primary []byte, v
 	}
 
 	size := sign * int64(recordSize(len(primary), valueSize, keys))
+
+	if sign < 0 {
+		batch.addStale(collection.name, -size)
+	}
 
 	if collection.definition.Counter != nil {
 		batch.Count(collection.definition.Counter(record), size)

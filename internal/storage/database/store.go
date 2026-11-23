@@ -43,9 +43,6 @@ type Store struct {
 	checkedAt   atomic.Int64
 	// lastAppend is when the newest envelope came, in Unix nanoseconds; zero before the first.
 	lastAppend atomic.Int64
-	// uncompacted is what the runs of single projects deleted since the logs
-	// and events were last compacted, in bytes of the counters: still in the files.
-	uncompacted atomic.Int64
 	// backups counts running backups: their snapshot keeps deleted records on disk.
 	backups atomic.Int32
 
@@ -107,7 +104,7 @@ func open(engine kv.Engine) (*Store, error) {
 	}
 
 	if err == nil {
-		err = errors.Join(database.loadIssues(), database.loadInboxSize(), database.loadMarks(), database.loadPurges(), database.loadUncompacted())
+		err = errors.Join(database.loadIssues(), database.loadInboxSize(), database.loadMarks(), database.loadPurges())
 	}
 
 	if err != nil {
