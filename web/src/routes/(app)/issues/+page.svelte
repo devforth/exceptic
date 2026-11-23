@@ -137,7 +137,7 @@
 	{#snippet cell(issue: Issue, column: IssueColumn)}
 		{#if column.key === 'issue'}
 			<LevelBadge level={issue.level} href={changed(url, { level: [issue.level] })} />
-			<a href={issueHref(issue)} class="font-semibold text-text">{issue.title}</a>
+			<Button variant="title" href={issueHref(issue)}>{issue.title}</Button>
 			<span class="sr-only">({issue.status})</span>
 			{#if issue.location}
 				<div class="text-xs text-muted">{issue.location}</div>

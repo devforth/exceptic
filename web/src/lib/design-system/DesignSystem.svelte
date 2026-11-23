@@ -103,7 +103,15 @@ Every component with its variants, on sample data. Served only by the dev server
 	];
 
 	const iconNames = Object.keys(icons) as IconName[];
-	const buttonVariants: ButtonVariant[] = ['default', 'primary', 'danger', 'info', 'link', 'ghost'];
+	const buttonVariants: ButtonVariant[] = [
+		'default',
+		'primary',
+		'danger',
+		'info',
+		'link',
+		'title',
+		'ghost'
+	];
 	const badgeTones: Exclude<BadgeTone, 'project'>[] = [
 		'error',
 		'warning',

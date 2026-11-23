@@ -80,10 +80,10 @@
 	{#snippet cell({ user, can_manage }: Row, column: UserColumn)}
 		{#if column.key === 'user'}
 			{#if user.id === viewer}
-				<Button variant="link" href={resolve('/(app)/account')}>{user.display_name}</Button>
+				<Button variant="title" href={resolve('/(app)/account')}>{user.display_name}</Button>
 				<span class="text-xs text-muted">(you)</span>
 			{:else}
-				<Button variant="link" href={pageOf(user.id)}>{user.display_name}</Button>
+				<Button variant="title" href={pageOf(user.id)}>{user.display_name}</Button>
 			{/if}
 			{#if user.username !== user.display_name}
 				<div class="text-xs text-muted">{user.username}</div>

@@ -109,7 +109,7 @@
 >
 	{#snippet cell(connection: Connection, column: ConnectionColumn)}
 		{#if column.key === 'name'}
-			<Button variant="link" href={page(connection)}>{connection.name}</Button>
+			<Button variant="title" href={page(connection)}>{connection.name}</Button>
 		{:else if column.key === 'type'}
 			{typeLabel(connection.type)}
 		{:else if column.key === 'destination'}

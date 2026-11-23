@@ -67,6 +67,9 @@ only its icon, and title names it (tooltip and aria-label).
 		danger: `${boxed} [--tone:var(--color-error)] border-border bg-surface text-error not-disabled:hover:bg-error-bg`,
 		info: `${boxed} [--tone:var(--color-info)] border-info bg-info-bg text-info not-disabled:hover:bg-info-hover`,
 		link: 'focus-ring rounded-control text-accent hover:underline focus-visible:underline',
+		// The name of a table row that opens the record: the text's color, bold.
+		title:
+			'focus-ring rounded-control text-left font-semibold whitespace-normal text-text hover:underline focus-visible:underline',
 		// Quiet: no box until hovered (the menu's toggle).
 		ghost:
 			'focus-ring rounded-control text-muted not-disabled:hover:bg-bg not-disabled:hover:text-text'
@@ -80,6 +83,7 @@ only its icon, and title names it (tooltip and aria-label).
 		'forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-[Highlight]',
 		variants[variant],
 		variant !== 'link' &&
+			variant !== 'title' &&
 			(iconOnly ? 'size-8.5 p-0' : variant === 'info' ? 'h-9 px-3' : 'px-3 py-1.5')
 	]);
 </script>
