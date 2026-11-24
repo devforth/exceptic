@@ -80,10 +80,11 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 
 	const padding = $derived(compact ? 'px-2.5 py-1.5' : 'px-3 py-2.5');
 
-	function columnClasses(column: TableColumn<Key>) {
+	// Headings are centred on their row (a two-line heading next to one line), cells start at the top.
+	function columnClasses(column: TableColumn<Key>, heading = false) {
 		return [
 			padding,
-			'text-left align-top',
+			heading ? 'text-left align-middle' : 'text-left align-top',
 			column.number && 'text-right whitespace-nowrap tabular-nums',
 			column.actions && 'w-[1%] whitespace-nowrap',
 			column.fill && 'w-full max-w-0',
@@ -171,7 +172,7 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 			<thead class={headerless ? 'sr-only' : undefined}>
 				<tr>
 					{#if selectable}
-						<th scope="col" class={[padding, headingClasses, 'w-[1%] pr-0']}>
+						<th scope="col" class={[padding, headingClasses, 'w-[1%] pr-0 align-middle']}>
 							<input
 								type="checkbox"
 								class={checkClasses.checkbox}
@@ -190,7 +191,7 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 						<th
 							scope="col"
 							aria-sort={state?.direction}
-							class={[columnClasses(column), headingClasses, state?.direction && 'text-text']}
+							class={[columnClasses(column, true), headingClasses, state?.direction && 'text-text']}
 						>
 							{#if state && sort}
 								<!-- eslint-disable svelte/no-navigation-without-resolve -- the list's own address -->
