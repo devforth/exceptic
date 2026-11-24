@@ -22,7 +22,7 @@ type Kind string
 const (
 	// NewIssue: an error seen for the first time.
 	NewIssue Kind = "new_issue"
-	// Regression: a resolved issue happened again.
+	// Regression: a resolved issue happened again, or an ignored one whose ignore ended.
 	Regression Kind = "regression"
 	// Test: the "Send test" button of a connection.
 	Test Kind = "test"
@@ -106,6 +106,7 @@ type Store interface {
 
 	EnqueueOutbox(ctx context.Context, channels []string, projectIDs []int, kind string, payload []byte, now time.Time) error
 	DueOutbox(ctx context.Context, channel string, now time.Time, limit int) ([]store.OutboxMessage, error)
+	HasPendingOutbox(ctx context.Context, channel string) (bool, error)
 	PendingChannels(ctx context.Context) ([]string, error)
 	MarkOutboxSent(ctx context.Context, id int64, now time.Time) error
 	MarkOutboxRetry(ctx context.Context, id int64, lastError string, next, now time.Time) error
@@ -178,7 +179,7 @@ type Notifier struct {
 	running    sync.WaitGroup
 
 	workersMutex sync.Mutex
-	workers      map[string]*worker // by outbox channel (the connection id)
+	workers      map[string]*worker // by outbox channel (the connection id), while running
 
 	mutex  sync.Mutex
 	closed bool
@@ -242,7 +243,11 @@ func New(options Options) *Notifier {
 		}
 
 		notifier.dispatch()
+
+		// Under the lock, so no worker starts once the dispatcher is done.
+		notifier.workersMutex.Lock()
 		close(notifier.dispatched)
+		notifier.workersMutex.Unlock()
 	})
 
 	go func() {

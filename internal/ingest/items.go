@@ -44,6 +44,7 @@ func parseItems(logger *slog.Logger, project config.Project, envelope *sentry.En
 
 			for index := range batch {
 				batch[index].Timestamp.Time = sdkTime(batch[index].Timestamp.Time, received, drift)
+				limitLog(&batch[index])
 			}
 
 			logs = append(logs, batch...)

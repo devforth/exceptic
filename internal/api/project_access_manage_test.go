@@ -625,17 +625,17 @@ func TestProjectAccessAgents(t *testing.T) {
 	server.mcpAccess(tokens["backend"], http.StatusUnauthorized)
 }
 
-// Only someone with every project sets a disk share, which decides how the
-// projects compete for the database; a taken name of a project the admin
-// does not see is refused without saying it is a project's.
+// A limited admin sets the disk share of his projects, a ceiling for that
+// project alone; a taken name of a project the admin does not see is
+// refused without saying it is a project's.
 func TestProjectAccessProjectSettings(t *testing.T) {
 	server := newRESTServer(t)
 	seedProjects(t, server.database)
 	admin := server.webUserWith(store.RoleAdmin, store.OnlyProjects(1))
 	fullAdmin := server.webUser(store.RoleAdmin, false)
 
-	// A share is refused as forbidden (403); a taken name, hidden or not,
-	// as a conflict (409), so the status tells nothing of a hidden project.
+	// A taken name, hidden or not, is a conflict (409), so the status tells
+	// nothing of a hidden project.
 	refused := func(user uiUser, name, body string, status int, field, problem string) {
 		t.Helper()
 
@@ -653,32 +653,27 @@ func TestProjectAccessProjectSettings(t *testing.T) {
 	}
 
 	const (
-		shareProblem = "Only someone with access to all projects can change the disk share."
-		hiddenName   = "This name cannot be used."
-		takenName    = "Another project already has this name."
+		hiddenName = "This name cannot be used."
+		takenName  = "Another project already has this name."
 	)
-
-	refused(admin, "update_project", `{"project":"backend","disk_share":50}`, http.StatusForbidden, "disk_share", shareProblem)
-	refused(admin, "create_project", `{"name":"worker","disk_share":50}`, http.StatusForbidden, "disk_share", shareProblem)
 
 	var project struct {
 		DiskShare int `json:"disk_share"`
 	}
 
-	admin.request(http.MethodPost, "update_project", `{"project":"backend","color":"#123456"}`, &project)
-
-	if project.DiskShare != 100 {
-		t.Errorf("the disk share after another change: %d", project.DiskShare)
-	}
-
-	fullAdmin.request(http.MethodPost, "update_project", `{"project":"backend","disk_share":50}`, &project)
+	admin.request(http.MethodPost, "update_project", `{"project":"backend","disk_share":50}`, &project)
 
 	if project.DiskShare != 50 {
-		t.Errorf("the disk share set with every project: %d", project.DiskShare)
+		t.Errorf("the disk share set by an admin of backend: %d", project.DiskShare)
 	}
 
-	// Sent back unchanged, as the form does, a share he may not set is no change.
-	admin.request(http.MethodPost, "update_project", `{"project":"backend","disk_share":50,"color":""}`, &project)
+	admin.request(http.MethodPost, "create_project", `{"name":"worker","disk_share":40}`, &project)
+
+	if project.DiskShare != 40 {
+		t.Errorf("the disk share of a project the admin created: %d", project.DiskShare)
+	}
+
+	refused(admin, "update_project", `{"project":"frontend","disk_share":50}`, http.StatusForbidden, "", "")
 
 	refused(admin, "create_project", `{"name":"frontend"}`, http.StatusConflict, "name", hiddenName)
 	refused(admin, "update_project", `{"project":"backend","name":"frontend"}`, http.StatusConflict, "name", hiddenName)

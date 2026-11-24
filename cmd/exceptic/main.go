@@ -114,6 +114,15 @@ func run() error {
 		logger.Warn("ALLOWED_IPS is not set, the API and UI are reachable from any address")
 	}
 
+	if os.Getenv("RATE_LIMIT_PER_MINUTE") != "" {
+		logger.Warn("RATE_LIMIT_PER_MINUTE is no longer used: set RATE_LIMIT_EVENTS_PER_MINUTE and RATE_LIMIT_LOGS_PER_MINUTE")
+	}
+
+	if limit := settings.RateLimitLogsPerMinute; limit > 0 && limit < config.SDKLogBatch {
+		logger.Warn("RATE_LIMIT_LOGS_PER_MINUTE is below the logs an SDK sends in one batch: a batch over it is dropped whole",
+			"limit", limit, "batch", config.SDKLogBatch)
+	}
+
 	// Chat tokens are stored encrypted: without SECRET_KEY the key is the one
 	// generated into the data directory.
 	if settings.Notifications.SecretKey == "" {
@@ -193,7 +202,7 @@ func logRetention(logger *slog.Logger, settings config.Retention) {
 	}
 
 	logger.Info("retention", logging.Block, "max_database_size", config.FormatSize(settings.MaxDatabaseBytes),
-		"cleanup", fmt.Sprintf("from %d%% to %d%%", config.CleanupStartPercent, config.CleanupStopPercent))
+		"cleanup", fmt.Sprintf("from %d%% to %d%% of the data held, or when the files stay over %d%%", config.CleanupStartPercent, config.CleanupStopPercent, config.CleanupFilesPercent))
 }
 
 // notificationFactory builds channels for the connections set up in the UI.

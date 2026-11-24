@@ -184,15 +184,17 @@ func TestListCursorsAndPages(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	page, _ := database.ListLogs(ctx, store.LogFilter{Limit: 3, Offset: 2})
-	rest, _ := database.ListLogs(ctx, store.LogFilter{Limit: 10, BeforeID: page[2].ID})
+	listed, _ := database.ListLogs(ctx, store.LogFilter{Limit: 3, Offset: 2})
+	page := listed.Logs
+	following, _ := database.ListLogs(ctx, store.LogFilter{Limit: 10, BeforeID: page[2].ID})
+	rest := following.Logs
 
 	if len(page) != 3 || page[0].Body != "line 4" || len(rest) != 2 || rest[0].Body != "line 1" {
 		t.Fatalf("logs %v / %v", page, rest)
 	}
 
-	if count, more, _ := database.CountLogs(ctx, store.LogFilter{ProjectIDs: []int{2}, Levels: []string{"error"}}); count != 3 || more {
-		t.Errorf("project 2 errors: %d", count)
+	if count, _ := database.CountLogs(ctx, store.LogFilter{ProjectIDs: []int{2}, Levels: []string{"error"}}); count.Count != 3 || count.More {
+		t.Errorf("project 2 errors: %+v", count)
 	}
 }
 
@@ -406,7 +408,8 @@ func TestRepeatedMessages(t *testing.T) {
 		}
 	}
 
-	logs, err := database.ListLogs(ctx, store.LogFilter{})
+	page, err := database.ListLogs(ctx, store.LogFilter{})
+	logs := page.Logs
 
 	if err != nil || len(logs) != 4 || logs[0].Body != "retry 11" || logs[3].Body != "retry 8" {
 		t.Fatalf("kept %v (%v)", logs, err)
@@ -432,7 +435,7 @@ func TestLogDatesUseTimeMarks(t *testing.T) {
 	bodies := func(filter store.LogFilter) []string {
 		t.Helper()
 
-		logs, err := database.ListLogs(ctx, filter)
+		page, err := database.ListLogs(ctx, filter)
 
 		if err != nil {
 			t.Fatal(err)
@@ -440,7 +443,7 @@ func TestLogDatesUseTimeMarks(t *testing.T) {
 
 		var result []string
 
-		for _, record := range logs {
+		for _, record := range page.Logs {
 			result = append(result, record.Body)
 		}
 
@@ -624,8 +627,8 @@ func TestLogCountStopsAtTheLimit(t *testing.T) {
 		{store.LogFilter{Query: "INFO"}, 3, false},
 		{store.LogFilter{ProjectIDs: []int{1, 2}}, 5, true},
 	} {
-		if count, more, err := database.CountLogs(ctx, test.filter); err != nil || count != test.count || more != test.more {
-			t.Errorf("%+v: %d %v %v, want %d %v", test.filter, count, more, err, test.count, test.more)
+		if count, err := database.CountLogs(ctx, test.filter); err != nil || count.Count != test.count || count.More != test.more {
+			t.Errorf("%+v: %+v %v, want %d %v", test.filter, count, err, test.count, test.more)
 		}
 	}
 }
@@ -644,8 +647,8 @@ func TestLogSearch(t *testing.T) {
 	}
 
 	for query, want := range map[string]int{"get /USERS": 1, `"quoted"`: 1, "<id> &": 1, `C:\temp`: 1, "here": 1, "absent": 0, "level": 0} {
-		if logs, err := database.ListLogs(ctx, store.LogFilter{Query: query}); err != nil || len(logs) != want {
-			t.Errorf("%q: %d logs, want %d (%v)", query, len(logs), want, err)
+		if page, err := database.ListLogs(ctx, store.LogFilter{Query: query}); err != nil || len(page.Logs) != want {
+			t.Errorf("%q: %d logs, want %d (%v)", query, len(page.Logs), want, err)
 		}
 	}
 
@@ -653,11 +656,11 @@ func TestLogSearch(t *testing.T) {
 	ended, cancel := context.WithCancel(ctx)
 	cancel()
 
-	if logs, err := database.ListLogs(ended, store.LogFilter{Query: "absent"}); len(logs) != 0 || !errors.Is(err, context.Canceled) {
-		t.Errorf("ended search: %d logs, %v", len(logs), err)
+	if page, err := database.ListLogs(ended, store.LogFilter{Query: "absent"}); len(page.Logs) != 0 || !errors.Is(err, context.Canceled) {
+		t.Errorf("ended search: %d logs, %v", len(page.Logs), err)
 	}
 
-	if _, _, err := database.CountLogs(ended, store.LogFilter{Query: "absent"}); !errors.Is(err, context.Canceled) {
+	if _, err := database.CountLogs(ended, store.LogFilter{Query: "absent"}); !errors.Is(err, context.Canceled) {
 		t.Errorf("ended count: %v", err)
 	}
 }
@@ -914,5 +917,95 @@ func TestIssuePagesMatchAFullSort(t *testing.T) {
 				t.Errorf("%s from %d: got %v, want %v", sort, offset, page, want)
 			}
 		}
+	}
+}
+
+// sendCapped writes count events of one fingerprint received at once, each
+// in its own envelope under the cap, and returns their results.
+func sendCapped(t *testing.T, database *Store, limit int) func(fingerprint string, at time.Time, count int) []store.SaveResult {
+	t.Helper()
+
+	sent := 0
+
+	return func(fingerprint string, at time.Time, count int) []store.SaveResult {
+		var envelopes []Envelope
+
+		for range count {
+			sent++
+			envelopes = append(envelopes, Envelope{EventsPerIssue: limit, Events: []store.NewEvent{{
+				ProjectID: 1, EventID: fmt.Sprintf("%032x", sent), Fingerprint: fingerprint, Title: "Error: " + fingerprint,
+				Level: "error", Timestamp: at, ReceivedAt: at, Payload: []byte(`{}`),
+			}}})
+		}
+
+		results, err := database.Write(envelopes)
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var flat []store.SaveResult
+
+		for _, result := range results {
+			flat = append(flat, result...)
+		}
+
+		return flat
+	}
+}
+
+// An issue stores at most EventsPerIssue events a minute of receive time;
+// the others only count. A new issue, another issue and a regression are
+// always stored.
+func TestEventsPerIssueCap(t *testing.T) {
+	ctx := context.Background()
+	database := openTest(t)
+	start := time.Date(2026, 11, 10, 8, 0, 0, 0, time.UTC)
+	send := sendCapped(t, database, 3)
+	storedEvents := func(fingerprint string) int {
+		count, _, err := database.events.Primary(kv.Text(storedIssue(database, fingerprint).ID)).Count(database.db, 0)
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return count
+	}
+
+	results := send("loop", start, 5)
+	results = append(results, send("loop", start.Add(30*time.Second), 5)...)
+
+	if !results[0].NewIssue || results[2].NotStored || !results[3].NotStored || !results[9].NotStored {
+		t.Fatalf("results %+v", results)
+	}
+
+	issue := storedIssue(database, "loop")
+
+	if stored := storedEvents("loop"); stored != 3 || issue.EventCount != 10 || issue.NotStored != 7 || !issue.LastSeen.Equal(start.Add(30*time.Second)) {
+		t.Fatalf("stored %d, count %d, not stored %d, last seen %v", stored, issue.EventCount, issue.NotStored, issue.LastSeen)
+	}
+
+	if other := send("other", start.Add(40*time.Second), 1); other[0].NotStored || !other[0].NewIssue {
+		t.Fatalf("another issue in the same minute: %+v", other)
+	}
+
+	database.SetClock(func() time.Time { return start.Add(45 * time.Second) })
+
+	if _, err := database.SetIssuesStatus(ctx, []string{issue.ID}, store.StatusResolved, store.Actor{Source: store.SourceAPI}); err != nil {
+		t.Fatal(err)
+	}
+
+	if reopened := send("loop", start.Add(50*time.Second), 1); !reopened[0].Regression || reopened[0].NotStored {
+		t.Fatalf("regression over the cap: %+v", reopened)
+	}
+
+	if next := send("loop", start.Add(time.Minute), 4); next[2].NotStored || !next[3].NotStored {
+		t.Fatalf("the next minute: %+v", next)
+	}
+
+	issue = storedIssue(database, "loop")
+
+	if stored := storedEvents("loop"); stored != 7 || issue.EventCount != 15 || issue.NotStored != 8 {
+		t.Fatalf("stored %d, count %d, not stored %d", stored, issue.EventCount, issue.NotStored)
 	}
 }

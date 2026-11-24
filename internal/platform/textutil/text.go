@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // AuthCredential matches "Bearer <token>" and "Basic <token>" in text; group
@@ -173,6 +174,32 @@ func Shorten(text string, limit int) string {
 	}
 
 	return text
+}
+
+// TruncateBytes cuts text to at most limit bytes, where a character starts.
+func TruncateBytes(text string, limit int) string {
+	if len(text) <= limit {
+		return text
+	}
+
+	cut := max(limit, 0)
+
+	for back := 0; cut > 0 && back < utf8.UTFMax-1 && !utf8.RuneStart(text[cut]); back++ {
+		cut--
+	}
+
+	return text[:cut]
+}
+
+// ShortenBytes cuts text to at most limit bytes, where a character starts,
+// and then adds "…" when it was cut: unlike Shorten, the mark comes after
+// the limit.
+func ShortenBytes(text string, limit int) string {
+	if len(text) <= limit {
+		return text
+	}
+
+	return TruncateBytes(text, limit) + "…"
 }
 
 // Slug lowercases text and keeps Latin letters, digits and "_", turning every

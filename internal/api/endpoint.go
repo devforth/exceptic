@@ -148,7 +148,8 @@ func (call Call) TraceID(value string) string {
 type Text string
 
 // Define binds a handler to its endpoint; the input schema comes from In,
-// with Choices and the bounds of a "limit" (a page size) and a "disk_share". It panics on an
+// with Choices and the bounds of a "limit" (a page size), a "disk_share" and an
+// "ignore_until_events". It panics on an
 // endpoint without transports or an input the schema cannot describe,
 // programming errors found at startup.
 func Define[In, Out any](endpoint Endpoint, handler func(context.Context, Call, In) (Out, error)) Endpoint {
@@ -183,6 +184,10 @@ func Define[In, Out any](endpoint Endpoint, handler func(context.Context, Call, 
 	if limit, ok := schema.Properties["limit"]; ok {
 		limit.Minimum, limit.Maximum = new(float64(0)), new(float64(MaxLimit))
 		limit.Default = json.RawMessage(strconv.Itoa(DefaultLimit))
+	}
+
+	if events, ok := schema.Properties["ignore_until_events"]; ok {
+		events.Minimum, events.Maximum = new(float64(1)), new(float64(store.MaxIgnoreEvents))
 	}
 
 	// Its step is the form's rule (services), refused at the field.

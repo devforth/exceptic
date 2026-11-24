@@ -347,7 +347,7 @@ func TestNewProjectKeepsTheShownColor(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	service := newProjects(database, registry, &config.Config{})
+	service := newProjects(database, registry, &config.Config{}, nil)
 	shown := service.Color(store.Project{})
 	saved, problems, err := service.Save(ctx, store.User{}, url.Values{"name": {"worker"}, "color": {shown}}, store.Project{})
 
@@ -432,8 +432,9 @@ func TestSlackDuplicates(t *testing.T) {
 	}
 }
 
-// The storage of the Projects page: the percent of the limit, capped at 100;
-// without a limit none.
+// The storage of the Projects page: the data the database holds as the
+// cleanup measures it, the files apart, the percent of the limit capped at
+// 100; without a limit none.
 func TestStorage(t *testing.T) {
 	ctx := context.Background()
 	database := openStore(t)
@@ -443,13 +444,20 @@ func TestStorage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	full, err := newProjects(database, registry, &config.Config{Retention: config.Retention{MaxDatabaseBytes: 1}}).Storage(ctx, store.Access{})
+	full, err := newProjects(database, registry, &config.Config{Retention: config.Retention{MaxDatabaseBytes: 1}}, nil).Storage(ctx, store.Access{})
 
-	if err != nil || full.Percent != 100 || full.Limit == "" || full.UsedBytes == 0 || full.CleanupStopPercent != config.CleanupStopPercent {
+	if err != nil || full.Percent != 100 || full.Limit == "" || full.UsedBytes == 0 || full.CleanupStopPercent != config.CleanupStopPercent ||
+		full.CleanupStartPercent != config.CleanupStartPercent {
 		t.Errorf("storage = %+v, %v; want the percent capped at 100", full, err)
 	}
 
-	unlimited, err := newProjects(database, registry, &config.Config{}).Storage(ctx, store.Access{})
+	usage, err := database.ProjectUsage(ctx)
+
+	if err != nil || full.UsedBytes != usage.Live || full.FilesBytes != usage.Files || full.Files == "" || full.OtherBytes != usage.Live {
+		t.Errorf("storage = %+v, usage %+v, %v; want the data held and the files", full, usage, err)
+	}
+
+	unlimited, err := newProjects(database, registry, &config.Config{}, nil).Storage(ctx, store.Access{})
 
 	if err != nil || unlimited.Limit != "" || unlimited.Percent != 0 || unlimited.Used == "" {
 		t.Errorf("no size limit: %+v, %v", unlimited, err)
@@ -477,5 +485,36 @@ func TestVisibleRunHidesStepsOfHiddenProjects(t *testing.T) {
 
 	if all, _ := visibleRun(store.Access{}, run); len(all.Steps) != 3 {
 		t.Errorf("every project: %+v", all.Steps)
+	}
+}
+
+// stoppedLogs answers every log search as one that ran out of time.
+type stoppedLogs struct {
+	store.Store
+	searches int
+}
+
+func (logs *stoppedLogs) ListLogs(context.Context, store.LogFilter) (store.LogPage, error) {
+	logs.searches++
+
+	return store.LogPage{Logs: []store.LogRecord{}, LogScan: store.LogScan{Stopped: true, Rest: 10}}, nil
+}
+
+// A related-logs search that ran out of time is not searched again by the
+// trace's window and says it stopped, and its trace may still have logs: the link stays.
+func TestRelatedLogsStoppedSearch(t *testing.T) {
+	ctx := context.Background()
+	logs := &stoppedLogs{Store: openStore(t)}
+	issues := newIssues(slog.New(slog.DiscardHandler), logs)
+	event := store.Event{EventSummary: store.EventSummary{ProjectID: 1, TraceID: "trace", SpanID: "span", Timestamp: time.Now()}}
+
+	related, err := issues.RelatedLogs(ctx, store.Access{}, event, nil)
+
+	if err != nil || logs.searches != 1 || !related.Stopped {
+		t.Errorf("searches %d, stopped %v, %v: a stopped span search must not fall back and says it stopped", logs.searches, related.Stopped, err)
+	}
+
+	if found, err := issues.TraceLogs(ctx, store.Access{}, event); err != nil || !found {
+		t.Errorf("trace has logs %v, %v: unknown after a stopped search", found, err)
 	}
 }

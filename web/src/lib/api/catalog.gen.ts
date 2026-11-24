@@ -17,6 +17,10 @@ export interface Endpoints {
 			action: 'resolve' | 'ignore' | 'reopen' | 'delete';
 			/** The issues; issues deleted meanwhile are skipped. */
 			issue_ids: string[] | null;
+			/** With ignore only: unresolved again after this time. */
+			ignore_for?: '' | '1h' | '24h' | '7d' | '30d';
+			/** With ignore only: unresolved again once it happens this many more times. */
+			ignore_until_events?: number;
 		};
 		out: {
 			action: string;
@@ -91,6 +95,9 @@ export interface Endpoints {
 		out: {
 			count: number;
 			more?: boolean;
+			stopped?: boolean;
+			searched_to?: IsoTime | null;
+			from_id?: number;
 		};
 	};
 	create_connection: {
@@ -164,7 +171,6 @@ export interface Endpoints {
 			color?: string;
 			shown_color: string;
 			disk_share: number;
-			disk_share_locked?: string;
 		};
 	};
 	create_user: {
@@ -302,9 +308,13 @@ export interface Endpoints {
 				level: string;
 				status: string;
 				event_count: number;
+				not_stored?: number;
+				stored_events: number;
 				first_seen: IsoTime;
 				last_seen: IsoTime;
 				resolved_at?: IsoTime | null;
+				ignored_until?: IsoTime | null;
+				ignore_events_left?: number;
 				mcp_reference?: string;
 			};
 			agent_prompt: string;
@@ -313,6 +323,7 @@ export interface Endpoints {
 				to: string;
 				name?: string;
 				by_event?: boolean;
+				by_expiry?: boolean;
 				via_mcp?: boolean;
 				event_id?: string;
 				created_at: IsoTime;
@@ -396,6 +407,7 @@ export interface Endpoints {
 					body: string;
 				}[] | null;
 				logs_from_request?: boolean;
+				logs_stopped?: boolean;
 				payload: string;
 			} | null;
 		};
@@ -427,7 +439,6 @@ export interface Endpoints {
 			color?: string;
 			shown_color: string;
 			disk_share: number;
-			disk_share_locked?: string;
 		};
 	};
 	get_project_defaults: {
@@ -436,7 +447,6 @@ export interface Endpoints {
 			shown_color: string;
 			log_levels: string[] | null;
 			disk_share: number;
-			disk_share_locked?: string;
 		};
 	};
 	get_project_setup: {
@@ -494,6 +504,9 @@ export interface Endpoints {
 			limit_bytes?: number;
 			limit?: string;
 			percent?: number;
+			files_bytes: number;
+			files: string;
+			cleanup_start_percent: number;
 			cleanup_stop_percent: number;
 			projects: ({
 				id: number;
@@ -502,6 +515,12 @@ export interface Endpoints {
 				size?: string;
 				last_received?: IsoTime | null;
 				limit_bytes: number;
+				dropped?: {
+					kind: string;
+					count: number;
+					reason: string;
+					reason_text: string;
+				}[] | null;
 				oldest: {
 					logs_below_error?: IsoTime | null;
 					error_logs?: IsoTime | null;
@@ -564,7 +583,11 @@ export interface Endpoints {
 	list_cleanups: {
 		in: Record<string, never>;
 		out: {
+			start_percent: number;
 			stop_percent: number;
+			files_percent: number;
+			stale_percent: number;
+			compaction_attempts: number;
 			kept: number;
 			runs: ({
 				id: number;
@@ -578,6 +601,11 @@ export interface Endpoints {
 				size_before: string;
 				compacted: string;
 				size_after: string;
+				freed: string;
+				before_files?: boolean;
+				arrived?: string;
+				size_now?: string;
+				files?: string;
 				stop: string;
 				needed: string;
 				deleted_steps: string;
@@ -594,6 +622,16 @@ export interface Endpoints {
 						deleted: string;
 					}[] | null;
 				})[] | null;
+				compaction?: {
+					status: string;
+					attempts?: number;
+					files_before?: string;
+					files_after?: string;
+					freed?: string;
+					files_grew?: boolean;
+					took?: string;
+					error?: string;
+				} | null;
 			})[] | null;
 		};
 	};
@@ -721,9 +759,13 @@ export interface Endpoints {
 				level: string;
 				status: string;
 				event_count: number;
+				not_stored?: number;
+				stored_events: number;
 				first_seen: IsoTime;
 				last_seen: IsoTime;
 				resolved_at?: IsoTime | null;
+				ignored_until?: IsoTime | null;
+				ignore_events_left?: number;
 				mcp_reference?: string;
 			})[] | null;
 			next_cursor?: string;
@@ -755,6 +797,8 @@ export interface Endpoints {
 			cursor?: string;
 			/** Logs to skip, newest first, for numbered pages; next_cursor is faster. Not with cursor. */
 			offset?: number;
+			/** Only logs with this ID or a greater one. */
+			from_id?: number;
 		};
 		out: {
 			items: ({
@@ -770,6 +814,8 @@ export interface Endpoints {
 				} | null;
 			})[] | null;
 			next_cursor?: string;
+			stopped?: boolean;
+			searched_to?: IsoTime | null;
 		};
 	};
 	list_projects: {
@@ -1017,7 +1063,6 @@ export interface Endpoints {
 			color?: string;
 			shown_color: string;
 			disk_share: number;
-			disk_share_locked?: string;
 		};
 	};
 	update_user: {
@@ -1186,6 +1231,7 @@ export type ErrorBody = {
 export const choices = {
 	apply_issue_action: {
 		action: ['resolve', 'ignore', 'reopen', 'delete'],
+		ignore_for: ['1h', '24h', '7d', '30d'],
 	},
 	count_deliveries: {
 		status: ['pending', 'sent', 'failed'],
@@ -1270,11 +1316,17 @@ export const limits = {
 export const issueStatuses = [
 	{ name: 'unresolved', meaning: 'still happening or not looked at yet' },
 	{ name: 'resolved', meaning: 'fixed, reopens if the error happens again' },
-	{ name: 'ignored', meaning: 'no notifications, stays ignored' },
+	{ name: 'ignored', meaning: 'no notifications; for good, or until the time or number of events chosen when ignoring' },
 ] as const;
 
 /** The most issues one action takes. */
 export const maxActionIssues = 1000;
+
+/** The events an issue stores a minute; the others only count (not_stored). */
+export const eventsPerIssuePerMinute = 10;
+
+/** How long one log search runs before it stops (count_logs, list_logs: stopped). */
+export const logSearchSeconds = 20;
 
 /** The kind of a connected agent that is a personal token (list_agents). */
 export const personalTokenKind = 'token';
@@ -1299,10 +1351,10 @@ export const cleanupSteps = [
 	{ name: 'logs older than a month', always: true },
 	{ name: 'events older than a month beyond the newest of their issue', always: true },
 	{ name: 'events of resolved and ignored issues but the latest', always: true },
-	{ name: 'logs below error', always: true },
+	{ name: 'logs below error, oldest first', always: false },
 	{ name: 'events below error but the latest of their issue', always: false },
-	{ name: 'error and fatal logs', always: false },
 	{ name: 'events beyond the newest of their issue', always: false },
+	{ name: 'error and fatal logs', always: false },
 	{ name: 'events older than a week', always: false },
 	{ name: 'events of the last week', always: false },
 	{ name: 'latest events of issues not seen for a week', always: false },
@@ -1311,7 +1363,7 @@ export const cleanupSteps = [
 
 /** The numbers of the cleanup by size. */
 export const cleanupRules = {
-	startPercent: 100,
+	startPercent: 99,
 	stopPercent: 80,
 	ageDays: 30,
 	recentAgeDays: 7,
@@ -1347,7 +1399,8 @@ export const help = {
 		'Projects': {
 			'Color': 'Marks the project\'s badge in lists and the header of its emails.',
 			'DSN': 'The address the app\'s Sentry SDK sends errors and logs to. The key in it only allows sending to this project, so it can be in browser code.',
-			'Disk share': 'The part of MAX_DATABASE_SIZE the project may take. When it reaches it, even with the database under its limit, the cleanup deletes the project\'s own data in the usual order, down to 80% of its share, so a flood in one project does not push out the others. A ceiling, not a reservation: shares may add up to more than 100%. At 100% the project has no limit of its own. Only someone with all projects changes it, since it decides how the projects compete for the database.',
+			'Disk share': 'The part of MAX_DATABASE_SIZE the project may take. When it reaches 99% of it, even with the database under its limit, the cleanup deletes the project\'s own data in the usual order, down to 80% of its share, so a flood in one project does not push out the others. A ceiling, not a reservation: shares may add up to more than 100%. At 100% the project has no limit of its own.',
+			'Dropped': 'What the project sent in the last 24 hours that was not stored: over its rate limit, refused while the server was busy, too large, unreadable or not received whole, plus what its SDK reports holding back during a rate limit or dropping with its queue full (its failed sends are not counted, since it reports the refusals here that way too). Counted in memory, so a restart starts from zero; shown only when something was dropped.',
 			'History kept': 'The oldest record of each kind still stored. When the database nears its limit, the cleanup deletes the oldest first: logs below error, then error logs, then errors.',
 			'Logs': 'Log levels to store; others are dropped when they arrive. Unchanged, the project follows RECORD_LOG_LEVELS. Errors and messages of every level are stored.',
 		},
@@ -1357,6 +1410,6 @@ export const help = {
 		},
 	},
 	settings: {
-		MAX_DATABASE_SIZE: 'Once the database reaches it, the least useful data is deleted until the database is at 80%. Takes KB, MB, GB, at least 500MB; 0 turns the limit off, and nothing is deleted or thinned. Envelopes waiting to be stored may take 20% of it (of 2GB when it is off); beyond that new ones get 429 until the queue drains.',
+		MAX_DATABASE_SIZE: 'Once the data the database holds reaches 99% of it, the least useful data is deleted until it holds 80%. The files may take more (see below); give the disk at least 1.3 times this. Takes KB, MB, GB, at least 500MB; 0 turns the limit off, and nothing is deleted or thinned. Envelopes waiting to be stored may take 20% of it (of 2GB when it is off); beyond that new ones get 429 until the queue drains.',
 	}
 } as const;

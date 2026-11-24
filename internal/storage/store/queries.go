@@ -20,6 +20,39 @@ type Issue struct {
 	FirstSeen  time.Time  `json:"first_seen"`
 	LastSeen   time.Time  `json:"last_seen"`
 	ResolvedAt *time.Time `json:"resolved_at"`
+	// IgnoredUntil: an ignored issue is unresolved again from this time.
+	IgnoredUntil *time.Time `json:"ignored_until,omitempty"`
+	// IgnoredUntilCount: an ignored issue is unresolved again once EventCount reaches it.
+	IgnoredUntilCount int `json:"ignored_until_count,omitempty"`
+	// NotStored counts the events over the cap of one issue a minute
+	// (config.EventsPerIssuePerMinute): counted in EventCount, not stored.
+	NotStored int `json:"not_stored,omitempty"`
+	// Stored counts the events stored now; the cleanup deletes some.
+	Stored int `json:"stored"`
+}
+
+// IgnoreExpired says whether the issue's ignore time has passed at now.
+func (issue Issue) IgnoreExpired(now time.Time) bool {
+	return issue.Status == StatusIgnored && issue.IgnoredUntil != nil && !now.Before(*issue.IgnoredUntil)
+}
+
+// At is the issue as it reads at now: one whose ignore time has passed is
+// unresolved, stored so at its next event or status change.
+func (issue Issue) At(now time.Time) Issue {
+	if issue.IgnoreExpired(now) {
+		issue.Status, issue.IgnoredUntil, issue.IgnoredUntilCount = StatusUnresolved, nil, 0
+	}
+
+	return issue
+}
+
+// IgnoreEventsLeft is how many more events end the ignore; 0 without that bound.
+func (issue Issue) IgnoreEventsLeft() int {
+	if issue.Status != StatusIgnored || issue.IgnoredUntilCount == 0 {
+		return 0
+	}
+
+	return max(issue.IgnoredUntilCount-issue.EventCount, 1)
 }
 
 // EventSummary is an event without its payload, for lists.
@@ -129,8 +162,34 @@ type LogFilter struct {
 	Since      time.Time
 	Until      time.Time
 	BeforeID   int64
+	FromID     int64 // only logs with this id or a greater one (LogCount.FromID)
 	Limit      int
 	Offset     int // page offset (list_logs takes it or BeforeID)
+}
+
+// LogScan says whether a log scan stopped at config.LogSearchTime and how far
+// it got: the logs with an id below Rest were not searched (BeforeID = Rest
+// goes on), those received at or after SearchedTo all were.
+type LogScan struct {
+	Stopped    bool
+	Rest       int64
+	SearchedTo time.Time
+}
+
+// LogCount is a log count; More says it stopped at LogCountLimit. A count
+// that read the logs gives FromID: a list of its matches searches no further
+// back (LogFilter.FromID), the oldest it found or, stopped, its Rest.
+type LogCount struct {
+	Count  int
+	More   bool
+	FromID int64
+	LogScan
+}
+
+// LogPage is what a log list found within its scan.
+type LogPage struct {
+	Logs []LogRecord
+	LogScan
 }
 
 // LogCountLimit is where counting logs stops: an exact count of millions of

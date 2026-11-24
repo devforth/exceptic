@@ -26,3 +26,10 @@ var Limits = FieldLimits{
 	VerificationCode: VerificationCodeDigits, TelegramToken: TelegramTokenPattern, TelegramChat: TelegramChatPattern,
 	SlackToken: SlackTokenPattern, SlackChannel: SlackChannelPattern,
 }
+
+// HTTP server limits: connections over MaxConnections wait in the accept
+// queue; a request whose headers are larger than MaxHeaderBytes gets 431.
+const (
+	MaxConnections = 1000
+	MaxHeaderBytes = 64 << 10
+)

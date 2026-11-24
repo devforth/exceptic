@@ -2,6 +2,7 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { logSearchSeconds } from '#lib/api/catalog.gen.ts';
 	import { get, type Item, errorMessage } from '#lib/api/client.ts';
 	import AgentCopyButton from '#lib/components/AgentCopyButton.svelte';
 	import Badge from '#lib/components/Badge.svelte';
@@ -19,6 +20,7 @@
 	import Notice from '#lib/components/Notice.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import StatusBadge from '#lib/components/StatusBadge.svelte';
+	import { ignoreBoundText } from '#lib/components/issueStatus.ts';
 	import Table from '#lib/components/Table.svelte';
 	import type { TableColumn } from '#lib/components/table.ts';
 	import Time from '#lib/components/Time.svelte';
@@ -27,7 +29,14 @@
 	import { toast } from '#lib/toast.svelte.ts';
 	import type { PageProps } from './$types';
 	import ExceptionCard from './ExceptionCard.svelte';
-	import { changeAuthor, eventNotice, type EventDetails, type IssueDetails } from './issue.ts';
+	import {
+		changeAuthor,
+		eventNotice,
+		eventsShownText,
+		notStoredText,
+		type EventDetails,
+		type IssueDetails
+	} from './issue.ts';
 	import StatusHistory from './StatusHistory.svelte';
 
 	let { data }: PageProps = $props();
@@ -86,10 +95,15 @@
 			{ label: 'Project', key: 'project' },
 			{ label: 'Status', key: 'status' },
 			{ label: 'Events', key: 'events' },
+			{ label: 'Not stored', key: 'notStored' },
 			{ label: 'First seen', key: 'firstSeen' },
 			{ label: 'Last seen', key: 'lastSeen' },
 			{ label: 'Resolved', key: 'resolved' }
-		].filter((fact) => fact.key !== 'resolved' || issue.resolved_at)
+		].filter(
+			(fact) =>
+				(fact.key !== 'resolved' || issue.resolved_at) &&
+				(fact.key !== 'notStored' || issue.not_stored)
+		)
 	);
 
 	function eventFacts(shown: EventDetails): Fact[] {
@@ -187,7 +201,11 @@
 				title="Issues of {issue.project}"
 			/>
 		{:else if fact.key === 'status'}
-			<StatusBadge status={issue.status} href={issuesWith({ status: issue.status })} />
+			<StatusBadge
+				status={issue.status}
+				href={issuesWith({ status: issue.status })}
+				detail={issue.status === 'ignored' ? ignoreBoundText(issue) : undefined}
+			/>
 			{#if history[0]}
 				<span class="text-xs text-muted">
 					{changeAuthor(history[0])} · <Time at={history[0].created_at} />
@@ -199,6 +217,8 @@
 			{:else}
 				{issue.event_count}
 			{/if}
+		{:else if fact.key === 'notStored'}
+			{notStoredText(issue.not_stored ?? 0)}
 		{:else if fact.key === 'firstSeen'}
 			<Time at={issue.first_seen} />
 		{:else if fact.key === 'lastSeen'}
@@ -325,9 +345,7 @@
 					{/snippet}
 				</Table>
 				<div class="flex flex-wrap items-center gap-3 text-xs text-muted">
-					{#if issue.event_count > events.length}
-						Showing the latest {events.length} of {issue.event_count} events.
-					{/if}
+					{eventsShownText(events.length, issue.stored_events) ?? ''}
 					{#if eventsCursor}
 						<Button busy={loadingMore} onclick={loadMore}>Load more</Button>
 					{/if}
@@ -337,19 +355,25 @@
 	{/if}
 
 	{#if event}
-		{#if event.related_logs?.length}
+		{#if event.related_logs?.length || event.logs_stopped}
 			<Details
 				title={event.logs_from_request ? 'Logs from the same request' : 'Logs from the same trace'}
-				count={event.related_logs.length}
+				count={event.related_logs?.length ?? 0}
 			>
-				{#if !event.logs_from_request}
+				{#if event.logs_stopped}
+					<p class="text-xs text-muted">
+						The search for these logs stopped after {logSearchSeconds} s, so there may be more: open the
+						trace's logs to search further.
+					</p>
+				{/if}
+				{#if !event.logs_from_request && event.related_logs?.length}
 					<p class="text-xs text-muted">
 						Not linked to this request exactly: logs of the same trace within a minute of the error.
 					</p>
 				{/if}
 				<Table
 					columns={logColumns}
-					rows={event.related_logs}
+					rows={event.related_logs ?? []}
 					label="Related logs"
 					compact
 					scroll

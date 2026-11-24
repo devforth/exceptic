@@ -43,6 +43,32 @@ func TestShortenDoesNotCopyTheText(t *testing.T) {
 	}
 }
 
+// ShortenBytes keeps at most limit bytes, cut where a character starts, and
+// marks the cut after them.
+func TestShortenBytes(t *testing.T) {
+	for _, test := range []struct {
+		text  string
+		limit int
+		want  string
+	}{
+		{"abc", 3, "abc"},
+		{"abcd", 3, "abc…"},
+		{"привіт", 12, "привіт"},
+		{"привіт", 5, "пр…"}, // two bytes a letter: the third would end past 5
+		{"привіт", 6, "при…"},
+		{"a😀b", 4, "a…"},
+		{"ab", 0, "…"},
+	} {
+		if got := ShortenBytes(test.text, test.limit); got != test.want {
+			t.Errorf("ShortenBytes(%q, %d) = %q, want %q", test.text, test.limit, got, test.want)
+		}
+	}
+
+	if got := TruncateBytes("привіт", 5); got != "пр" {
+		t.Errorf("TruncateBytes = %q", got)
+	}
+}
+
 func TestMaskSecret(t *testing.T) {
 	for secret, want := range map[string]string{
 		"":      "",

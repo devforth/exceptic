@@ -17,18 +17,49 @@ import (
 type issueRecord struct {
 	store.Issue
 	Fingerprint string `json:"fingerprint"`
-	// Stored counts the stored events; EventCount counts every event received.
-	Stored int `json:"stored"`
 	// EventDays counts the stored events per day received, oldest first.
 	EventDays []dayCount `json:"event_days"`
+	// IgnoredAt is when an ignore until a count of events was set: events
+	// received before it (an inbox backlog) do not count toward it.
+	IgnoredAt time.Time `json:"ignored_at,omitzero"`
 
 	// storedSize is the size of the stored value (kv.Collection.Write).
 	storedSize int
+	// minute counts the events stored in a Unix minute, for the cap of
+	// events an issue stores (overCap); only in memory.
+	minute eventWindow
 }
 
 type dayCount struct {
 	Day   int32 `json:"d"` // days since 1970-01-01, UTC
 	Count int   `json:"n"`
+}
+
+type eventWindow struct {
+	start  int64
+	events int
+}
+
+// full moves the window to start and says whether it holds limit events.
+func (window *eventWindow) full(start int64, limit int) bool {
+	if start > window.start {
+		*window = eventWindow{start: start}
+	}
+
+	return limit > 0 && window.events >= limit
+}
+
+// overCap says whether an event received at the time is over the limit of
+// events the issue stores a minute (0: none), and counts it when it is not;
+// an event that must be stored is counted whatever the cap.
+func (issue *issueRecord) overCap(received time.Time, limit int, mustStore bool) bool {
+	if issue.minute.full(received.Unix()/60, limit) && !mustStore {
+		return true
+	}
+
+	issue.minute.events++
+
+	return false
 }
 
 func (issue *issueRecord) addEvent(at time.Time) {
@@ -59,6 +90,26 @@ func (issue *issueRecord) removeEvent(at time.Time) {
 	}
 }
 
+// ignoreUntil sets the bound of an ignored issue's ignore, counted from now
+// and its events so far; any other status has none.
+func (issue *issueRecord) ignoreUntil(bound store.IgnoreBound, now time.Time) {
+	issue.IgnoredUntil, issue.IgnoredUntilCount, issue.IgnoredAt = nil, 0, time.Time{}
+
+	if issue.Status != store.StatusIgnored {
+		return
+	}
+
+	if bound.For > 0 {
+		until := now.Add(bound.For).UTC()
+		issue.IgnoredUntil = &until
+	}
+
+	if bound.Events > 0 {
+		issue.IgnoredUntilCount = issue.EventCount + bound.Events
+		issue.IgnoredAt = now.UTC()
+	}
+}
+
 func (issue *issueRecord) copy() *issueRecord {
 	duplicate := *issue
 	duplicate.EventDays = slices.Clone(issue.EventDays)
@@ -66,6 +117,11 @@ func (issue *issueRecord) copy() *issueRecord {
 	if issue.ResolvedAt != nil {
 		resolvedAt := *issue.ResolvedAt
 		duplicate.ResolvedAt = &resolvedAt
+	}
+
+	if issue.IgnoredUntil != nil {
+		until := *issue.IgnoredUntil
+		duplicate.IgnoredUntil = &until
 	}
 
 	return &duplicate
@@ -121,9 +177,9 @@ func inRange(filter store.IssueFilter, at time.Time) bool {
 	return (filter.SeenSince.IsZero() || !at.Before(filter.SeenSince)) && (filter.SeenUntil.IsZero() || at.Before(filter.SeenUntil))
 }
 
-func matches(issue *issueRecord, filter store.IssueFilter) match {
+func matches(issue *issueRecord, filter store.IssueFilter, now time.Time) match {
 	if len(filter.ProjectIDs) > 0 && !slices.Contains(filter.ProjectIDs, issue.ProjectID) ||
-		filter.Status != "" && issue.Status != filter.Status ||
+		filter.Status != "" && issue.At(now).Status != filter.Status ||
 		len(filter.Levels) > 0 && !slices.Contains(filter.Levels, issue.Level) ||
 		filter.Query != "" && !textutil.ContainsFold(issue.Title, filter.Query) && !textutil.ContainsFold(issue.Culprit, filter.Query) {
 		return noMatch
@@ -192,10 +248,12 @@ func (database *Store) anyEventInRange(issueID string, filter store.IssueFilter)
 func (database *Store) filterIssues(filter store.IssueFilter, visit func(issue *issueRecord)) error {
 	var check []*issueRecord
 
+	now := database.now()
+
 	database.issuesMutex.RLock()
 
 	for _, issue := range database.table.byID {
-		switch matches(issue, filter) {
+		switch matches(issue, filter, now) {
 		case isMatch:
 			visit(issue)
 		case checkEvents:
@@ -332,9 +390,10 @@ func (database *Store) ListIssues(ctx context.Context, filter store.IssueFilter)
 	}
 
 	issues := make([]store.Issue, 0, end-start)
+	now := database.now()
 
 	for _, issue := range matched[start:end] {
-		issues = append(issues, issue.Issue)
+		issues = append(issues, issue.At(now))
 	}
 
 	return issues, nil
@@ -351,7 +410,7 @@ func (database *Store) GetIssue(_ context.Context, issueID string) (store.Issue,
 		return store.Issue{}, store.ErrNotFound
 	}
 
-	return issue.Issue, nil
+	return issue.At(database.now()), nil
 }
 
 func (database *Store) GetIssues(_ context.Context, issueIDs []string) ([]store.Issue, error) {
@@ -360,10 +419,11 @@ func (database *Store) GetIssues(_ context.Context, issueIDs []string) ([]store.
 	defer database.issuesMutex.RUnlock()
 
 	issues := []store.Issue{}
+	now := database.now()
 
 	for _, id := range issueIDs {
 		if issue, ok := database.table.byID[id]; ok {
-			issues = append(issues, issue.Issue)
+			issues = append(issues, issue.At(now))
 		}
 	}
 
@@ -376,9 +436,10 @@ func (database *Store) UnresolvedCounts(context.Context) (map[int]int, error) {
 	defer database.issuesMutex.RUnlock()
 
 	counts := map[int]int{}
+	now := database.now()
 
 	for _, issue := range database.table.byID {
-		if issue.Status == store.StatusUnresolved {
+		if issue.At(now).Status == store.StatusUnresolved {
 			counts[issue.ProjectID]++
 		}
 	}

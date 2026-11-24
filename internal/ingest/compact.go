@@ -3,6 +3,7 @@ package ingest
 import (
 	"encoding/json"
 	"encoding/json/jsontext"
+	"slices"
 
 	"github.com/devforth/exceptic/internal/sentry"
 )
@@ -11,17 +12,42 @@ import (
 // up to 100.
 const maxBreadcrumbs = 50
 
+// A stack keeps its oldestFrames and newestFrames (a deep recursion repeats
+// itself in between); over detailedFrames frames with source, those in the
+// middle lose their variables and the lines around the source line.
+const (
+	oldestFrames   = 50
+	newestFrames   = 200
+	detailedFrames = 50
+)
+
+// framesCut is what sentry.TruncatedField names when a stack lost frames.
+const framesCut = "frames"
+
 // compactEvent writes the next value of decoder, an event, with what does not
-// help a fix dropped and credentials removed (scrub.go), in one token pass.
-// Anything but an object is only scrubbed.
-func compactEvent(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
+// help a fix dropped and credentials removed (scrub.go), in one token pass,
+// and reports whether a stack lost frames. Anything but an object is only
+// scrubbed.
+func compactEvent(decoder *jsontext.Decoder, encoder *jsontext.Encoder) (framesDropped bool, err error) {
 	if decoder.PeekKind() != '{' {
-		return scrubValue(decoder, encoder)
+		return false, scrubValue(decoder, encoder)
 	}
 
+	stacks := &stackCompactor{}
+	err = stacks.event(decoder, encoder)
+
+	return stacks.framesDropped, err
+}
+
+// stackCompactor compacts an event's stacks and remembers whether one lost frames.
+type stackCompactor struct {
+	framesDropped bool
+}
+
+func (stacks *stackCompactor) event(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 	return scrubObject(decoder, encoder, func(name string, decoder *jsontext.Decoder, encoder *jsontext.Encoder) (bool, error) {
 		switch name {
-		case "modules", "debug_meta":
+		case "modules", "debug_meta", sentry.TruncatedField: // the last is the server's own
 			return true, decoder.SkipValue()
 		case "sdk":
 			return true, member(name, decoder, encoder, func(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
@@ -44,9 +70,9 @@ func compactEvent(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 
 			return true, member(name, decoder, encoder, breadcrumbs)
 		case "exception", "threads":
-			return true, member(name, decoder, encoder, withStacktraces)
+			return true, member(name, decoder, encoder, stacks.withStacktraces)
 		case "stacktrace":
-			return true, member(name, decoder, encoder, stacktrace)
+			return true, member(name, decoder, encoder, stacks.stacktrace)
 		}
 
 		return false, nil
@@ -95,7 +121,7 @@ func newest(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 
 // withStacktraces writes exception or threads: a list of items, or
 // {"values": [...]}, each item's stacktrace compacted.
-func withStacktraces(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
+func (stacks *stackCompactor) withStacktraces(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 	items := func(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 		return scrubValues(decoder, encoder, func(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 			if decoder.PeekKind() != '{' {
@@ -107,7 +133,7 @@ func withStacktraces(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error
 					return false, nil
 				}
 
-				return true, member(name, decoder, encoder, stacktrace)
+				return true, member(name, decoder, encoder, stacks.stacktrace)
 			})
 		})
 	}
@@ -129,8 +155,9 @@ func withStacktraces(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error
 }
 
 // stacktrace drops the source and variables of library frames when the
-// stack has frames of the application; the frames are read first to know.
-func stacktrace(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
+// stack has frames of the application, keeps the oldest and newest frames
+// and the detail of those at the ends; the frames are read first to know.
+func (stacks *stackCompactor) stacktrace(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 	if decoder.PeekKind() != '{' {
 		return scrubValue(decoder, encoder)
 	}
@@ -146,6 +173,11 @@ func stacktrace(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 			return true, err
 		}
 
+		if len(frames) > oldestFrames+newestFrames {
+			stacks.framesDropped = true
+			frames = slices.Concat(frames[:oldestFrames], frames[len(frames)-newestFrames:])
+		}
+
 		app := make([]bool, len(frames))
 		hasAppFrames := false
 
@@ -154,14 +186,38 @@ func stacktrace(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 			hasAppFrames = hasAppFrames || app[index]
 		}
 
+		// The frames that keep their source, counted from each end.
+		withSource := make([]int, len(frames))
+		sourceCount := 0
+
+		for index := range frames {
+			withSource[index] = sourceCount
+
+			if !hasAppFrames || app[index] {
+				sourceCount++
+			}
+		}
+
 		return true, member(name, decoder, encoder, func(_ *jsontext.Decoder, encoder *jsontext.Encoder) error {
 			return writeList(encoder, frames, func(index int, decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
-				if !hasAppFrames || app[index] || decoder.PeekKind() != '{' {
+				if decoder.PeekKind() != '{' {
 					return scrubElement(decoder, encoder)
 				}
 
+				dropped := librarySource
+
+				if !hasAppFrames || app[index] {
+					fromNewest := sourceCount - 1 - withSource[index]
+
+					if sourceCount <= detailedFrames || withSource[index] < detailedFrames/2 || fromNewest < detailedFrames/2 {
+						return scrubElement(decoder, encoder)
+					}
+
+					dropped = middleDetail
+				}
+
 				return scrubObject(decoder, encoder, func(name string, decoder *jsontext.Decoder, _ *jsontext.Encoder) (bool, error) {
-					if librarySource[name] {
+					if dropped[name] {
 						return true, decoder.SkipValue()
 					}
 
@@ -174,6 +230,10 @@ func stacktrace(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 
 // librarySource are the fields of a library frame dropped when the stack has frames of the application.
 var librarySource = map[string]bool{"pre_context": true, "context_line": true, "post_context": true, "vars": true}
+
+// middleDetail are the fields a frame in the middle of a long stack loses;
+// its source line stays, grouping uses it.
+var middleDetail = map[string]bool{"pre_context": true, "post_context": true, "vars": true}
 
 // elements reads the next list as its raw elements.
 func elements(decoder *jsontext.Decoder) ([]jsontext.Value, error) {

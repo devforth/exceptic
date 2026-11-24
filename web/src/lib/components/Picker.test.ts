@@ -46,6 +46,18 @@ describe('Picker', () => {
 		expect(onchange).toHaveBeenLastCalledWith([]);
 	});
 
+	it('keeps All checked and inactive while nothing else is chosen', async () => {
+		const { onchange } = renderPicker();
+
+		await userEvent.click(screen.getByText('All projects', { selector: 'summary' }));
+		const all = screen.getByRole<HTMLInputElement>('checkbox', { name: 'All projects' });
+
+		expect(all.checked).toBe(true);
+		expect(all.disabled).toBe(true);
+		await userEvent.click(all);
+		expect(onchange).not.toHaveBeenCalled();
+	});
+
 	it('closes on Esc, which then does nothing else, and on a click outside', async () => {
 		const { details, summary } = renderPicker();
 

@@ -155,6 +155,62 @@ describe('pageError', () => {
 	});
 });
 
+describe('no answer', () => {
+	it('is a failure that says so, shown as an error page', async () => {
+		fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+
+		const failure = await get('count_logs', { query: 'rare' }).catch((caught: unknown) => caught);
+
+		expect(failure).toBeInstanceOf(ApiError);
+		expect(errorMessage(failure)).toBe('The server did not answer. Try again.');
+
+		let thrown: unknown;
+
+		try {
+			pageError(failure);
+		} catch (caught) {
+			thrown = caught;
+		}
+
+		expect(isHttpError(thrown, 503) && thrown.body.message).toBe(
+			'The server did not answer. Try again.'
+		);
+	});
+});
+
+describe('an answer without the server', () => {
+	it('is no answer: a proxy that lost the server answers 5xx without a JSON error', async () => {
+		fetchMock.mockResolvedValueOnce(
+			new Response('', { status: 500, statusText: 'Internal Server Error' })
+		);
+
+		const empty = await get('count_logs').catch((caught: unknown) => caught);
+
+		expect(empty).toBeInstanceOf(ApiError);
+		expect(errorMessage(empty)).toBe('The server did not answer. Try again.');
+
+		fetchMock.mockResolvedValueOnce(
+			new Response('<html>Bad Gateway</html>', {
+				status: 502,
+				statusText: 'Bad Gateway',
+				headers: { 'Content-Type': 'text/html' }
+			})
+		);
+
+		const gateway = await get('count_logs').catch((caught: unknown) => caught);
+
+		expect(errorMessage(gateway)).toBe('The server did not answer. Try again.');
+
+		fetchMock.mockResolvedValueOnce(
+			new Response(JSON.stringify({ error: 'internal error' }), { status: 500 })
+		);
+
+		expect(errorMessage(await get('count_logs').catch((caught: unknown) => caught))).toBe(
+			'internal error'
+		);
+	});
+});
+
 describe('types', () => {
 	it('keep reads and changes apart', () => {
 		// Never run: the checks are the type errors expected below.

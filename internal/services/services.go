@@ -21,6 +21,13 @@ type Dependencies struct {
 	Factory  notify.Factory
 	Notifier *notify.Notifier // sends the outbox; nil in tests that need none
 	OAuth    *oauth.Server    // the MCP server's sign-in
+	Dropped  DropCounter      // what ingest dropped; nil counts nothing
+}
+
+// DropCounter tells what ingest dropped of a project in the last 24 hours
+// (ingest.DropCounter, in memory).
+type DropCounter interface {
+	Dropped(projectID int) []store.Dropped
 }
 
 // All are the services the request catalog (package api) and the login
@@ -49,7 +56,7 @@ func New(dependencies Dependencies) *All {
 	return &All{
 		AppName:      settings.AppName,
 		Issues:       newIssues(dependencies.Logger, database),
-		Projects:     newProjects(database, dependencies.Registry, settings),
+		Projects:     newProjects(database, dependencies.Registry, settings, dependencies.Dropped),
 		Connections:  connections,
 		Deliveries:   newDeliveries(database, connections),
 		Verification: newVerification(dependencies.Logger, database, dependencies.Factory, connections),

@@ -1,7 +1,7 @@
 <!--
 @component
-Who changed an issue's status and when, newest first; a resolved issue that happened again is
-reopened by its event, which the entry links to.
+Who changed an issue's status and when, newest first; a resolved issue that happened again, or
+an ignored one that reached its count of events, is reopened by its event, which the entry links to.
 -->
 <script lang="ts">
 	import { resolve } from '$app/paths';

@@ -50,6 +50,22 @@ func TestLevelNames(t *testing.T) {
 		}
 	}
 
+	// A known level wins; without one, the OpenTelemetry range of the severity number.
+	for _, test := range []struct {
+		level    string
+		severity int
+		want     string
+	}{
+		{"error", 9, "error"}, {"WARNING", 1, "warn"}, {"critical", 0, "fatal"},
+		{"", 1, "trace"}, {"", 4, "trace"}, {"", 5, "debug"}, {"", 9, "info"}, {"", 12, "info"},
+		{"", 13, "warn"}, {"", 17, "error"}, {"", 20, "error"}, {"weird", 21, "fatal"}, {"", 24, "fatal"},
+		{"", 0, "info"}, {"", -3, "info"}, {"", 25, "info"}, {"weird", 1000, "info"},
+	} {
+		if got := LogLevelOf(test.level, test.severity); got != test.want {
+			t.Errorf("LogLevelOf(%q, %d) = %q, want %q", test.level, test.severity, got, test.want)
+		}
+	}
+
 	for level, want := range map[string]string{"fatal": "error", "critical": "error", "warn": "warning", "log": "info", "trace": "debug", "debug": "debug"} {
 		if got := ShownLevel(level); got != want {
 			t.Errorf("ShownLevel(%q) = %q, want %q", level, got, want)

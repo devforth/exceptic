@@ -45,13 +45,17 @@ type Store struct {
 
 	// checkedAt is Written at the last wake.
 	cleanupWake chan struct{}
-	checkedAt   atomic.Int64
+	// compactionWake ticks when a run ends that waits for its compaction.
+	compactionWake chan struct{}
+	checkedAt      atomic.Int64
 	// lastAppend is when the newest envelope came, in Unix nanoseconds; zero before the first.
 	lastAppend atomic.Int64
 	// backups counts running backups: their snapshot keeps deleted records on disk.
 	backups atomic.Int32
 
 	now func() time.Time
+	// compactFault, for tests, fails compactions with its error.
+	compactFault func() error
 
 	closeOnce sync.Once
 	closeErr  error
@@ -99,7 +103,8 @@ func open(engine kv.Engine) (*Store, error) {
 	schema := kv.NewSchema()
 	formatKey := schema.Reserve(formatName)
 	database := &Store{schema: schema, collections: defineCollections(schema), formatKey: formatKey, now: time.Now, messageStart: map[string]uint64{},
-		goneProjects: map[int]bool{}, contacted: map[int]time.Time{}, cleanupWake: make(chan struct{}, 1)}
+		goneProjects: map[int]bool{}, contacted: map[int]time.Time{}, cleanupWake: make(chan struct{}, 1),
+		compactionWake: make(chan struct{}, 1)}
 
 	db, err := kv.OpenDB(engine, schema)
 

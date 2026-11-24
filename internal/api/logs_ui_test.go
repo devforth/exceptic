@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -146,5 +147,122 @@ func TestUIDeleteLogs(t *testing.T) {
 
 	if problems, err := server.database.Verify(); err != nil || len(problems) > 0 {
 		t.Errorf("verify: %v %v", problems, err)
+	}
+}
+
+// A search that runs out of time says so: the count says how far back it
+// searched and bounds the list to that, and a list goes on by its cursor.
+func TestLogSearchStopsInTime(t *testing.T) {
+	server := newRESTServer(t)
+	viewer := server.webUser(store.RoleUser, false)
+	at := time.Now()
+
+	var logs []store.NewLog
+
+	for index := range 60 {
+		body := "hay"
+
+		if index < 5 || index >= 55 {
+			body = "needle"
+		}
+
+		logs = append(logs, store.NewLog{ProjectID: 1, Timestamp: at, Level: "info", Body: fmt.Sprintf("%s %d", body, index)})
+	}
+
+	if err := server.database.SaveLogs(context.Background(), logs, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	// Every reading of the clock a second later: a search stops after a few logs.
+	var readings atomic.Int64
+
+	server.database.SetClock(func() time.Time { return at.Add(time.Duration(readings.Add(1)) * time.Second) })
+
+	var count struct {
+		Count      int        `json:"count"`
+		Stopped    bool       `json:"stopped"`
+		SearchedTo *time.Time `json:"searched_to"`
+		FromID     int64      `json:"from_id"`
+	}
+
+	viewer.read("count_logs?query=needle", &count)
+
+	if !count.Stopped || count.Count == 0 || count.Count >= 10 || count.SearchedTo == nil || count.FromID == 0 {
+		t.Fatalf("count: %+v", count)
+	}
+
+	type page struct {
+		Items []struct {
+			ID   int64  `json:"id"`
+			Body string `json:"body"`
+		} `json:"items"`
+		NextCursor string `json:"next_cursor"`
+		Stopped    bool   `json:"stopped"`
+	}
+
+	var bounded page
+
+	viewer.read(fmt.Sprintf("list_logs?query=needle&from_id=%d", count.FromID), &bounded)
+
+	if len(bounded.Items) != count.Count || bounded.Stopped || bounded.NextCursor != "" {
+		t.Fatalf("list within the count: %+v", bounded)
+	}
+
+	found := 0
+	cursor := ""
+
+	for range 100 {
+		var next page
+
+		server.get("/api/v1/list_logs?query=needle&cursor="+cursor, &next)
+
+		found += len(next.Items)
+
+		if next.NextCursor == "" {
+			break
+		}
+
+		if !next.Stopped {
+			t.Fatalf("a full page in a sparse search: %+v", next)
+		}
+
+		cursor = next.NextCursor
+	}
+
+	if found != 10 {
+		t.Fatalf("the search found %d needles, want 10", found)
+	}
+
+	// Stopped while still skipping an offset: no cursor, which would go on
+	// from the rows the offset was to skip.
+	var skipping page
+
+	server.get("/api/v1/list_logs?query=needle&offset=8", &skipping)
+
+	if !skipping.Stopped || len(skipping.Items) != 0 || skipping.NextCursor != "" {
+		t.Fatalf("an offset page that stopped: %+v", skipping)
+	}
+
+	// A trace's logs say when their search stopped too.
+	traceID := strings.Repeat("ab", 16)
+	traced := make([]store.NewLog, 0, 30)
+
+	for index := range 30 {
+		traced = append(traced, store.NewLog{ProjectID: 1, Timestamp: at, Level: "info", Body: fmt.Sprintf("traced %d", index), TraceID: traceID, Attributes: []byte(`{}`)})
+	}
+
+	if err := server.database.SaveLogs(context.Background(), traced, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	var trace struct {
+		Logs    []json.RawMessage `json:"logs"`
+		Stopped bool              `json:"stopped"`
+	}
+
+	server.get("/api/v1/list_trace?trace_id="+traceID, &trace)
+
+	if !trace.Stopped || len(trace.Logs) >= 30 {
+		t.Fatalf("a trace whose search stopped: %d logs, stopped %v", len(trace.Logs), trace.Stopped)
 	}
 }

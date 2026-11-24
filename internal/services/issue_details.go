@@ -36,7 +36,9 @@ type IssueDetails struct {
 	Parsed          *sentry.Event
 	RelatedLogs     []store.LogRecord
 	LogsFromRequest bool
-	TraceHasLogs    bool
+	// LogsStopped: the search for related logs ran out of time.
+	LogsStopped  bool
+	TraceHasLogs bool
 }
 
 // Details reads an issue with one of its events: eventID (UUID or hex), the
@@ -94,9 +96,13 @@ func (issues *Issues) Details(ctx context.Context, access store.Access, issueID,
 
 	details.EventState = EventShown
 
-	if details.RelatedLogs, details.LogsFromRequest, err = issues.RelatedLogs(ctx, access, event, details.Parsed); err != nil {
+	related, err := issues.RelatedLogs(ctx, access, event, details.Parsed)
+
+	if err != nil {
 		return details, err
 	}
+
+	details.RelatedLogs, details.LogsFromRequest, details.LogsStopped = related.Logs, related.FromRequest, related.Stopped
 
 	details.TraceHasLogs, err = issues.TraceLogs(ctx, access, event)
 

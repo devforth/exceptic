@@ -17,10 +17,10 @@ func newLogs(database store.Store) *Logs {
 }
 
 // Count counts the logs that match filter (its Limit and Offset are
-// ignored) up to store.LogCountLimit; more says there are more.
-func (service *Logs) Count(ctx context.Context, access store.Access, filter store.LogFilter) (count int, more bool, err error) {
+// ignored) up to store.LogCountLimit or config.LogSearchTime.
+func (service *Logs) Count(ctx context.Context, access store.Access, filter store.LogFilter) (store.LogCount, error) {
 	if !access.Restrict(&filter.ProjectIDs) {
-		return 0, false, nil
+		return store.LogCount{}, nil
 	}
 
 	return service.store.CountLogs(ctx, filter)
@@ -37,10 +37,11 @@ func (service *Logs) Levels(ctx context.Context, access store.Access) ([]string,
 	return service.store.LogLevels(ctx, projectIDs)
 }
 
-// List returns one page of the logs that match filter, newest first.
-func (service *Logs) List(ctx context.Context, access store.Access, filter store.LogFilter) ([]store.LogRecord, error) {
+// List returns one page of the logs that match filter, newest first, and
+// how far its scan got.
+func (service *Logs) List(ctx context.Context, access store.Access, filter store.LogFilter) (store.LogPage, error) {
 	if !access.Restrict(&filter.ProjectIDs) {
-		return []store.LogRecord{}, nil
+		return store.LogPage{Logs: []store.LogRecord{}}, nil
 	}
 
 	return service.store.ListLogs(ctx, filter)

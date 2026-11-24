@@ -13,15 +13,32 @@ import (
 )
 
 // wakeWorker starts the worker of an outbox channel if needed and tells it
-// there is work. Workers are only started from the dispatcher goroutine,
-// which is itself counted in running, so the WaitGroup is never at zero here.
+// there is work. No worker starts once the dispatcher is done (Close): the
+// dispatcher closes dispatched under workersMutex, so while it runs the
+// WaitGroup is never at zero here.
 func (notifier *Notifier) wakeWorker(channel string) {
 	notifier.workersMutex.Lock()
 	defer notifier.workersMutex.Unlock()
 
+	notifier.wakeLocked(channel, true)
+}
+
+// wakeLocked wakes the worker of channel, starting one when start is set;
+// it returns the worker, nil when there is none.
+func (notifier *Notifier) wakeLocked(channel string, start bool) *worker {
 	current := notifier.workers[channel]
 
 	if current == nil {
+		select {
+		case <-notifier.dispatched:
+			return nil
+		default:
+		}
+
+		if !start {
+			return nil
+		}
+
 		current = &worker{wake: make(chan struct{}, 1), unmarked: map[int64]time.Time{}}
 		notifier.workers[channel] = current
 
@@ -32,6 +49,8 @@ func (notifier *Notifier) wakeWorker(channel string) {
 	case current.wake <- struct{}{}:
 	default: // already woken
 	}
+
+	return current
 }
 
 // RetryNow ends the rate-limit pause of a connection and sends its due
@@ -41,22 +60,23 @@ func (notifier *Notifier) RetryNow(channel string) {
 	notifier.workersMutex.Lock()
 	defer notifier.workersMutex.Unlock()
 
-	current := notifier.workers[channel]
-
-	if current == nil {
-		return
-	}
-
-	current.retryNow.Store(true)
-
-	select {
-	case current.wake <- struct{}{}:
-	default: // already woken
+	if current := notifier.wakeLocked(channel, true); current != nil {
+		current.retryNow.Store(true)
 	}
 }
 
-// runWorker sends the due messages of one connection until Close: woken by
-// new messages, and every PollInterval for retries that became due.
+// ConnectionDeleted wakes the worker of a deleted connection, whose messages
+// went with it, so it stops now instead of at its next poll.
+func (notifier *Notifier) ConnectionDeleted(channel string) {
+	notifier.workersMutex.Lock()
+	defer notifier.workersMutex.Unlock()
+
+	notifier.wakeLocked(channel, false)
+}
+
+// runWorker sends the due messages of one connection: woken by new messages,
+// and every PollInterval for retries that became due. It stops when the
+// connection has nothing left to send, and at Close.
 func (notifier *Notifier) runWorker(channel string, current *worker) {
 	ticker := time.NewTicker(notifier.options.PollInterval)
 
@@ -76,7 +96,44 @@ func (notifier *Notifier) runWorker(channel string, current *worker) {
 		}
 
 		notifier.sendDue(channel, current)
+
+		if notifier.stopIdle(channel, current) {
+			return
+		}
 	}
+}
+
+// stopIdle removes the worker when its connection has no message left to
+// send, due or waiting for a retry (a deleted connection's went with it).
+// A message queued after the check wakes the worker under the same lock
+// before it is removed, so it goes on, or starts a new worker after.
+func (notifier *Notifier) stopIdle(channel string, current *worker) bool {
+	if len(current.unmarked) > 0 || notifier.ctx.Err() != nil {
+		return false
+	}
+
+	pending, err := notifier.options.Store.HasPendingOutbox(notifier.ctx, channel)
+
+	if err != nil {
+		notifier.options.Logger.Error("read notification outbox", "connection", channel, "err", err)
+
+		return false
+	}
+
+	if pending {
+		return false
+	}
+
+	notifier.workersMutex.Lock()
+	defer notifier.workersMutex.Unlock()
+
+	if len(current.wake) > 0 {
+		return false
+	}
+
+	delete(notifier.workers, channel)
+
+	return true
 }
 
 // sendDue sends due messages oldest first. A failed send ends the pass and

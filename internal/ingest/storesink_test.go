@@ -141,6 +141,31 @@ func TestStoreSinkNotifies(t *testing.T) {
 	}
 }
 
+// An issue ignored until 2 more events is notified as a regression at the 2nd.
+func TestStoreSinkNotifiesTheEndOfAnIgnore(t *testing.T) {
+	notifier := &recordingNotifier{}
+	server := startTestServer(t, testSettings(), StoreSink{Logger: slog.New(slog.DiscardHandler), Notifier: notifier})
+	boom := `{"exception":{"values":[{"type":"Error","value":"boom"}]}}`
+
+	server.sendEvent(1, "00000000000000000000000000000001", boom)
+
+	if _, err := server.db.IgnoreIssues(context.Background(), []string{notifier.notifications[0].IssueID}, store.IgnoreBound{Events: 2}, store.Actor{}); err != nil {
+		t.Fatal(err)
+	}
+
+	server.sendEvent(1, "00000000000000000000000000000002", boom)
+
+	if len(notifier.notifications) != 1 {
+		t.Fatalf("notified while ignored: %+v", notifier.notifications)
+	}
+
+	server.sendEvent(1, "00000000000000000000000000000003", boom)
+
+	if len(notifier.notifications) != 2 || notifier.notifications[1].Kind != notify.Regression || notifier.notifications[1].EventID != "00000000000000000000000000000003" {
+		t.Fatalf("after the events the ignore waited for: %+v", notifier.notifications)
+	}
+}
+
 // A message logged in a loop keeps its newest config.LogsPerMessage copies.
 func TestStoreSinkLimitsRepeatedLogs(t *testing.T) {
 	server := newTestServer(t, testSettings())
@@ -160,6 +185,50 @@ func TestStoreSinkLimitsRepeatedLogs(t *testing.T) {
 	for _, projectID := range []int{1, 2} {
 		if count := countLogs(t, server.db, store.LogFilter{ProjectIDs: []int{projectID}}); count != config.LogsPerMessage {
 			t.Errorf("project %d: %d logs, want %d", projectID, count, config.LogsPerMessage)
+		}
+	}
+}
+
+// An error in a loop stores config.EventsPerIssuePerMinute events a minute
+// and counts every one; a different error in the same minute is stored.
+func TestStoreSinkCapsEventsPerIssue(t *testing.T) {
+	server := newTestServer(t, testSettings())
+	key := fixtures.BackendKey
+	loop := `{"exception":{"values":[{"type":"Error","value":"in a loop"}]}}`
+
+	const sent = 10000
+
+	for index := range sent {
+		body := fmt.Sprintf(`{"event_id":"%032x"}`+"\n"+`{"type":"event"}`+"\n"+loop+"\n", index+1)
+
+		if response := server.send(newRequest(http.MethodPost, envelopeURL("1", key), []byte(body))); response.Code != http.StatusOK {
+			t.Fatalf("got %d %s", response.Code, response.Body)
+		}
+	}
+
+	server.sendEvent(1, fmt.Sprintf("%032x", sent+1), `{"exception":{"values":[{"type":"TypeError","value":"another"}]}}`)
+
+	issues, err := server.db.ListIssues(context.Background(), store.IssueFilter{})
+
+	if err != nil || len(issues) != 2 {
+		t.Fatalf("issues %+v (%v)", issues, err)
+	}
+
+	for _, issue := range issues {
+		stored := countEvents(t, server.db, func(event store.EventSummary) bool { return event.IssueID == issue.ID })
+
+		switch issue.Title {
+		case "TypeError: another":
+			if stored != 1 || issue.EventCount != 1 || issue.NotStored != 0 {
+				t.Errorf("another error: %d stored, %+v", stored, issue)
+			}
+		default:
+			// The loop may run across a minute's end.
+			minutes := int(issue.LastSeen.Unix()/60-issue.FirstSeen.Unix()/60) + 1
+
+			if issue.EventCount != sent || stored+issue.NotStored != sent || stored > minutes*config.EventsPerIssuePerMinute {
+				t.Errorf("the loop over %d minutes: %d stored, %+v", minutes, stored, issue)
+			}
 		}
 	}
 }
@@ -199,6 +268,23 @@ func TestStoreSinkRecordsChosenLevels(t *testing.T) {
 
 	if logs := countLogs(t, database, store.LogFilter{ProjectIDs: []int{2}, Levels: []string{"warn"}}); logs != 1 || countLogs(t, database, store.LogFilter{ProjectIDs: []int{2}}) != 1 {
 		t.Error("frontend records only warn logs")
+	}
+}
+
+// A log without a known level takes it from its severity number (OpenTelemetry
+// ranges, as SDKs send it); a known level wins over the number.
+func TestStoreSinkLevelFromSeverityNumber(t *testing.T) {
+	server := newTestServer(t, testSettings())
+
+	server.sendLogs(1, []string{
+		`{"body":"a","severity_number":17}`, `{"level":"bogus","body":"b","severity_number":13}`,
+		`{"level":"info","body":"c","severity_number":21}`, `{"body":"d","severity_number":99}`,
+	})
+
+	for level, want := range map[string]int{"error": 1, "warn": 1, "info": 2, "fatal": 0} {
+		if count := countLogs(t, server.db, store.LogFilter{ProjectIDs: []int{1}, Levels: []string{level}}); count != want {
+			t.Errorf("%s: %d logs, want %d", level, count, want)
+		}
 	}
 }
 
@@ -248,11 +334,11 @@ func countIssues(t *testing.T, database store.Store, filter store.IssueFilter, k
 func countLogs(t *testing.T, database store.Store, filter store.LogFilter) int {
 	t.Helper()
 
-	count, _, err := database.CountLogs(context.Background(), filter)
+	count, err := database.CountLogs(context.Background(), filter)
 
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	return count
+	return count.Count
 }

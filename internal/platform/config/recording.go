@@ -145,9 +145,15 @@ func ShownLevel(level string) string {
 }
 
 // LogLevel maps a log level to one of LogLevels ("warning" is warn,
-// "critical" fatal; anything else unknown counts as info). Ingest stores
-// logs with it.
+// "critical" fatal; anything else unknown counts as info).
 func LogLevel(level string) string {
+	return LogLevelOf(level, 0)
+}
+
+// LogLevelOf is the level a log is stored under: its level when known, else
+// the OpenTelemetry range of its severity number (1-4 trace, 5-8 debug, …,
+// 21-24 fatal), else info.
+func LogLevelOf(level string, severityNumber int) string {
 	switch level = strings.ToLower(level); level {
 	case "warning":
 		return "warn"
@@ -157,6 +163,10 @@ func LogLevel(level string) string {
 
 	if slices.Contains(LogLevels, level) {
 		return level
+	}
+
+	if severityNumber >= 1 && severityNumber <= 4*len(LogLevels) {
+		return LogLevels[(severityNumber-1)/4]
 	}
 
 	return "info"

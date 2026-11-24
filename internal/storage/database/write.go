@@ -16,6 +16,7 @@ type Envelope struct {
 	Events         []store.NewEvent
 	Logs           []store.NewLog
 	LogsPerMessage int // keep the newest of a repeated message (0: all)
+	EventsPerIssue int // events an issue stores a minute (0: all)
 }
 
 // Write stores envelopes and deletes their inbox entries in one batch.
@@ -42,7 +43,7 @@ func (database *Store) Write(envelopes []Envelope) ([][]store.SaveResult, error)
 			}
 
 			for _, event := range envelope.Events {
-				result, err := writer.event(event)
+				result, err := writer.event(event, envelope.EventsPerIssue)
 
 				if err != nil {
 					return err
@@ -121,6 +122,19 @@ func (database *Store) SaveLogs(_ context.Context, logs []store.NewLog, keepPerM
 }
 
 func (database *Store) SetIssuesStatus(_ context.Context, issueIDs []string, status string, actor store.Actor) ([]store.Issue, error) {
+	return database.setIssuesStatus(issueIDs, status, store.IgnoreBound{}, actor)
+}
+
+func (database *Store) IgnoreIssues(_ context.Context, issueIDs []string, bound store.IgnoreBound, actor store.Actor) ([]store.Issue, error) {
+	if bound.For < 0 || bound.Events < 0 || bound.Events > store.MaxIgnoreEvents {
+		return nil, fmt.Errorf("invalid ignore bound %+v", bound)
+	}
+
+	return database.setIssuesStatus(issueIDs, store.StatusIgnored, bound, actor)
+}
+
+// setIssuesStatus sets status; an ignore takes bound, any status change ends the previous one.
+func (database *Store) setIssuesStatus(issueIDs []string, status string, bound store.IgnoreBound, actor store.Actor) ([]store.Issue, error) {
 	ids, err := store.NormalizeIssueIDs(issueIDs)
 
 	if err != nil {
@@ -146,6 +160,10 @@ func (database *Store) SetIssuesStatus(_ context.Context, issueIDs []string, sta
 				return store.ErrNotFound
 			}
 
+			if err := writer.expireIgnore(issue, now); err != nil {
+				return err
+			}
+
 			if issue.Status != status {
 				if err := writer.statusChange(issue, status, actor, "", now); err != nil {
 					return err
@@ -162,6 +180,7 @@ func (database *Store) SetIssuesStatus(_ context.Context, issueIDs []string, sta
 				issue.ResolvedAt = &resolvedAt
 			}
 
+			issue.ignoreUntil(bound, now)
 			issues = append(issues, issue.Issue)
 		}
 
@@ -169,6 +188,23 @@ func (database *Store) SetIssuesStatus(_ context.Context, issueIDs []string, sta
 	})
 
 	return issues, err
+}
+
+// expireIgnore stores what reads already show: an ignore whose time has
+// passed ended then, so the issue is unresolved.
+func (writer *batchWriter) expireIgnore(issue *issueRecord, now time.Time) error {
+	if !issue.IgnoreExpired(now) {
+		return nil
+	}
+
+	if err := writer.statusChange(issue, store.StatusUnresolved, store.Actor{Source: store.SourceExpiry}, "", *issue.IgnoredUntil); err != nil {
+		return err
+	}
+
+	issue.Status = store.StatusUnresolved
+	issue.ignoreUntil(store.IgnoreBound{}, now)
+
+	return nil
 }
 
 // DeleteIssues deletes the issues that exist, in batches of up to cleanupChunk
@@ -266,8 +302,20 @@ func (writer *batchWriter) deleteIssue(issue *issueRecord) error {
 	return err
 }
 
+// IssueStatusHistory starts with the end of an ignore whose time has passed
+// but is not stored yet (expireIgnore), as reads show the issue unresolved.
 func (database *Store) IssueStatusHistory(_ context.Context, issueID string) ([]store.StatusChange, error) {
 	changes := []store.StatusChange{}
+
+	database.issuesMutex.RLock()
+	issue, ok := database.table.byID[issueID]
+	database.issuesMutex.RUnlock()
+
+	if ok && issue.IgnoreExpired(database.now()) {
+		changes = append(changes, store.StatusChange{
+			Actor: store.Actor{Source: store.SourceExpiry}, From: store.StatusIgnored, To: store.StatusUnresolved, CreatedAt: *issue.IgnoredUntil,
+		})
+	}
 
 	err := database.status.Primary(kv.Text(issueID)).Newest().Each(database.db, func(entry kv.Entry[statusRecord]) (bool, error) {
 		changes = append(changes, entry.Record.StatusChange)
@@ -450,7 +498,9 @@ func (writer *batchWriter) findIssue(fingerprint string) *issueRecord {
 	return issue
 }
 
-func (writer *batchWriter) event(event store.NewEvent) (store.SaveResult, error) {
+// event stores an event, or only counts it once its issue has stored what
+// limit allows this minute; a new issue's and a regression's are always stored.
+func (writer *batchWriter) event(event store.NewEvent, limit int) (store.SaveResult, error) {
 	var result store.SaveResult
 
 	if taken, err := writer.database.events.Taken(writer.batch, "id", eventIDKey(event.ProjectID, event.EventID)); err != nil || taken {
@@ -475,14 +525,34 @@ func (writer *batchWriter) event(event store.NewEvent) (store.SaveResult, error)
 		writer.created[fingerprint] = issue
 		result.NewIssue = true
 	case issue.Status == store.StatusResolved && (issue.ResolvedAt == nil || received.After(*issue.ResolvedAt)):
-		// Recorded while the issue is still resolved; ignored issues stay ignored,
-		// and an event received before the resolve (an inbox backlog) only counts.
+		// Recorded while the issue is still resolved; an event received before
+		// the resolve (an inbox backlog) only counts.
 		if err := writer.statusChange(issue, store.StatusUnresolved, store.Actor{Source: store.SourceEvent}, event.EventID, received); err != nil {
 			return result, err
 		}
 
 		issue.Status = store.StatusUnresolved
 		issue.ResolvedAt = nil
+		result.Regression = true
+	case issue.IgnoreExpired(received):
+		// Its ignore time ended before this event: it came back.
+		if err := writer.expireIgnore(issue, received); err != nil {
+			return result, err
+		}
+
+		result.Regression = true
+	case issue.Status == store.StatusIgnored && issue.IgnoredUntilCount > 0 && !received.After(issue.IgnoredAt):
+		// Received before the ignore (an inbox backlog): it only counts.
+		issue.IgnoredUntilCount++
+	case issue.Status == store.StatusIgnored && issue.IgnoredUntilCount > 0 && issue.EventCount+1 >= issue.IgnoredUntilCount:
+		// This event is the last one the ignore waited for.
+		if err := writer.statusChange(issue, store.StatusUnresolved, store.Actor{Source: store.SourceEvent}, event.EventID, received); err != nil {
+			return result, err
+		}
+
+		issue.Status = store.StatusUnresolved
+		issue.ignoreUntil(store.IgnoreBound{}, received)
+
 		result.Regression = true
 	}
 
@@ -494,8 +564,16 @@ func (writer *batchWriter) event(event store.NewEvent) (store.SaveResult, error)
 		issue.LastSeen = received
 	}
 
-	issue.addEvent(received)
 	result.IssueID = issue.ID
+
+	if issue.overCap(received, limit, result.NewIssue || result.Regression) {
+		issue.NotStored++
+		result.NotStored = true
+
+		return result, nil
+	}
+
+	issue.addEvent(received)
 
 	sequence, err := writer.database.db.Next()
 

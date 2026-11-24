@@ -14,6 +14,7 @@
 	import FilterPicker from '#lib/components/FilterPicker.svelte';
 	import LevelBadge from '#lib/components/LevelBadge.svelte';
 	import LogBody from '#lib/components/LogBody.svelte';
+	import Notice from '#lib/components/Notice.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import Pager from '#lib/components/Pager.svelte';
 	import SearchField from '#lib/components/SearchField.svelte';
@@ -21,10 +22,12 @@
 	import type { TableColumn } from '#lib/components/table.ts';
 	import Time from '#lib/components/Time.svelte';
 	import { changed, cleared } from '#lib/filters.ts';
-	import { showChanged } from '#lib/navigate.ts';
+	import { reloading } from '#lib/loading.svelte.ts';
+	import { showChanged, shown } from '#lib/navigate.svelte.ts';
 	import { withQuery } from '#lib/nav.ts';
+	import { logSearchSeconds } from '#lib/api/catalog.gen.ts';
 	import type { PageProps } from './$types';
-	import { deleteConfirmation, deleteLogs, selectionProblem } from './logs.ts';
+	import { deleteConfirmation, deleteLogs, selectionProblem, stoppedSearch } from './logs.ts';
 
 	let { data }: PageProps = $props();
 
@@ -53,6 +56,9 @@
 		void invalidateAll();
 	}
 
+	// What a search that ran out of time found.
+	const stoppedText = $derived(stoppedSearch(data.count));
+
 	const chips = $derived(
 		appliedChips([
 			listChip(url, 'Project', 'project', data.filters.project, 'project'),
@@ -70,33 +76,51 @@
 	<FilterPicker
 		kind="project"
 		options={data.projectNames}
-		selected={data.filters.project}
+		selected={shown('project', data.filters.project)}
 		onchange={(project: string[]) => showChanged(url, { project })}
 	/>
 	<FilterPicker
 		kind="level"
 		options={data.levelChoices}
-		selected={data.filters.level}
+		selected={shown('level', data.filters.level)}
 		onchange={(level: string[]) => showChanged(url, { level })}
 	/>
 	<SearchField
-		value={data.filters.query}
+		value={shown('query', data.filters.query)}
 		label="Search text"
-		onchange={(query: string) => showChanged(url, { query }, true)}
+		onchange={(query: string, now: boolean) => showChanged(url, { query }, { typing: true, now })}
 	/>
 	<SearchField
-		value={data.filters.traceId}
+		value={shown('trace_id', data.filters.traceId)}
 		label="Trace ID"
-		onchange={(traceId: string) => showChanged(url, { trace_id: traceId }, true)}
+		onchange={(traceId: string, now: boolean) =>
+			showChanged(url, { trace_id: traceId }, { typing: true, now })}
 	/>
 	<DateRange
-		from={data.filters.from}
-		to={data.filters.to}
+		from={shown('from', data.filters.from)}
+		to={shown('to', data.filters.to)}
 		onchange={(from: string, to: string) => showChanged(url, { from, to })}
 	/>
 </FilterBar>
 
 <ActiveFilters {chips} clear={cleared(url)} />
+
+{#if data.count.stopped}
+	<div class="mb-3">
+		<Notice tone="warning">
+			<p>
+				The search stopped after {logSearchSeconds} s{#if data.count.searched_to}
+					at the logs received <Time at={data.count.searched_to} />{/if}: {stoppedText}
+			</p>
+		</Notice>
+	</div>
+{/if}
+
+{#if data.listStopped}
+	<div class="mb-3">
+		<Notice tone="warning"><p>{data.listStopped}</p></Notice>
+	</div>
+{/if}
 
 {#if canAdminister && data.logs.length > 0}
 	<BulkBar count={selectedIds.length} {problem}>
@@ -112,6 +136,7 @@
 {/if}
 
 <Table
+	busy={reloading()}
 	{columns}
 	rows={data.logs}
 	label="Logs"
@@ -153,7 +178,7 @@
 	page={data.page}
 	perPage={data.perPage}
 	total={data.count.count}
-	more={data.count.more}
+	more={data.count.more || data.count.stopped}
 	href={(number: number) => changed(url, { page: number > 1 ? String(number) : null })}
-	onperpage={(perPage: number) => showChanged(url, { per_page: String(perPage) })}
+	onperpage={(perPage: number) => showChanged(url, { per_page: String(perPage) }, { now: true })}
 />

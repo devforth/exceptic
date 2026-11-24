@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { deleteConfirmation, deletedMessage, deleteLogs, selectionProblem } from './logs.ts';
+import {
+	deleteConfirmation,
+	deletedMessage,
+	deleteLogs,
+	listPage,
+	selectionProblem,
+	stoppedList,
+	stoppedSearch
+} from './logs.ts';
 
 const fetchMock = vi.fn<typeof fetch>();
 
@@ -39,5 +47,51 @@ describe('deleting logs', () => {
 
 		expect(url).toBe('/api/ui/delete_logs');
 		expect(JSON.parse(init?.body as string)).toEqual({ log_ids: [41, 42] });
+	});
+});
+
+describe('the list after its count', () => {
+	it('is not asked for when nothing matched', () => {
+		expect(listPage({ count: 0 }, 1, 20)).toBeUndefined();
+		expect(listPage({ count: 0, stopped: true, from_id: 40 }, 1, 20)).toBeUndefined();
+	});
+
+	it('asks for the rows the count found, no further back than it searched', () => {
+		// A whole page: logs stored since the count push older matches down, and from_id
+		// bounds the list anyway.
+		expect(listPage({ count: 45, from_id: 700 }, 3, 20)).toEqual({
+			limit: 20,
+			offset: 40,
+			from_id: 700
+		});
+		expect(listPage({ count: 10000, more: true, from_id: 9 }, 2, 20)).toEqual({
+			limit: 20,
+			offset: 20,
+			from_id: 9
+		});
+		expect(listPage({ count: 3, stopped: true, from_id: 812 }, 1, 20)).toMatchObject({
+			limit: 20,
+			from_id: 812
+		});
+	});
+});
+
+describe('a list that stopped', () => {
+	it('says so only when it stopped', () => {
+		expect(stoppedList({})).toBeUndefined();
+		expect(stoppedList(undefined)).toBeUndefined();
+		expect(stoppedList({ stopped: true })).toContain('stopped before');
+	});
+});
+
+describe('a search that stopped', () => {
+	it('says what it found and how to search further', () => {
+		expect(stoppedSearch({ count: 1 })).toBe(
+			'1 log found in the newer ones. Narrow the search by date, project or level to search further.'
+		);
+		expect(stoppedSearch({ count: 0 })).toBe(
+			'No log found in the newer ones. Narrow the search by date, project or level to search further.'
+		);
+		expect(stoppedSearch({ count: 7 })).toContain('7 logs found');
 	});
 });

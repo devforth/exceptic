@@ -22,7 +22,38 @@ var IssueStatuses = []string{StatusUnresolved, StatusResolved, StatusIgnored}
 var StatusMeanings = map[string]string{
 	StatusUnresolved: "still happening or not looked at yet",
 	StatusResolved:   "fixed, reopens if the error happens again",
-	StatusIgnored:    "no notifications, stays ignored",
+	StatusIgnored:    "no notifications; for good, or until the time or number of events chosen when ignoring",
+}
+
+// IgnoreBound ends an ignore by itself: the issue is unresolved again after
+// For, or once it has had Events more events. The zero value ignores for good.
+type IgnoreBound struct {
+	For    time.Duration
+	Events int
+}
+
+// IgnoreDurations are the times an issue may be ignored for, by name.
+var IgnoreDurations = []string{"1h", "24h", "7d", "30d"}
+
+// MaxIgnoreEvents is the most events an ignore may wait for.
+const MaxIgnoreEvents = 1_000_000
+
+// ParseIgnoreFor reads a name of IgnoreDurations; "" is no time bound.
+func ParseIgnoreFor(name string) (time.Duration, bool) {
+	switch name {
+	case "":
+		return 0, true
+	case "1h":
+		return time.Hour, true
+	case "24h":
+		return 24 * time.Hour, true
+	case "7d":
+		return 7 * 24 * time.Hour, true
+	case "30d":
+		return 30 * 24 * time.Hour, true
+	}
+
+	return 0, false
 }
 
 // NewEvent is an event ready to store: already parsed and grouped.
@@ -65,8 +96,20 @@ type SaveResult struct {
 	Duplicate bool
 	// NewIssue: the first event of a new issue.
 	NewIssue bool
-	// Regression: the issue was resolved and happened again, so it is unresolved now.
+	// Regression: the issue was resolved and happened again, or its ignore
+	// ended (its time passed or this was the last event it waited for), so it is unresolved now.
 	Regression bool
+	// NotStored: the issue had its events of this minute, so this one only counts.
+	NotStored bool
+}
+
+// ErrorFields are the top-level fields of an event's payload that describe
+// the error: what an old event keeps when the cleanup thins it, and a large
+// one at the last of the size cuts of ingest (with its contexts).
+var ErrorFields = map[string]bool{
+	"event_id": true, "timestamp": true, "level": true, "platform": true, "logger": true, "transaction": true,
+	"release": true, "environment": true, "message": true, "logentry": true, "exception": true, "fingerprint": true,
+	"stacktrace": true, "threads": true,
 }
 
 // NewLog is a log record ready to store.

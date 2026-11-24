@@ -7,21 +7,15 @@ import (
 	"time"
 
 	"github.com/devforth/exceptic/internal/storage/kv"
+	"github.com/devforth/exceptic/internal/storage/store"
 )
 
 // Thinning keeps of an old event only what describes the error, without
 // local variables, and marks it as thinned.
 
-// thinnedFields are the top-level fields a thinned event keeps.
-var thinnedFields = map[string]bool{
-	"event_id": true, "timestamp": true, "level": true, "platform": true, "logger": true, "transaction": true,
-	"release": true, "environment": true, "message": true, "logentry": true, "exception": true, "fingerprint": true,
-	"stacktrace": true, "threads": true,
-}
-
 var stackFields = []string{"exception", "stacktrace", "threads"}
 
-// thinPayload keeps thinnedFields without local variables; it returns the
+// thinPayload keeps store.ErrorFields without local variables; it returns the
 // payload as is when that is not smaller.
 func thinPayload(payload []byte) []byte {
 	var event map[string]json.RawMessage
@@ -31,7 +25,7 @@ func thinPayload(payload []byte) []byte {
 	}
 
 	for field := range event {
-		if !thinnedFields[field] {
+		if !store.ErrorFields[field] {
 			delete(event, field)
 		}
 	}

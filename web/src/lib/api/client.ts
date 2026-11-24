@@ -43,7 +43,7 @@ type Args<Input> = Record<never, never> extends Input ? [input?: Input] : [input
 /**
  * A refused request: status and the server's message (400 a wrong input, 403 not allowed:
  * another project's record or not for the role, 404 missing, 409 a record in the way, 429
- * too many attempts). A refused form names the problem of each field by its input name,
+ * too many attempts; a 5xx without the server's error: no answer). A refused form names the problem of each field by its input name,
  * whatever the status, and a record that already does what was asked (duplicate).
  */
 export class ApiError extends Error {
@@ -60,6 +60,8 @@ export class ApiError extends Error {
 		this.duplicate = body?.duplicate ?? undefined;
 	}
 }
+
+const noAnswer = 'The server did not answer. Try again.';
 
 /** What to tell about a failure: the server's reason, or fallback for anything else. */
 export function errorMessage(failure: unknown, fallback = 'Something went wrong.'): string {
@@ -133,7 +135,13 @@ async function call<Output>(
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify(input)
 				};
-	const response = await fetch(apiPrefix + name + (method === 'GET' ? query(input) : ''), init);
+	const response = await fetch(
+		apiPrefix + name + (method === 'GET' ? query(input) : ''),
+		init
+	).catch(() => {
+		// No answer at all: a network error or a connection the server dropped.
+		throw new ApiError(503, noAnswer);
+	});
 
 	if (response.status === 401 && !loginAnswer) {
 		return toLogin();
@@ -141,6 +149,11 @@ async function call<Output>(
 
 	if (!response.ok) {
 		const body = (await response.json().catch(() => null)) as Partial<ErrorBody> | null;
+
+		// A 5xx without the server's JSON error is a proxy's: the server did not answer it.
+		if (response.status >= 500 && typeof body?.error !== 'string') {
+			throw new ApiError(response.status, noAnswer);
+		}
 
 		throw new ApiError(response.status, body?.error ?? response.statusText, body ?? undefined);
 	}

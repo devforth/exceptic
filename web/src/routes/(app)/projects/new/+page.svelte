@@ -91,7 +91,6 @@
 				bind:value={values.diskShare}
 				storage={data.storage}
 				error={form.fields.disk_share}
-				locked={data.defaults.disk_share_locked}
 			/>
 		</FormGroup>
 	</Details>

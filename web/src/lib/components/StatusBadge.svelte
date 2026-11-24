@@ -1,12 +1,13 @@
 <!--
 @component
 An issue status: its sign and name as bold text in its tone, not a pill; what it means in the
-tooltip. With an href it is a link (the issue list of that status).
+tooltip. With an href it is a link (the issue list of that status). A detail (what ends an
+ignore) follows it as muted text.
 -->
 <script lang="ts">
 	import { statusLook, statusTitle, type StatusTextTone } from './issueStatus.ts';
 
-	let { status, href }: { status: string; href?: string } = $props();
+	let { status, href, detail }: { status: string; href?: string; detail?: string } = $props();
 
 	const look = $derived(statusLook(status));
 
@@ -39,4 +40,5 @@ tooltip. With an href it is a link (the issue list of that status).
 <!-- A link with href (callers pass resolved paths), else plain text. -->
 <svelte:element this={href ? 'a' : 'span'} {href} class={classes} title={statusTitle(status)}>
 	{@render text()}
-</svelte:element>
+</svelte:element>{#if detail}
+	<span class="text-xs text-muted">{detail}</span>{/if}

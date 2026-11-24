@@ -36,8 +36,10 @@ type statusChangeOutput struct {
 	To   string `json:"to"`
 	// Name is who changed it; empty for a deleted user.
 	Name string `json:"name,omitempty"`
-	// ByEvent: reopened because it happened again (EventID is that event).
+	// ByEvent: reopened because it happened again, or reached the events an
+	// ignore waited for (EventID is that event); ByExpiry: the ignore time ended.
 	ByEvent   bool      `json:"by_event,omitempty"`
+	ByExpiry  bool      `json:"by_expiry,omitempty"`
 	ViaMCP    bool      `json:"via_mcp,omitempty"`
 	EventID   string    `json:"event_id,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
@@ -68,6 +70,8 @@ type eventDetailsOutput struct {
 	// LogsFromRequest: the related logs are of the event's request (by span),
 	// not only of its trace within a minute.
 	LogsFromRequest bool `json:"logs_from_request,omitempty"`
+	// LogsStopped: the search for related logs stopped at the time limit; there may be more.
+	LogsStopped bool `json:"logs_stopped,omitempty"`
 	// Payload is the event as stored, indented.
 	Payload string `json:"payload"`
 }
@@ -153,7 +157,7 @@ func (handler *handlers) getIssueDetails(ctx context.Context, call Call, input i
 
 	for _, change := range details.History {
 		output.History = append(output.History, statusChangeOutput{
-			From: change.From, To: change.To, Name: change.Name, ByEvent: change.ByEvent(), ViaMCP: change.ViaMCP(),
+			From: change.From, To: change.To, Name: change.Name, ByEvent: change.ByEvent(), ByExpiry: change.ByExpiry(), ViaMCP: change.ViaMCP(),
 			EventID: change.EventID, CreatedAt: change.CreatedAt,
 		})
 	}
@@ -173,7 +177,7 @@ func eventDetails(details services.IssueDetails) *eventDetailsOutput {
 		TraceID: parsed.Trace().TraceID, TraceHasLogs: details.TraceHasLogs, Message: string(parsed.Message),
 		Exceptions: []exceptionOutput{}, Breadcrumbs: []breadcrumbOutput{}, Tags: sortedPairs(parsed.Tags, func(value string) string { return value }),
 		User: eventUser(parsed.User), Contexts: sortedPairs(parsed.Contexts, func(value json.RawMessage) string { return textutil.IndentJSON(value) }),
-		RelatedLogs: []relatedLogOutput{}, LogsFromRequest: details.LogsFromRequest, Payload: textutil.IndentJSON(event.Payload),
+		RelatedLogs: []relatedLogOutput{}, LogsFromRequest: details.LogsFromRequest, LogsStopped: details.LogsStopped, Payload: textutil.IndentJSON(event.Payload),
 	}
 
 	if drift := services.ClockDrift(event, parsed).Round(time.Minute); drift != 0 {

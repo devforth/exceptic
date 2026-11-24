@@ -22,10 +22,11 @@ type Projects struct {
 	registry  *projects.Registry
 	recording config.Recording
 	retention config.Retention
+	dropped   DropCounter
 }
 
-func newProjects(database store.Store, registry *projects.Registry, settings *config.Config) *Projects {
-	return &Projects{store: database, registry: registry, recording: settings.Recording, retention: settings.Retention}
+func newProjects(database store.Store, registry *projects.Registry, settings *config.Config, dropped DropCounter) *Projects {
+	return &Projects{store: database, registry: registry, recording: settings.Recording, retention: settings.Retention, dropped: dropped}
 }
 
 // List gives the current projects (a config.ProjectList).
@@ -116,17 +117,8 @@ func (service *Projects) Save(ctx context.Context, viewer store.User, form url.V
 		paletteColor = service.Color(store.Project{ID: project.ID})
 	}
 
-	stored := project
 	problems := readProjectForm(form, &project, service.recording, paletteColor)
 	access := viewer.ProjectAccess()
-
-	// The share decides how the projects compete for the database, hidden
-	// ones included.
-	if project.Share() != stored.Share() && !access.All() {
-		problems["disk_share"] = DiskShareProblem
-
-		return project, nil, Refusal{Kind: ErrForbidden, Problems: problems}
-	}
 
 	if len(problems) > 0 {
 		return project, problems, nil
@@ -146,9 +138,6 @@ func (service *Projects) Save(ctx context.Context, viewer store.User, form url.V
 
 	return project, nil, err
 }
-
-// DiskShareProblem: only someone with every project sets a disk share.
-const DiskShareProblem = "Only someone with access to all projects can change the disk share."
 
 // nameProblem says a name is taken without telling of a project outside access.
 func (service *Projects) nameProblem(access store.Access, name string) string {
@@ -208,23 +197,24 @@ func (service *Projects) UnresolvedCounts(ctx context.Context, access store.Acce
 	return counts, err
 }
 
-// DatabaseSize is how many bytes the database holds.
-func (service *Projects) DatabaseSize(ctx context.Context) (int64, error) {
-	return service.store.DatabaseSize(ctx)
-}
-
 // Storage is how much the database holds and how the cleanup keeps it under the limit.
 type Storage struct {
+	// UsedBytes is the data the database holds, as the cleanup measures it
+	// (store.ProjectUsage.Live).
 	UsedBytes  int64
 	LimitBytes int64 // 0: no size limit
 	// Used and Limit are the sizes as the server writes them (config.FormatSize).
 	Used, Limit string
 	Percent     int // of the limit
-	// CleanupStopPercent: at the limit the cleanup deletes down to this percent of it.
-	CleanupStopPercent int
+	// FilesBytes is what the files take: also the ingest queue, the write
+	// journal and deleted records until their next compaction.
+	FilesBytes int64
+	Files      string
+	// The cleanup starts at CleanupStartPercent of the limit and deletes down to CleanupStopPercent.
+	CleanupStartPercent, CleanupStopPercent int
 	// Projects are the parts of UsedBytes of the current projects the
 	// viewer sees, in list order; Other is the rest (the projects not seen,
-	// the ingest queue, data of deleted projects, users, notifications).
+	// users, sessions, settings, history, data of deleted projects).
 	// Without parts while Counting.
 	Projects   []ProjectStorage
 	OtherBytes int64
@@ -246,24 +236,24 @@ type ProjectStorage struct {
 	LimitBytes int64
 	// Oldest is what it still keeps, by the kinds the cleanup deletes.
 	Oldest store.OldestKept
+	// Dropped is what ingest dropped of it in the last 24 hours, largest first.
+	Dropped []store.Dropped
 }
 
-// Storage is the whole database's size and limit, which the cleanup acts
-// on, with the parts of the projects within access.
+// Storage is the data the whole database holds and its limit, which the
+// cleanup acts on, with the parts of the projects within access.
 func (service *Projects) Storage(ctx context.Context, access store.Access) (Storage, error) {
-	used, err := service.DatabaseSize(ctx)
-
-	if err != nil {
-		return Storage{}, err
-	}
-
 	usage, err := service.store.ProjectUsage(ctx)
 
 	if err != nil {
 		return Storage{}, err
 	}
 
-	storage := Storage{UsedBytes: used, Used: config.FormatSize(used), CleanupStopPercent: config.CleanupStopPercent, Counting: usage.Counting}
+	used := usage.Live
+	storage := Storage{
+		UsedBytes: used, Used: config.FormatSize(used), FilesBytes: usage.Files, Files: config.FormatSize(usage.Files),
+		CleanupStartPercent: config.CleanupStartPercent, CleanupStopPercent: config.CleanupStopPercent, Counting: usage.Counting,
+	}
 
 	if limit := service.retention.MaxDatabaseBytes; limit > 0 {
 		storage.LimitBytes, storage.Limit = limit, config.FormatSize(limit)
@@ -276,6 +266,10 @@ func (service *Projects) Storage(ctx context.Context, access store.Access) (Stor
 		part := ProjectStorage{ID: project.ID, Name: project.Name, Oldest: usage.Oldest[project.ID]}
 
 		part.LimitBytes = store.ShareLimit(storage.LimitBytes, project.DiskShare)
+
+		if service.dropped != nil {
+			part.Dropped = service.dropped.Dropped(project.ID)
+		}
 
 		if last, ok := usage.LastReceived[project.ID]; ok {
 			part.LastReceived = &last

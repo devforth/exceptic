@@ -206,6 +206,7 @@ type Cursor[T any] struct {
 	started  bool
 	found    int
 	err      error
+	stopped  bool
 }
 
 // Open starts the walk; Close the cursor when done.
@@ -217,53 +218,70 @@ func (query Query[T]) Open(reader Reader) *Cursor[T] {
 
 // Next returns false at the end or on an error, which Close returns.
 func (cursor *Cursor[T]) Next() (Entry[T], bool) {
-	query, iterator := cursor.query, cursor.iterator
-
-	if cursor.err != nil || (query.limit > 0 && cursor.found >= query.limit) {
-		return Entry[T]{}, false
-	}
-
 	for {
-		if query.ctx != nil && query.ctx.Err() != nil {
-			cursor.err = query.ctx.Err()
+		entry, kept, ok := cursor.Step()
 
-			return Entry[T]{}, false
-		}
-
-		var valid bool
-
-		switch {
-		case !cursor.started && query.newest:
-			valid = iterator.Last()
-		case !cursor.started:
-			valid = iterator.First()
-		case query.newest:
-			valid = iterator.Prev()
-		default:
-			valid = iterator.Next()
-		}
-
-		cursor.started = true
-
-		if !valid {
-			return Entry[T]{}, false
-		}
-
-		entry, ok, err := query.read(cursor.reader, iterator)
-
-		if err != nil {
-			cursor.err = err
-
-			return Entry[T]{}, false
-		}
-
-		if ok && (query.where == nil || query.where(entry.Record)) {
-			cursor.found++
-
-			return entry, true
+		if !ok || kept {
+			return entry, ok
 		}
 	}
 }
+
+// Step reads one key: its entry and kept when the walk keeps the record; a
+// key it skips (Raw, Where, an index key without its record) gives an entry
+// with only its Key, valid until the next Step. ok is false at the end, on
+// an error and when the context ends the walk.
+func (cursor *Cursor[T]) Step() (entry Entry[T], kept, ok bool) {
+	query, iterator := cursor.query, cursor.iterator
+
+	if cursor.err != nil || (query.limit > 0 && cursor.found >= query.limit) {
+		return Entry[T]{}, false, false
+	}
+
+	if query.ctx != nil && query.ctx.Err() != nil {
+		cursor.err, cursor.stopped = query.ctx.Err(), true
+
+		return Entry[T]{}, false, false
+	}
+
+	var valid bool
+
+	switch {
+	case !cursor.started && query.newest:
+		valid = iterator.Last()
+	case !cursor.started:
+		valid = iterator.First()
+	case query.newest:
+		valid = iterator.Prev()
+	default:
+		valid = iterator.Next()
+	}
+
+	cursor.started = true
+
+	if !valid {
+		return Entry[T]{}, false, false
+	}
+
+	entry, found, err := query.read(cursor.reader, iterator)
+
+	if err != nil {
+		cursor.err = err
+
+		return Entry[T]{}, false, false
+	}
+
+	if found && (query.where == nil || query.where(entry.Record)) {
+		cursor.found++
+
+		return entry, true, true
+	}
+
+	return Entry[T]{Key: iterator.Key()}, false, true
+}
+
+// Stopped reports whether the walk's context ended it.
+func (cursor *Cursor[T]) Stopped() bool { return cursor.stopped }
 
 // Close releases the walk and returns its first error.
 func (cursor *Cursor[T]) Close() error {

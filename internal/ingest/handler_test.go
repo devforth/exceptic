@@ -28,9 +28,8 @@ import (
 // Same keys and IDs as the fixtures and the sentry-playground DSNs.
 func testSettings() *config.Config {
 	return &config.Config{
-		Projects:           fixtures.Projects(),
-		AllowedOrigins:     []string{"*"},
-		RateLimitPerMinute: 0,
+		Projects:       fixtures.Projects(),
+		AllowedOrigins: []string{"*"},
 	}
 }
 
@@ -96,13 +95,13 @@ func (server *testServer) stored() ([]store.EventSummary, []store.LogRecord) {
 		server.t.Fatal(err)
 	}
 
-	logs, err := server.db.ListLogs(context.Background(), store.LogFilter{Limit: 1 << 20})
+	page, err := server.db.ListLogs(context.Background(), store.LogFilter{Limit: 1 << 20})
 
 	if err != nil {
 		server.t.Fatal(err)
 	}
 
-	return events, logs
+	return events, page.Logs
 }
 
 func (server *testServer) send(request *http.Request) *httptest.ResponseRecorder {
@@ -398,71 +397,6 @@ func TestInboxFailure(t *testing.T) {
 
 	if response.Code != http.StatusInternalServerError || strings.Contains(response.Body.String(), "closed") {
 		t.Fatalf("got %d %s", response.Code, response.Body)
-	}
-}
-
-func TestRateLimit(t *testing.T) {
-	settings := testSettings()
-	settings.RateLimitPerMinute = 2
-	server := newTestServer(t, settings)
-	now := time.Date(2026, 11, 11, 10, 0, 15, 0, time.UTC)
-	server.handler.now = func() time.Time { return now }
-
-	send := func(projectID, key string) *httptest.ResponseRecorder {
-		return server.send(newRequest(http.MethodPost, envelopeURL(projectID, key), []byte(simpleEnvelope)))
-	}
-
-	for range 2 {
-		if response := send("1", fixtures.BackendKey); response.Code != http.StatusOK {
-			t.Fatalf("got %d before the limit", response.Code)
-		}
-	}
-
-	response := send("1", fixtures.BackendKey)
-
-	if response.Code != http.StatusTooManyRequests {
-		t.Fatalf("got %d, want 429", response.Code)
-	}
-
-	if response.Header().Get("Retry-After") != "46" || response.Header().Get("X-Sentry-Rate-Limits") != "46::project" {
-		t.Fatalf("headers %v", response.Header())
-	}
-
-	// The limit is per project.
-	if response := send("2", fixtures.BrowserKey); response.Code != http.StatusOK {
-		t.Fatalf("other project: got %d", response.Code)
-	}
-	// Requests with a wrong key don't use up the project's limit.
-	if response := send("1", fixtures.BrowserKey); response.Code != http.StatusForbidden {
-		t.Fatalf("wrong key: got %d, want 403", response.Code)
-	}
-
-	now = now.Add(time.Minute)
-
-	if response := send("1", fixtures.BackendKey); response.Code != http.StatusOK {
-		t.Fatalf("next minute: got %d", response.Code)
-	}
-}
-
-// Envelopes without events or logs (spans with tracing on, one per trace)
-// neither count nor get a 429, which would stop errors in the SDK too.
-func TestRateLimitCountsOnlyStoredItems(t *testing.T) {
-	settings := testSettings()
-	settings.RateLimitPerMinute = 1
-	server := newTestServer(t, settings)
-
-	for range 3 {
-		if response := server.send(fixtures.Load(t, "node-spans").HTTP()); response.Code != http.StatusOK {
-			t.Fatalf("spans: got %d %s", response.Code, response.Body)
-		}
-	}
-
-	if response := server.send(newRequest(http.MethodPost, envelopeURL("1", fixtures.BackendKey), []byte(simpleEnvelope))); response.Code != http.StatusOK {
-		t.Fatalf("event after spans: got %d %s", response.Code, response.Body)
-	}
-
-	if events, logs := server.stored(); len(events) != 1 || len(logs) != 0 {
-		t.Fatalf("stored %d events, %d logs", len(events), len(logs))
 	}
 }
 

@@ -4,17 +4,23 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/devforth/exceptic/internal/fixtures"
+	"github.com/devforth/exceptic/internal/platform/config"
+	"github.com/devforth/exceptic/internal/platform/textutil"
 	"github.com/devforth/exceptic/internal/sentry"
+	"github.com/devforth/exceptic/internal/storage/store"
 )
 
 // The token pass gives what the tree pass it replaced gave (reference*
-// below, kept as it was): the same JSON once decoded. Key order and string
-// escapes may differ; the stored payload is always decoded again.
+// below, kept as it was, with the size limits added): the same JSON once
+// decoded. Key order and string escapes may differ; the stored payload is
+// always decoded again.
 func TestPrepareMatchesTheTreePass(t *testing.T) {
 	for index, payload := range samplePayloads(t) {
 		t.Run(fmt.Sprint(index), func(t *testing.T) {
@@ -26,6 +32,12 @@ func TestPrepareMatchesTheTreePass(t *testing.T) {
 				t.Fatalf("scrub of %s:\ngot  %s\nwant %s", payload, got, want)
 			}
 		})
+	}
+
+	for index, payload := range largePayloads(t) {
+		if got, want := normalized(prepareEvent(payload)), normalized(referencePrepare(payload)); got != want {
+			t.Errorf("large event %d differs:\ngot  %.2000s\nwant %.2000s", index, got, want)
+		}
 	}
 }
 
@@ -68,6 +80,11 @@ func samplePayloads(t testing.TB) [][]byte {
 		[]byte(`[["token","t"],["page","2"]]`), []byte(`["token","t"]`),
 		[]byte("not json"), []byte("null"), []byte(""), []byte(`["Bearer syntheticcredential"]`), []byte(`"just a string ?token=1"`), []byte("12.50"),
 		[]byte(`{"a":`), []byte(`{"a":1,}`), []byte(`[1,2`),
+		[]byte(`{"` + sentry.TruncatedField + `":["extra"],"message":"m"}`), []byte(`{}`),
+		// Long stacks: frames cut, the detail of the middle ones dropped.
+		[]byte(`{"threads":{"values":[{"stacktrace":{"frames":[` + strings.Repeat(`{"vars":{"a":1}},1,`, 130) + `{}]}}]}}`),
+		[]byte(`{"exception":[{"stacktrace":{"frames":[` + strings.Repeat(`{"in_app":true,"vars":{"a":1},"context_line":"c","pre_context":["p"]},{"filename":"lib.js","vars":{"b":2}},`, 30) + `{}]}}],` +
+			`"stacktrace":{"frames":[` + strings.Repeat(`{"post_context":["p"]},`, 255) + `{}]}}`),
 	}
 
 	for _, fixture := range fixtures.All(t) {
@@ -85,6 +102,53 @@ func samplePayloads(t testing.TB) [][]byte {
 	}
 
 	return payloads
+}
+
+// largePayloads need the size limits, each of the cuts in turn; too large
+// for the fuzz corpus.
+func largePayloads(t testing.TB) [][]byte {
+	stack := func(frameCount int, frame map[string]any) map[string]any {
+		frames := []any{}
+
+		for range frameCount {
+			frames = append(frames, frame)
+		}
+
+		return map[string]any{"frames": frames}
+	}
+	// every has something for each cut, more of it the larger size.
+	every := func(size int, more map[string]any) []byte {
+		breadcrumbs := []any{}
+
+		for range 50 {
+			breadcrumbs = append(breadcrumbs, map[string]any{"message": strings.Repeat("b", size<<8)})
+		}
+
+		fields := map[string]any{
+			"breadcrumbs": map[string]any{"values": breadcrumbs},
+			"extra":       filler(3 * size),
+			"request":     map[string]any{"method": "POST", "data": filler(size), "headers": map[string]any{"a": "b"}},
+			"contexts": map[string]any{
+				"trace": map[string]any{"trace_id": "0123456789abcdef0123456789abcdef"}, "os": map[string]any{"name": "Linux"},
+				"state": filler(size),
+			},
+			"exception": map[string]any{"values": []any{map[string]any{"type": "Error", "mechanism": map[string]any{"vars": "x"}, "stacktrace": stack(size, map[string]any{"function": "f", "vars": filler(1)})}}},
+			"threads":   []any{map[string]any{"stacktrace": stack(size, map[string]any{"function": "g", "pre_context": []string{strings.Repeat("p", 10<<10)}, "post_context": []string{"after"}})}},
+		}
+
+		maps.Copy(fields, more)
+
+		return longEvent(t, fields)
+	}
+
+	return [][]byte{
+		longEvent(t, map[string]any{"extra": map[string]any{"note": strings.Repeat("é", 20<<10), "short": "kept"}, "message": "\xff" + strings.Repeat("\xfe", 6000)}),
+		every(10, map[string]any{"tags": filler(1)}), // the oldest breadcrumbs and extra are enough
+		every(1, map[string]any{"tags": filler(70)}), // every cut
+		longEvent(t, map[string]any{"stacktrace": stack(70, map[string]any{"function": strings.Repeat("f", 20<<10)})}),
+		// frames cut first, then the variables of the frames kept
+		longEvent(t, map[string]any{"stacktrace": longStack()}),
+	}
 }
 
 // normalized is valid JSON decoded and written again with sorted keys, so
@@ -105,18 +169,200 @@ func normalized(payload []byte) string {
 	return string(encoded)
 }
 
-// referencePrepare is the tree pass prepareEvent replaced, kept as it was:
-// decode everything, remove credentials, then drop what does not help a fix.
+// referencePrepare is the tree pass prepareEvent replaced: decode
+// everything, remove credentials, then drop what does not help a fix; then
+// the size limits (referenceTruncate).
 func referencePrepare(payload []byte) []byte {
-	return referencePass(payload, func(document any) any {
+	var earlier []string
+
+	compacted := referencePass(payload, func(document any) any {
 		document = referenceValue(document, false)
 
-		if event, ok := document.(map[string]any); ok && event != nil {
-			referenceEventFields(event)
+		if event, ok := document.(map[string]any); ok && event != nil && referenceEventFields(event) {
+			earlier = []string{"frames"}
 		}
 
 		return document
 	})
+
+	return referenceTruncate(compacted, earlier)
+}
+
+// referenceTruncate applies the size limits to a prepared event as a tree:
+// long strings cut, then, while the event is too large, one more of the
+// cuts, each time from the whole event again. It decides on the size of its
+// own encoding, so it may disagree with the token pass near the limit only.
+// earlier are the cuts of the compaction, named first.
+func referenceTruncate(payload []byte, earlier []string) []byte {
+	decode := func() (map[string]any, bool) {
+		decoder := json.NewDecoder(bytes.NewReader(payload))
+		decoder.UseNumber()
+
+		var event map[string]any
+
+		return event, decoder.Decode(&event) == nil && event != nil
+	}
+
+	if _, ok := decode(); !ok {
+		return payload
+	}
+
+	unchanged := func() []byte {
+		if len(earlier) == 0 {
+			return payload
+		}
+
+		event, _ := decode()
+		event[sentry.TruncatedField] = earlier
+		output, _ := referenceEncode(event)
+
+		return output
+	}
+
+	steps := []string{"breadcrumbs", "extra", "request.data", "contexts", "frame_vars", "frame_context", "other"}
+
+	for level := 0; level <= len(steps); level++ {
+		event, _ := decode()
+		names := referenceCuts(event, steps[:level])
+
+		if len(names) == 0 {
+			if len(payload) <= config.MaxEventBytes || level == len(steps) {
+				return unchanged()
+			}
+
+			continue
+		}
+
+		event[sentry.TruncatedField] = slices.Concat(earlier, names)
+		output, err := referenceEncode(event)
+
+		if err != nil {
+			return payload
+		}
+
+		if len(output) <= config.MaxEventBytes || level == len(steps) {
+			return output
+		}
+	}
+
+	return unchanged()
+}
+
+// referenceCuts cuts long strings and applies steps to event, and returns
+// the names of the cuts that removed something, in their order.
+func referenceCuts(event map[string]any, steps []string) []string {
+	applies := func(name string) bool { return slices.Contains(steps, name) }
+	done := map[string]bool{}
+
+	if applies("other") {
+		for name := range event {
+			if !store.ErrorFields[name] && name != "contexts" {
+				delete(event, name)
+
+				done["other"] = true
+			}
+		}
+	}
+
+	if breadcrumbs, ok := event["breadcrumbs"]; ok && applies("breadcrumbs") {
+		list := referenceValues(breadcrumbs)
+
+		if len(list) > config.TruncatedBreadcrumbs {
+			done["breadcrumbs"] = true
+
+			if object, ok := breadcrumbs.(map[string]any); ok {
+				object["values"] = list[len(list)-config.TruncatedBreadcrumbs:]
+			} else {
+				event["breadcrumbs"] = list[len(list)-config.TruncatedBreadcrumbs:]
+			}
+		}
+	}
+
+	if _, ok := event["extra"]; ok && applies("extra") {
+		delete(event, "extra")
+
+		done["extra"] = true
+	}
+
+	if request, ok := event["request"].(map[string]any); ok && applies("request.data") {
+		if _, ok := request["data"]; ok {
+			delete(request, "data")
+
+			done["request.data"] = true
+		}
+	}
+
+	if contexts, ok := event["contexts"].(map[string]any); ok && applies("contexts") {
+		for name := range contexts {
+			if !slices.Contains([]string{"runtime", "os", "browser", "trace"}, name) {
+				delete(contexts, name)
+
+				done["contexts"] = true
+			}
+		}
+	}
+
+	var strip func(node any)
+
+	strip = func(node any) {
+		switch typed := node.(type) {
+		case map[string]any:
+			for name, step := range map[string]string{"vars": "frame_vars", "pre_context": "frame_context", "post_context": "frame_context"} {
+				if _, ok := typed[name]; ok && applies(step) {
+					delete(typed, name)
+
+					done[step] = true
+				}
+			}
+
+			for _, child := range typed {
+				strip(child)
+			}
+		case []any:
+			for _, child := range typed {
+				strip(child)
+			}
+		}
+	}
+
+	for _, field := range []string{"exception", "threads", "stacktrace"} {
+		strip(event[field])
+	}
+
+	var cut func(node any) any
+
+	cut = func(node any) any {
+		switch typed := node.(type) {
+		case map[string]any:
+			for name, child := range typed {
+				typed[name] = cut(child)
+			}
+		case []any:
+			for index, child := range typed {
+				typed[index] = cut(child)
+			}
+		case string:
+			if len(typed) > config.MaxEventStringBytes {
+				done["strings"] = true
+
+				return textutil.ShortenBytes(typed, config.MaxEventStringBytes)
+			}
+		}
+
+		return node
+	}
+
+	cut(event)
+
+	var names []string
+
+	for _, name := range append([]string{"strings"}, steps...) {
+		if done[name] {
+			names = append(names, name)
+		}
+	}
+
+	return names
 }
 
 // referenceScrub is the tree pass scrubJSON replaced.
@@ -134,16 +380,26 @@ func referencePass(payload []byte, change func(any) any) []byte {
 		return payload
 	}
 
+	output, err := referenceEncode(change(document))
+
+	if err != nil {
+		return payload
+	}
+
+	return output
+}
+
+func referenceEncode(value any) ([]byte, error) {
 	var output bytes.Buffer
 
 	encoder := json.NewEncoder(&output)
 	encoder.SetEscapeHTML(false)
 
-	if err := encoder.Encode(change(document)); err != nil {
-		return payload
+	if err := encoder.Encode(value); err != nil {
+		return nil, err
 	}
 
-	return bytes.TrimRight(output.Bytes(), "\n")
+	return bytes.TrimRight(output.Bytes(), "\n"), nil
 }
 
 func referenceValue(node any, inList bool) any {
@@ -210,9 +466,11 @@ func referenceFiltered(node any) any {
 	return filteredText
 }
 
-func referenceEventFields(event map[string]any) {
+// referenceEventFields reports whether a stack lost frames.
+func referenceEventFields(event map[string]any) bool {
 	delete(event, "modules")
 	delete(event, "debug_meta")
+	delete(event, sentry.TruncatedField)
 
 	if sdk, ok := event["sdk"].(map[string]any); ok {
 		delete(sdk, "integrations")
@@ -225,15 +483,17 @@ func referenceEventFields(event map[string]any) {
 		delete(event, "breadcrumbs")
 	}
 
+	framesDropped := false
+
 	for _, key := range []string{"exception", "threads"} {
 		for _, item := range referenceValues(event[key]) {
-			if object, ok := item.(map[string]any); ok {
-				referenceStacktrace(object["stacktrace"])
+			if object, ok := item.(map[string]any); ok && referenceStacktrace(object["stacktrace"]) {
+				framesDropped = true
 			}
 		}
 	}
 
-	referenceStacktrace(event["stacktrace"])
+	return referenceStacktrace(event["stacktrace"]) || framesDropped
 }
 
 func referenceValues(node any) []any {
@@ -266,14 +526,29 @@ func referenceNewestBreadcrumbs(node any) any {
 	return node
 }
 
-func referenceStacktrace(node any) {
+// referenceStacktrace keeps the 50 oldest and 200 newest frames, drops the
+// source of library frames when there are frames of the application, and
+// over 50 frames with source the detail of those not among the 25 at each
+// end; it reports whether frames were dropped.
+func referenceStacktrace(node any) bool {
 	stacktrace, ok := node.(map[string]any)
 
 	if !ok {
-		return
+		return false
 	}
 
-	frames, _ := stacktrace["frames"].([]any)
+	frames, isList := stacktrace["frames"].([]any)
+	dropped := len(frames) > 250
+
+	if dropped {
+		frames = slices.Concat(frames[:50], frames[len(frames)-200:])
+		stacktrace["frames"] = frames
+	}
+
+	if !isList {
+		return false
+	}
+
 	hasAppFrames := false
 
 	for _, item := range frames {
@@ -284,17 +559,34 @@ func referenceStacktrace(node any) {
 		}
 	}
 
-	if !hasAppFrames {
-		return
-	}
+	var withSource []map[string]any
 
 	for _, item := range frames {
-		if frame, ok := item.(map[string]any); ok && !referenceIsAppFrame(frame) {
+		frame, ok := item.(map[string]any)
+
+		switch {
+		case !ok:
+			if !hasAppFrames {
+				withSource = append(withSource, nil)
+			}
+		case !hasAppFrames || referenceIsAppFrame(frame):
+			withSource = append(withSource, frame)
+		default:
 			for _, key := range []string{"pre_context", "context_line", "post_context", "vars"} {
 				delete(frame, key)
 			}
 		}
 	}
+
+	if len(withSource) > 50 {
+		for _, frame := range withSource[25 : len(withSource)-25] {
+			for _, key := range []string{"pre_context", "post_context", "vars"} {
+				delete(frame, key)
+			}
+		}
+	}
+
+	return dropped
 }
 
 func referenceIsAppFrame(frame map[string]any) bool {

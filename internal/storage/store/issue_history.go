@@ -9,7 +9,9 @@ const (
 	SourceUI    = "ui"
 	SourceMCP   = "mcp"
 	SourceAPI   = "api"
-	SourceEvent = "event" // a resolved issue happened again
+	SourceEvent = "event" // a resolved issue happened again, or an ignored one reached its count of events
+	// SourceExpiry: the time an issue was ignored for ended.
+	SourceExpiry = "expiry"
 )
 
 // Actor is who changes a status: a user (UserID empty for the API token, an
@@ -30,6 +32,9 @@ type StatusChange struct {
 
 // ByEvent: the issue was reopened because it happened again.
 func (change StatusChange) ByEvent() bool { return change.Source == SourceEvent }
+
+// ByExpiry: the time the issue was ignored for ended.
+func (change StatusChange) ByExpiry() bool { return change.Source == SourceExpiry }
 
 // ViaMCP: a coding agent changed it for its user.
 func (change StatusChange) ViaMCP() bool { return change.Source == SourceMCP }

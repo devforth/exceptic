@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/devforth/exceptic/internal/sentry"
 )
@@ -31,7 +32,7 @@ func Components(event *sentry.Event) []string {
 		if isDefaultPlaceholder(value) {
 			components = append(components, defaultComponents(event)...)
 		} else {
-			components = append(components, value)
+			components = append(components, fingerprintValue(event, value))
 		}
 	}
 
@@ -50,7 +51,13 @@ func defaultComponents(event *sentry.Event) []string {
 	isMessage := main == nil || (main.Type == "" && event.Message != "")
 
 	if isMessage {
-		text := string(event.Message)
+		// The template ("Login failed for %s") when the SDK sent one, so the
+		// values put into it never split the issue.
+		text := event.MessageTemplate
+
+		if text == "" {
+			text = string(event.Message)
+		}
 
 		if text == "" && main != nil {
 			text = main.Value
@@ -60,27 +67,37 @@ func defaultComponents(event *sentry.Event) []string {
 	}
 
 	components := []string{"exception"}
+	javascript := isJavaScriptPlatform(event.Platform)
+
+	if group, ok := exceptionGroupComponents(event.Exception, javascript); ok {
+		return append(components, group...)
+	}
 
 	for _, exception := range event.Exception {
-		components = append(components, "type:"+exception.Type)
-		frames := groupingFrames(exception.Stacktrace)
+		components = append(components, exceptionComponents(exception, javascript)...)
+	}
 
-		if len(frames) == 0 {
-			// No stack: the value is all we have to tell errors of one type apart.
-			components = append(components, "value:"+NormalizeMessage(exception.Value))
-			continue
-		}
+	return components
+}
 
-		hasSource := false
+func exceptionComponents(exception sentry.Exception, javascript bool) []string {
+	components := []string{"type:" + exception.Type}
+	frames := groupingFrames(exception.Stacktrace)
 
-		for _, frame := range frames {
-			components = append(components, "frame:"+frameKey(frame))
-			hasSource = hasSource || strings.TrimSpace(frame.ContextLine) != ""
-		}
+	if len(frames) == 0 {
+		// No stack: the value is all we have to tell errors of one type apart.
+		return append(components, "value:"+NormalizeMessage(exception.Value))
+	}
 
-		if !hasSource {
-			components = append(components, "value:"+NormalizeMessage(exception.Value))
-		}
+	for _, frame := range frames {
+		components = append(components, "frame:"+frameKey(frame, javascript))
+	}
+
+	// Without a source line that counts where it was thrown (a browser sends
+	// none, a long line does not count), the value tells apart the throws of
+	// one function.
+	if sourceLine(frames[len(frames)-1]) == "" {
+		components = append(components, "value:"+NormalizeMessage(exception.Value))
 	}
 
 	return components
@@ -137,33 +154,83 @@ func frameLocation(frame sentry.Frame) string {
 	return normalizeFilename(frame.Filename)
 }
 
-// maxSourceLineLength keeps minified one-line bundles from bloating the components.
-const maxSourceLineLength = 200
+// maxSourceLineLength: a longer source line (a minified bundle, generated
+// code) changes with every build, so it does not count.
+const maxSourceLineLength = 120
 
-func frameKey(frame sentry.Frame) string {
-	key := frameLocation(frame)
+// sourceLine is the frame's source line as it counts for grouping: spaces
+// collapsed, since whitespace-only edits (indentation) must not split a
+// group, and empty when there is none or it is too long.
+func sourceLine(frame sentry.Frame) string {
+	line := strings.Join(strings.Fields(frame.ContextLine), " ")
 
-	if !isAnonymous(frame.Function) {
-		key += " " + frame.Function
+	if utf8.RuneCountInString(line) > maxSourceLineLength {
+		return ""
 	}
 
-	// Whitespace-only edits (indentation) must not split a group.
-	line := strings.Join(strings.Fields(frame.ContextLine), " ")
+	return line
+}
+
+func frameKey(frame sentry.Frame, javascript bool) string {
+	key := frameLocation(frame)
+	function := frame.Function
+
+	if javascript || isJavaScriptFile(frame.Filename) || isJavaScriptFile(frame.AbsPath) {
+		function = javaScriptFunction(function)
+	}
+
+	if !isAnonymous(function) {
+		key += " " + function
+	}
+
+	line := sourceLine(frame)
 
 	switch {
 	case line != "":
-		if len(line) > maxSourceLineLength {
-			line = line[:maxSourceLineLength]
-		}
-
 		return key + " | " + line
-	case isAnonymous(frame.Function):
+	case isAnonymous(function):
 		// No name and no source: the line number is less stable across deploys,
 		// but better than merging every anonymous function in the file.
 		return key + " line " + strconv.Itoa(frame.Lineno)
 	default:
 		return key
 	}
+}
+
+func isJavaScriptPlatform(platform string) bool {
+	return platform == "javascript" || platform == "node"
+}
+
+var javaScriptExtensions = []string{".js", ".mjs", ".cjs", ".jsx", ".ts", ".mts", ".cts", ".tsx", ".vue", ".svelte"}
+
+func isJavaScriptFile(path string) bool {
+	if index := strings.IndexAny(path, "?#"); index >= 0 {
+		path = path[:index]
+	}
+
+	extension := path[strings.LastIndexByte(path, '.')+1:]
+
+	for _, known := range javaScriptExtensions {
+		if strings.EqualFold("."+extension, known) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// javaScriptFunction drops what names the same JavaScript function in
+// different ways: the receiver ("Object.onClick", "Module.onClick" are
+// onClick) and the "at " and "new " of stack lines.
+func javaScriptFunction(function string) string {
+	function = strings.TrimPrefix(function, "at ")
+	function = strings.TrimPrefix(function, "new ")
+
+	if index := strings.LastIndexByte(function, '.'); index >= 0 && index < len(function)-1 {
+		return function[index+1:]
+	}
+
+	return function
 }
 
 func isAnonymous(function string) bool {
@@ -258,19 +325,7 @@ func Culprit(event *sentry.Event) string {
 		return event.Transaction
 	}
 
-	main := event.MainException()
-
-	if main == nil {
-		return ""
-	}
-
-	frames := groupingFrames(main.Stacktrace)
-
-	if len(frames) == 0 {
-		return ""
-	}
-
-	frame := frames[len(frames)-1]
+	frame := culpritFrame(event)
 	location := frameLocation(frame)
 
 	if frame.Function == "" {

@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
 	changeAuthor,
 	eventNotice,
+	eventsShownText,
 	frameFunction,
 	frameLocation,
 	frameStartsOpen,
 	frameUnfolds,
 	handledLabel,
+	notStoredText,
 	type Frame,
 	type StatusChange
 } from './issue.ts';
@@ -60,6 +62,12 @@ describe('the status history', () => {
 		expect(changeAuthor(change({ by_event: true, event_id: 'abc' }))).toBe(
 			'reopened: happened again'
 		);
+		expect(changeAuthor(change({ by_expiry: true, from: 'ignored' }))).toBe(
+			'ignore ended: its time ran out'
+		);
+		expect(changeAuthor(change({ by_event: true, from: 'ignored', event_id: 'abc' }))).toBe(
+			'ignore ended: reached its count of events'
+		);
 	});
 });
 
@@ -69,5 +77,20 @@ describe('an event not shown', () => {
 		expect(eventNotice('missing')).toBe('This event is no longer stored.');
 		expect(eventNotice('none')).toBe('No events of this issue are stored.');
 		expect(eventNotice('unreadable')).toBe("This event's stored data cannot be read.");
+	});
+});
+
+describe('notStoredText', () => {
+	it('counts the events and names the cap', () => {
+		expect(notStoredText(1234)).toBe('1,234 events (over 10 a minute)');
+		expect(notStoredText(1)).toBe('1 event (over 10 a minute)');
+	});
+});
+
+describe('eventsShownText', () => {
+	it('compares the rows with the events stored, not those counted', () => {
+		expect(eventsShownText(20, 100)).toBe('Showing the latest 20 of 100 stored events.');
+		expect(eventsShownText(20, 1234)).toBe('Showing the latest 20 of 1,234 stored events.');
+		expect(eventsShownText(20, 20)).toBeUndefined();
 	});
 });

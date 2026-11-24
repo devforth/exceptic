@@ -1,7 +1,8 @@
 <!--
 @component
 A list filter of several values: a dropdown of checkboxes whose button says "All projects"
-or "Projects: 2"; "All projects" first, set apart by a line. The option snippet draws a value (a badge). Hidden when there is nothing
+or "Projects: 2"; "All projects" first, set apart by a line, checked and disabled while nothing
+else is (choosing a value unchecks it, unchecking the last value checks it again). The option snippet draws a value (a badge). Hidden when there is nothing
 to choose (one option and none chosen).
 -->
 <script lang="ts">
@@ -70,11 +71,19 @@ to choose (one option and none chosen).
 			</span>
 		</summary>
 		<div class={[popupClasses, 'absolute top-full left-0 z-20 mt-1 min-w-full']}>
-			<label class={[optionClasses, 'mb-0.5 rounded-b-none border-b border-border']}>
+			<!-- Chosen while nothing else is: it goes by choosing a value, so it cannot be unchecked. -->
+			<label
+				class={[
+					optionClasses,
+					'mb-0.5 rounded-b-none border-b border-border',
+					selected.length === 0 && 'cursor-default hover:bg-transparent'
+				]}
+			>
 				<input
 					type="checkbox"
 					class={checkClasses.checkbox}
 					checked={selected.length === 0}
+					disabled={selected.length === 0}
 					onchange={() => onchange([])}
 				/>
 				{all}

@@ -191,6 +191,10 @@ func (service *Connections) Delete(ctx context.Context, access store.Access, id 
 		return err
 	}
 
+	if service.notifier != nil {
+		service.notifier.ConnectionDeleted(id)
+	}
+
 	return nil
 }
 

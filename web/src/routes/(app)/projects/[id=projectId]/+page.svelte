@@ -56,7 +56,6 @@
 		name={project.name}
 		{initial}
 		storage={data.storage}
-		diskShareLocked={project.disk_share_locked}
 		{save}
 		description={fromEnv ? fromEnvNote : undefined}
 	>

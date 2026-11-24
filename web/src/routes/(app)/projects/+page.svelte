@@ -20,6 +20,7 @@
 	import {
 		deleteConfirmation,
 		deleteProject,
+		droppedText,
 		fromEnvDeleteReason,
 		errorsKept,
 		usageSegments
@@ -151,10 +152,6 @@
 			</Button>
 		{/if}
 	{/snippet}
-	{#snippet description()}
-		Each service (backend, frontend, …) gets its own project. Its installation code connects the
-		service's Sentry SDK to it.
-	{/snippet}
 </PageHeading>
 
 <Card title="Storage">
@@ -188,12 +185,16 @@
 		<UsageBar percent={storage.percent ?? 0} label="Database size against MAX_DATABASE_SIZE" />
 	{/if}
 	<p class="text-xs text-muted">
+		Files on disk: {storage.files}, with deleted data until it is compacted and envelopes waiting to
+		be stored.
+	</p>
+	<p class="text-xs text-muted">
 		{#if storage.counting}
 			Counting what each project holds…
 		{/if}
 		{#if storage.limit}
-			At the limit the least useful data is deleted until the database is at {storage.cleanup_stop_percent}%:
-			old logs first, errors last.
+			At {storage.cleanup_start_percent}% of the limit the least useful data is deleted until the
+			database holds {storage.cleanup_stop_percent}%: old logs first, errors last.
 		{:else}
 			Nothing is deleted: the limit is off.
 		{/if}
@@ -205,6 +206,7 @@
 <Table {columns} rows={data.projects} rowKey={(project: Project) => project.id} label="Projects">
 	{#snippet cell(project: Project, column: ProjectColumn)}
 		{@const part = usage.get(project.id)}
+		{@const dropped = droppedText(part?.dropped)}
 		{#if column.key === 'project'}
 			<!-- Admins open its settings; the others, who cannot, its issues. -->
 			<Badge
@@ -218,6 +220,12 @@
 			<div class="text-xs text-muted">
 				#{project.id}{project.from_env ? ' · from PROJECTS' : ''}
 			</div>
+			{#if dropped}
+				<div class="flex items-center gap-1 text-xs text-warning">
+					{dropped}
+					<Hint text={help.fields.Projects.Dropped} />
+				</div>
+			{/if}
 		{:else if column.key === 'unresolved'}
 			<Button variant="link" href={withQuery(resolve('/(app)/issues'), { project: project.name })}>
 				{project.unresolved_issues}

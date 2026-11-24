@@ -442,7 +442,8 @@ func TestUnencodableEnvelopeIsDropped(t *testing.T) {
 		t.Fatal("the batch was never stored")
 	}
 
-	logs, err := db.ListLogs(context.Background(), store.LogFilter{})
+	page, err := db.ListLogs(context.Background(), store.LogFilter{})
+	logs := page.Logs
 
 	if err != nil {
 		t.Fatal(err)

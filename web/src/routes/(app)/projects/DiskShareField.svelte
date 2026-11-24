@@ -2,7 +2,7 @@
 @component
 The disk share of a project: the database's budget, the share on a slider with what it allows,
 what a saved project uses and the history it keeps now (from get_storage) and how the cleanup by size uses it, told from
-the generated steps and rules of the cleanup. `locked`: read-only with why (only someone with every project sets it).
+the generated steps and rules of the cleanup.
 -->
 <script lang="ts">
 	import { cleanupRules, cleanupSteps, diskShare, help } from '#lib/api/catalog.gen.ts';
@@ -19,11 +19,9 @@ the generated steps and rules of the cleanup. `locked`: read-only with why (only
 		/** A saved project: what it keeps now. */
 		projectId?: number;
 		error?: string;
-		/** Why the viewer may not change it (get_project's disk_share_locked). */
-		locked?: string;
 	};
 
-	let { value: share = $bindable(), storage, projectId, error, locked }: Props = $props();
+	let { value: share = $bindable(), storage, projectId, error }: Props = $props();
 
 	const budget = $derived(storage.limit_bytes ?? 0);
 	const usage = $derived(storage.projects?.find((part) => part.id === projectId));
@@ -70,7 +68,6 @@ the generated steps and rules of the cleanup. `locked`: read-only with why (only
 		unit="%"
 		hint={help.fields.Projects['Disk share']}
 		{error}
-		{locked}
 	>
 		{#snippet output()}
 			<b>{share}%</b>

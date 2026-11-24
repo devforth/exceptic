@@ -13,6 +13,7 @@ import CircleCheck from '@lucide/svelte/icons/circle-check';
 import CircleQuestionMark from '@lucide/svelte/icons/circle-question-mark';
 import CircleUserRound from '@lucide/svelte/icons/circle-user-round';
 import CircleX from '@lucide/svelte/icons/circle-x';
+import Clock from '@lucide/svelte/icons/clock';
 import CodeXml from '@lucide/svelte/icons/code-xml';
 import Copy from '@lucide/svelte/icons/copy';
 import Ellipsis from '@lucide/svelte/icons/ellipsis';
@@ -21,7 +22,9 @@ import ExternalLink from '@lucide/svelte/icons/external-link';
 import Eye from '@lucide/svelte/icons/eye';
 import EyeOff from '@lucide/svelte/icons/eye-off';
 import Folder from '@lucide/svelte/icons/folder';
+import Hash from '@lucide/svelte/icons/hash';
 import History from '@lucide/svelte/icons/history';
+import InfinityIcon from '@lucide/svelte/icons/infinity';
 import Info from '@lucide/svelte/icons/info';
 import KeyRound from '@lucide/svelte/icons/key-round';
 import LogOut from '@lucide/svelte/icons/log-out';
@@ -79,6 +82,10 @@ export const icons = {
 	resume: Play,
 	retry: RotateCw,
 	history: History,
+	// Ignore: for good, for a time, until a number of events.
+	forever: InfinityIcon,
+	time: Clock,
+	count: Hash,
 	send: Send,
 	info: Info,
 	success: CircleCheck,

@@ -694,11 +694,6 @@ Every component with its variants, on sample data. Served only by the dev server
 						<span class="text-muted">· up to 819.2 MB</span>{/snippet}
 				</Slider>
 				<Slider label="Refused" value={50} error="Choose 5 to 100 in steps of 5." />
-				<Slider
-					label="Locked"
-					value={50}
-					locked="Only someone with access to all projects can change the disk share."
-				/>
 			</Card>
 			<Card>
 				<ChoiceGroup legend="Projects (lead, hidden legend)" hideLegend inline>
@@ -762,6 +757,18 @@ Every component with its variants, on sample data. Served only by the dev server
 			<span>worker</span>
 			<RowMenu label="Actions for worker" items={sampleMenu} />
 		</Row>
+		<Row
+			caption="text: a labeled menu button with a chevron (an issue's Ignore), disabled with why"
+		>
+			<RowMenu label="Ignore this issue" text="Ignore" items={sampleMenu} />
+			<RowMenu
+				label="Ignore the selected issues"
+				text="Ignore"
+				items={sampleMenu}
+				disabled
+				title="Select issues to change them together"
+			/>
+		</Row>
 	</Section>
 
 	<Section title="Badges and states" id="badges">
@@ -795,6 +802,8 @@ Every component with its variants, on sample data. Served only by the dev server
 				<StatusBadge {status} />
 			{/each}
 			<StatusBadge status="resolved" href="#badges" />
+			<StatusBadge status="ignored" detail="until 25 Nov 14:00 UTC" />
+			<StatusBadge status="ignored" detail="for 37 more events" />
 		</Row>
 		<Row caption="project tone, size heading: beside a page's title">
 			<Badge tone="project" label="backend" size="heading" />
@@ -1024,11 +1033,15 @@ Every component with its variants, on sample data. Served only by the dev server
 				</Notice>
 			</div>
 		</Row>
-		<Row caption="Active filters: a chip per field, each value removable, then Clear all" wide>
+		<Row
+			caption="Active filters: a chip per field with a × for the whole filter, a × inside each of several values, then Clear all"
+			wide
+		>
 			<ActiveFilters
 				chips={[
 					{
 						label: 'Project',
+						remove: '#filters',
 						values: sampleProjects.map((name) => ({
 							text: name,
 							kind: 'project' as const,
@@ -1037,9 +1050,14 @@ Every component with its variants, on sample data. Served only by the dev server
 					},
 					{
 						label: 'Level',
-						values: [{ text: 'error', kind: 'level' as const, remove: '#filters' }]
+						remove: '#filters',
+						values: ['error', 'warning'].map((text) => ({
+							text,
+							kind: 'level' as const,
+							remove: '#filters'
+						}))
 					},
-					{ label: 'Search', values: [{ text: 'timeout', remove: '#filters' }] }
+					{ label: 'Search', remove: '#filters', values: [{ text: 'timeout', remove: '#filters' }] }
 				]}
 				clear="#filters"
 			/>
@@ -1313,7 +1331,7 @@ Every component with its variants, on sample data. Served only by the dev server
 			</FormDialog>
 		</Row>
 		<Row
-			caption="IssueActions: an issue's page (by its status), and the checked issues of a list (off with none checked)"
+			caption="IssueActions: an issue's page (by its status), and the checked issues of a list (off with none checked); Ignore is a menu: forever, for a time, until events more"
 		>
 			<IssueActions issueIds={['sample00']} status="unresolved" canDelete ondone={pause} />
 			<IssueActions issueIds={['sample00']} status="resolved" canDelete={false} ondone={pause} />
@@ -1511,6 +1529,18 @@ Every component with its variants, on sample data. Served only by the dev server
 					{#snippet cell(row: Context, column: ContextColumn)}{row[column.key]}{/snippet}
 				</Table>
 			</Card>
+		</Row>
+		<Row caption="busy: loading again after a filter changed (faded, a running bar)" wide>
+			<Table
+				columns={contextColumns}
+				rows={contexts}
+				rowKey={(row: Context) => row.name}
+				label="Contexts loading"
+				compact
+				busy
+			>
+				{#snippet cell(row: Context, column: ContextColumn)}{row[column.key]}{/snippet}
+			</Table>
 		</Row>
 		<Row caption="no rows: the empty snippet" wide>
 			<Table columns={projectColumns} rows={[] as SampleProject[]} label="Projects">

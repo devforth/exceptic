@@ -162,6 +162,13 @@ func (database *Store) CleanOutbox(_ context.Context, sentBefore, failedBefore t
 	return deleted, err
 }
 
+// HasPendingOutbox says whether a channel has messages still to send, due or not.
+func (database *Store) HasPendingOutbox(_ context.Context, channel string) (bool, error) {
+	count, _, err := database.outbox.By("pending", kv.Text(channel)).Count(database.db, 1)
+
+	return count > 0, err
+}
+
 // PendingChannels lists the channels with messages still to send, so their workers start after a restart.
 func (database *Store) PendingChannels(context.Context) ([]string, error) {
 	var channels []string

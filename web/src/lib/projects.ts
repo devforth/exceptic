@@ -134,6 +134,21 @@ export function usageSegments(
 	return segments;
 }
 
+type Dropped = NonNullable<NonNullable<Out<'get_storage'>['projects']>[number]['dropped']>;
+
+/** What a project dropped in the last day: "Dropped in 24 h: 50,000 logs (rate limit)". */
+export function droppedText(dropped: Dropped | null | undefined): string | undefined {
+	if (!dropped?.length) return undefined;
+
+	const counts = dropped.map(({ kind, count, reason_text }) => {
+		const unit = count === 1 ? kind.replace(/s$/, '') : kind;
+
+		return `${count.toLocaleString('en-US')} ${unit} (${reason_text})`;
+	});
+
+	return `Dropped in 24 h: ${counts.join(', ')}`;
+}
+
 /** The name of a palette color, or undefined for any other color. */
 export function paletteName(color: string): string | undefined {
 	return projectPalette.find((entry) => entry.color === color.toLowerCase())?.name;

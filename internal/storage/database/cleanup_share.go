@@ -1,6 +1,7 @@
 package database
 
 import (
+	"bytes"
 	"cmp"
 	"errors"
 	"fmt"
@@ -52,9 +53,14 @@ func (database *Store) cleanupTargets(maxBytes int64) ([]cleanupTarget, error) {
 	return append(targets, cleanupTarget{project: AllProjects, limit: maxBytes}), nil
 }
 
-// stopReason says why a run left running ends instead of going on: its
-// goal came from a limit its scope no longer has. Empty: it goes on.
+// stopReason says why a run left running ends instead of going on: it
+// started with other steps (an upgrade), or its goal came from a limit its
+// scope no longer has. Empty: it goes on.
 func (database *Store) stopReason(run CleanupRun, maxBytes int64) (string, error) {
+	if run.Order != cleanupOrder() {
+		return "stopped: the cleanup's steps changed", nil
+	}
+
 	limit, share := max(maxBytes, 0), 0
 
 	if run.Project != AllProjects && maxBytes > 0 {
@@ -91,31 +97,121 @@ func limitChanged(maxBytes int64) string {
 	return "stopped: MAX_DATABASE_SIZE changed to " + config.FormatSize(maxBytes)
 }
 
-// projectOnDisk is a project's part of the files: its bytes counted times diskRatio.
-func (database *Store) projectOnDisk(project int) (int64, float64, error) {
-	ratio, err := database.diskRatio()
-
-	return int64(float64(database.projectBytes(project)) * ratio), ratio, err
+// diskUsage is how the database's files divide: the ingest inbox, the
+// records no project counts (users, sessions, settings, status history,
+// notifications), and the issues, events and logs, whose size on disk per
+// byte counted is ratio. The deleted and replaced ones (staleBytes) take
+// their place in the files until a compaction and count as nobody's.
+type diskUsage struct {
+	files, inbox, other int64
+	ratio               float64
 }
 
-// diskRatio is the size on disk of a byte counted: the files without the
-// ingest inbox's, per byte counted and per byte of the logs and events
-// deleted or replaced since their last compaction (staleBytes), which keep
-// their space until then and belong to no project.
-func (database *Store) diskRatio() (float64, error) {
-	size, err := database.db.Size()
+// onDisk is the size on disk of counted bytes of issues, events and logs.
+func (usage diskUsage) onDisk(counted int64) int64 { return int64(float64(counted) * usage.ratio) }
+
+func (database *Store) diskUsage() (diskUsage, error) {
+	var usage diskUsage
+
+	files, err := database.db.Size()
 
 	if err != nil {
+		return usage, err
+	}
+
+	lower, upper := database.inbox.KeyRange()
+
+	if usage.inbox, err = database.sizeThrough(lower, upper); err != nil {
+		return usage, err
+	}
+
+	// The other records are the key ranges between the inbox and the counted collections.
+	collections := [][2][]byte{keyRange(database.events), keyRange(database.inbox), keyRange(database.issues), keyRange(database.logs)}
+	slices.SortFunc(collections, func(first, second [2][]byte) int { return bytes.Compare(first[0], second[0]) })
+
+	from := []byte{}
+
+	for _, keys := range append(collections, [2][]byte{{0xff}, nil}) {
+		size, err := database.sizeFrom(from, keys[0])
+
+		if err != nil {
+			return usage, err
+		}
+
+		usage.other += size
+		from = keys[1]
+	}
+
+	usage.files = files
+	counted := database.logicalSize() + database.staleBytes()
+
+	// Nothing counted: the files without the inbox are the other records, the journal included.
+	if counted == 0 {
+		usage.other = max(files-usage.inbox, 0)
+	}
+
+	usage.ratio = float64(max(files-usage.inbox-usage.other, 0)) / float64(max(counted, 1))
+
+	return usage, nil
+}
+
+func keyRange(collection interface{ KeyRange() ([]byte, []byte) }) [2][]byte {
+	lower, upper := collection.KeyRange()
+
+	return [2][]byte{lower, upper}
+}
+
+// The engine finds a bound's offset in a table by the index of its blocks,
+// whose keys are shortened past a block's last key: the block ending a range
+// may count in the range after it. sizeThrough and sizeFrom move the bounds
+// to keys, so each block counts in the range of its first key.
+
+// sizeThrough is SizeOf up to the first key at or after upper.
+func (database *Store) sizeThrough(lower, upper []byte) (int64, error) {
+	next := database.db.Iterate(upper, nil)
+	bound := []byte{0xff}
+
+	if next.First() {
+		bound = slices.Clone(next.Key())
+	}
+
+	if err := next.Close(); err != nil {
 		return 0, err
 	}
 
-	inbox, err := database.db.SizeOf(database.inbox.KeyRange())
+	return database.db.SizeOf(lower, bound)
+}
 
-	if err != nil {
+// sizeFrom is SizeOf from the first key in the range; 0 when it holds none.
+func (database *Store) sizeFrom(lower, upper []byte) (int64, error) {
+	first := database.db.Iterate(lower, upper)
+	found := first.First()
+
+	if found {
+		lower = slices.Clone(first.Key())
+	}
+
+	if err := first.Close(); err != nil || !found {
 		return 0, err
 	}
 
-	return float64(max(size-inbox, 0)) / float64(max(database.logicalSize()+database.staleBytes(), 1)), nil
+	return database.db.SizeOf(lower, upper)
+}
+
+// liveSize is what the database holds: its issues, events and logs on disk
+// and the other records. The inbox and what deletes and rewrites left in the
+// files are left out; records still in the write journal count at ratio.
+func (database *Store) liveSize() (int64, diskUsage, error) {
+	usage, err := database.diskUsage()
+
+	return usage.onDisk(database.logicalSize()) + usage.other, usage, err
+}
+
+// projectOnDisk is a project's part of liveSize: its bytes counted on disk.
+func (database *Store) projectOnDisk(project int) (int64, float64, error) {
+	usage, err := database.diskUsage()
+
+	return usage.onDisk(database.projectBytes(project)), usage.ratio, err
 }
 
 // staleBytes is what deletes and rewrites (the cleanup's, a project's
@@ -130,11 +226,11 @@ func (database *Store) staleBytes() int64 {
 // compactStale compacts the logs and events once their stale records take
 // more than config.StalePercent of the bytes counted: goleveldb frees some
 // of them on its own without telling, and each project is then measured
-// low by up to that part.
-func (database *Store) compactStale() error {
+// low by up to that part. It says whether it compacted.
+func (database *Store) compactStale() (bool, error) {
 	if database.backups.Load() > 0 || database.staleBytes()*100 <= config.StalePercent*database.logicalSize() {
-		return nil
+		return false, nil
 	}
 
-	return database.compact(database.staleData()...)
+	return true, database.compact(database.staleData()...)
 }

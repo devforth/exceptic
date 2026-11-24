@@ -29,14 +29,12 @@ problem beside it. `actions` and `description` go to its PageHeading.
 		/** What the form starts with. */
 		initial: ProjectFormValues;
 		storage: Out<'get_storage'>;
-		/** Why the viewer may not change the disk share. */
-		diskShareLocked?: string;
 		save: (values: ProjectFormValues, name: string) => Promise<unknown>;
 		actions?: Snippet;
 		description?: Snippet;
 	};
 
-	let { id, name, initial, storage, diskShareLocked, save, actions, description }: Props = $props();
+	let { id, name, initial, storage, save, actions, description }: Props = $props();
 
 	// The form keeps what the user changed; it starts from initial once.
 	// svelte-ignore state_referenced_locally
@@ -102,7 +100,6 @@ problem beside it. `actions` and `description` go to its PageHeading.
 			{storage}
 			projectId={id}
 			error={form.fields.disk_share}
-			locked={diskShareLocked}
 		/>
 	</Details>
 

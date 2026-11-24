@@ -281,17 +281,6 @@ type projectSettings struct {
 	ShownColor string `json:"shown_color"`
 	// DiskShare: the percent of MAX_DATABASE_SIZE it may hold before a cleanup of its own.
 	DiskShare int `json:"disk_share"`
-	// DiskShareLocked: why the viewer may not change the disk share.
-	DiskShareLocked string `json:"disk_share_locked,omitempty"`
-}
-
-// diskShareLocked is why the call may not change a disk share; empty when it may.
-func diskShareLocked(call Call) string {
-	if call.Access().All() {
-		return ""
-	}
-
-	return services.DiskShareProblem
 }
 
 // findProject reads the project given by name or ID: an unknown one is
@@ -311,16 +300,14 @@ func (handler *handlers) settings(call Call, project store.Project) projectSetti
 
 	return projectSettings{
 		projectView: handler.projectView(call, shown), Color: project.Color, ShownColor: handler.services.Projects.Color(project), DiskShare: project.Share(),
-		DiskShareLocked: diskShareLocked(call),
 	}
 }
 
 // projectDefaults is what the form of a new project starts with.
 type projectDefaults struct {
-	ShownColor      string   `json:"shown_color"`
-	LogLevels       []string `json:"log_levels"`
-	DiskShare       int      `json:"disk_share"`
-	DiskShareLocked string   `json:"disk_share_locked,omitempty"`
+	ShownColor string   `json:"shown_color"`
+	LogLevels  []string `json:"log_levels"`
+	DiskShare  int      `json:"disk_share"`
 }
 
 func (handler *handlers) getProjectDefaults(_ context.Context, call Call, _ noInput) (projectDefaults, error) {
@@ -328,7 +315,6 @@ func (handler *handlers) getProjectDefaults(_ context.Context, call Call, _ noIn
 
 	return projectDefaults{
 		ShownColor: handler.services.Projects.Color(store.Project{}), LogLevels: defaults["log_level"], DiskShare: store.Project{}.Share(),
-		DiskShareLocked: diskShareLocked(call),
 	}, nil
 }
 

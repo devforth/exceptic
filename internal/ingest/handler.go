@@ -19,8 +19,9 @@ type Handler struct {
 	logger   *slog.Logger
 	projects config.ProjectList // read per request: projects can change while running
 	cors     cors
-	limiter  *rateLimiter // nil when rate limiting is disabled
+	limiter  *rateLimiter // nil when both limits are off
 	reading  *readBudget
+	dropped  *DropCounter
 	now      func() time.Time
 	pipeline *Pipeline // takes accepted envelopes into its inbox and stores them later
 }
@@ -33,11 +34,10 @@ func newHandler(logger *slog.Logger, settings *config.Config, projects config.Pr
 		cors:     newCORS(settings.AllowedOrigins),
 		now:      time.Now,
 		reading:  newReadBudget(MaxReadingBytes),
+		dropped:  newDropCounter(logger),
 	}
 
-	if settings.RateLimitPerMinute > 0 {
-		handler.limiter = newRateLimiter(settings.RateLimitPerMinute)
-	}
+	handler.limiter = newRateLimiter(settings.RateLimitEventsPerMinute, settings.RateLimitLogsPerMinute)
 
 	return handler
 }
@@ -47,6 +47,8 @@ type requestError struct {
 	status     int
 	message    string
 	retryAfter string // seconds, only for 429
+	rateLimits string // X-Sentry-Rate-Limits of a 429; empty: every category
+	incomplete bool   // the body did not arrive whole
 }
 
 func (err *requestError) Error() string { return err.message }
@@ -90,7 +92,7 @@ func (handler *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			handler.logger.Debug("envelope rejected", "path", r.URL.Path, "status", rejection.status, "reason", rejection.message)
 
 			if rejection.retryAfter != "" {
-				writeRateLimited(w, rejection.retryAfter, rejection.message)
+				writeRateLimited(w, rejection)
 				return
 			}
 
@@ -108,7 +110,7 @@ func (handler *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	server.WriteJSON(w, http.StatusOK, response)
 }
 
-func (handler *Handler) ingest(w http.ResponseWriter, r *http.Request) (map[string]string, error) {
+func (handler *Handler) ingest(w http.ResponseWriter, r *http.Request) (response map[string]string, err error) {
 	projectID, err := strconv.Atoi(r.PathValue("projectID"))
 
 	if err != nil {
@@ -149,6 +151,16 @@ func (handler *Handler) ingest(w http.ResponseWriter, r *http.Request) (map[stri
 		return nil, reject(http.StatusForbidden, "invalid project or key")
 	}
 
+	var envelope *sentry.Envelope
+
+	// What the project's app sent and was refused is counted (refusals
+	// before are anyone's).
+	defer func() {
+		if err != nil {
+			handler.countRefused(project, err, envelope)
+		}
+	}()
+
 	// Any request with the key connects the project: SDKs send a session at
 	// start, long before an error.
 	handler.pipeline.markContact(project.ID, handler.now())
@@ -167,25 +179,112 @@ func (handler *Handler) ingest(w http.ResponseWriter, r *http.Request) (map[stri
 		return nil, err
 	}
 
-	envelope, err := sentry.ParseEnvelope(data)
+	if envelope, err = sentry.ParseEnvelope(data); err != nil {
+		envelope = nil
 
-	if err != nil {
 		return nil, reject(http.StatusBadRequest, "%v", err)
 	}
 
-	// A 429 stops every category in the SDK, so spans and other dropped
-	// items must not use up the limit of errors.
+	handler.dropped.addReports(project, envelope, handler.now())
+
+	// Spans and other dropped items neither count nor get a limit.
 	if !storesItems(envelope) {
 		return map[string]string{}, nil
 	}
 
-	if handler.limiter != nil {
-		if retryAfter, allowed := handler.limiter.allow(projectID, handler.now()); !allowed {
-			return nil, &requestError{status: http.StatusTooManyRequests, message: "rate limit exceeded", retryAfter: retryAfter}
+	if handler.limiter == nil {
+		return handler.pipeline.accept(project, envelope, data)
+	}
+
+	return handler.acceptWithinLimits(w, project, envelope, data)
+}
+
+// acceptWithinLimits drops the items of a category over its limit and
+// accepts the rest with 200; X-Sentry-Rate-Limits names the limited
+// categories, so the SDK pauses only them. Nothing left to store is a 429.
+func (handler *Handler) acceptWithinLimits(w http.ResponseWriter, project config.Project, envelope *sentry.Envelope, data []byte) (map[string]string, error) {
+	now := handler.now()
+	wanted := countItems(envelope)
+	decision := handler.limiter.take(project.ID, wanted, now)
+
+	if !decision.any() {
+		response, err := handler.pipeline.accept(project, envelope, data)
+
+		if err != nil {
+			handler.limiter.refund(project.ID, wanted, now)
+		}
+
+		return response, err
+	}
+
+	handler.warnLimited(project, decision)
+
+	for kind, limited := range decision.limited {
+		if limited {
+			handler.dropped.add(project, dropRateLimit, dropKind(kind), int64(wanted[kind]), now)
 		}
 	}
 
-	return handler.pipeline.accept(project, envelope, data)
+	withoutLimited(envelope, decision)
+
+	retryAfter := strconv.Itoa(decision.retryAfter)
+
+	if !storesItems(envelope) {
+		return nil, &requestError{status: http.StatusTooManyRequests, message: "rate limit exceeded", retryAfter: retryAfter, rateLimits: decision.header()}
+	}
+
+	response, err := handler.pipeline.accept(project, envelope, envelope.Encode())
+
+	if err != nil {
+		handler.limiter.refund(project.ID, decision.counted(wanted), now)
+
+		return nil, err
+	}
+
+	w.Header().Set("X-Sentry-Rate-Limits", decision.header())
+
+	return response, nil
+}
+
+// countRefused counts what a refusal of the project's envelope dropped: its
+// events and logs once it was read, otherwise the envelope. A rate limit's
+// items are counted where they are left out.
+func (handler *Handler) countRefused(project config.Project, err error, envelope *sentry.Envelope) {
+	reason := dropBusy // the store failing too
+
+	var rejection *requestError
+
+	if errors.As(err, &rejection) {
+		switch {
+		case rejection.rateLimits != "":
+			return
+		case rejection.status == http.StatusRequestEntityTooLarge:
+			reason = dropTooLarge
+		case rejection.incomplete:
+			reason = dropIncomplete
+		case rejection.status != http.StatusTooManyRequests:
+			reason = dropInvalid
+		}
+	}
+
+	if envelope == nil {
+		handler.dropped.add(project, reason, dropEnvelopes, 1, handler.now())
+
+		return
+	}
+
+	handler.dropped.addItems(project, reason, countItems(envelope), handler.now())
+}
+
+// warnLimited logs a category limited first in its minute: ingest is
+// public, so a flood logs one line a minute, not one per envelope.
+func (handler *Handler) warnLimited(project config.Project, decision rateDecision) {
+	for kind, first := range decision.first {
+		if first {
+			handler.logger.Warn("rate limit reached, dropping until the minute ends", "project", project.Name, "items", categoryLabels[kind],
+				"limit_per_minute", handler.limiter.limits[kind], "seconds", decision.retryAfter)
+		}
+	}
 }
 
 // storesItems reports whether the envelope has an event or a log, the only
@@ -208,8 +307,15 @@ func writeError(w http.ResponseWriter, status int, message string) {
 
 // writeRateLimited tells the SDK to pause sending. X-Sentry-Rate-Limits is
 // "retry_after:categories:scope"; empty categories mean all data types.
-func writeRateLimited(w http.ResponseWriter, retryAfter, message string) {
-	w.Header().Set("Retry-After", retryAfter)
-	w.Header().Set("X-Sentry-Rate-Limits", retryAfter+"::project")
-	writeError(w, http.StatusTooManyRequests, message)
+// SDKs that read it ignore Retry-After, which the others apply to everything.
+func writeRateLimited(w http.ResponseWriter, rejection *requestError) {
+	rateLimits := rejection.rateLimits
+
+	if rateLimits == "" {
+		rateLimits = rejection.retryAfter + "::project"
+	}
+
+	w.Header().Set("Retry-After", rejection.retryAfter)
+	w.Header().Set("X-Sentry-Rate-Limits", rateLimits)
+	writeError(w, http.StatusTooManyRequests, rejection.message)
 }

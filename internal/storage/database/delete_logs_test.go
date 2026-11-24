@@ -12,7 +12,7 @@ import (
 func logIDs(t *testing.T, database *Store, filter store.LogFilter) map[string]int64 {
 	t.Helper()
 
-	logs, err := database.ListLogs(context.Background(), filter)
+	page, err := database.ListLogs(context.Background(), filter)
 
 	if err != nil {
 		t.Fatal(err)
@@ -20,7 +20,7 @@ func logIDs(t *testing.T, database *Store, filter store.LogFilter) map[string]in
 
 	ids := map[string]int64{}
 
-	for _, record := range logs {
+	for _, record := range page.Logs {
 		ids[fmt.Sprintf("%d %s", record.ProjectID, record.Body)] = record.ID
 	}
 

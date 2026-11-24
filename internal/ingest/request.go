@@ -6,6 +6,7 @@ import (
 	"compress/zlib"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -275,7 +276,14 @@ func readError(err error) error {
 
 	// The body did not arrive within BodyReadTimeout.
 	if errors.Is(err, os.ErrDeadlineExceeded) {
-		return reject(http.StatusRequestTimeout, "read body: %v", err)
+		return &requestError{status: http.StatusRequestTimeout, message: "read body: " + err.Error(), incomplete: true}
+	}
+
+	var network net.Error
+
+	// The client hung up mid-body (or a compressed stream ends early).
+	if errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &network) {
+		return &requestError{status: http.StatusBadRequest, message: "read body: " + err.Error(), incomplete: true}
 	}
 
 	return reject(http.StatusBadRequest, "read body: %v", err)

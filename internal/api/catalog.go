@@ -16,6 +16,9 @@ type handlers struct {
 	services *services.All
 }
 
+// logSearchTime is config.LogSearchTime as descriptions say it: "10s".
+var logSearchTime = config.LogSearchTime.String()
+
 // Endpoints is the catalog. To add an endpoint, add it here with its handler
 // and its transports: REST, MCP and the web app pick it up. Descriptions say when to use an endpoint; the MCP
 // instructions and skills hold the workflow. Called with nil arguments it
@@ -58,11 +61,13 @@ func Endpoints(projects config.ProjectList, all *services.All) []Endpoint {
 			ReadOnly:    true,
 		}, handler.getEvent),
 		Define(Endpoint{
-			Transports:  AllTransports,
-			Name:        "list_logs",
-			Description: "Search logs, newest first. Pass trace_id (from get_issue) for the logs of one request or browser session.",
-			ReadOnly:    true,
-			Choices:     map[string][]string{"level": config.LogLevels},
+			Transports: AllTransports,
+			Name:       "list_logs",
+			Description: "Search logs, newest first. Pass trace_id (from get_issue) for the logs of one request or browser session. " +
+				"A search stops after " + logSearchTime + ": then stopped is true, searched_to says how far back it got and next_cursor goes on from there; " +
+				"narrow it (since/until, project, level) rather than paging far.",
+			ReadOnly: true,
+			Choices:  map[string][]string{"level": config.LogLevels},
 		}, handler.listLogs),
 		Define(Endpoint{
 			Transports: AllTransports,
@@ -79,7 +84,7 @@ func Endpoints(projects config.ProjectList, all *services.All) []Endpoint {
 				store.StatusResolved, store.StatusMeanings[store.StatusResolved], store.StatusIgnored, store.StatusMeanings[store.StatusIgnored],
 				store.StatusUnresolved, store.StatusMeanings[store.StatusUnresolved]),
 			Idempotent: true,
-			Choices:    map[string][]string{"status": store.IssueStatuses},
+			Choices:    map[string][]string{"status": store.IssueStatuses, "ignore_for": store.IgnoreDurations},
 		}, handler.updateIssueStatus),
 
 		Define(Endpoint{
@@ -118,9 +123,9 @@ func Endpoints(projects config.ProjectList, all *services.All) []Endpoint {
 		// ones deleted meanwhile skipped; deleting needs an admin (services.Issues).
 		Define(Endpoint{
 			Name:        "apply_issue_action",
-			Description: "Resolve, ignore, reopen or delete issues, recorded in their history as the user.",
+			Description: "Resolve, ignore (for good, for a time or until a number of events more), reopen or delete issues, recorded in their history as the user.",
 			Transports:  TransportUI,
-			Choices:     map[string][]string{"action": services.IssueActions},
+			Choices:     map[string][]string{"action": services.IssueActions, "ignore_for": store.IgnoreDurations},
 		}, handler.applyIssueAction),
 		Define(Endpoint{
 			Name:                      "get_session",
@@ -131,11 +136,12 @@ func Endpoints(projects config.ProjectList, all *services.All) []Endpoint {
 		}, handler.getSession),
 
 		Define(Endpoint{
-			Name:        "count_logs",
-			Description: "How many logs match the filters of list_logs, up to a limit (more says it was reached).",
-			ReadOnly:    true,
-			Transports:  TransportUI,
-			Choices:     map[string][]string{"level": config.LogLevels},
+			Name: "count_logs",
+			Description: "How many logs match the filters of list_logs, up to a limit (more says it was reached) or within " + logSearchTime +
+				" (stopped, with searched_to); from_id bounds list_logs to what it searched.",
+			ReadOnly:   true,
+			Transports: TransportUI,
+			Choices:    map[string][]string{"level": config.LogLevels},
 		}, handler.countLogs),
 		Define(Endpoint{
 			Name:        "list_log_levels",

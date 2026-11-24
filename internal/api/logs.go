@@ -27,6 +27,29 @@ type listLogsInput struct {
 	Limit  int    `json:"limit,omitempty" jsonschema:"Logs per page."`
 	Cursor string `json:"cursor,omitempty" jsonschema:"next_cursor of the previous page."`
 	Offset int    `json:"offset,omitempty" jsonschema:"Logs to skip, newest first, for numbered pages; next_cursor is faster. Not with cursor."`
+	FromID int64  `json:"from_id,omitempty" jsonschema:"Only logs with this ID or a greater one."`
+}
+
+// searchOutput says that a log search stopped at its time limit.
+type searchOutput struct {
+	// Stopped: the search ran out of time; logs received before SearchedTo
+	// may hold more matches.
+	Stopped    bool       `json:"stopped,omitempty"`
+	SearchedTo *time.Time `json:"searched_to,omitempty"`
+}
+
+func searchOf(scan store.LogScan) searchOutput {
+	if !scan.Stopped {
+		return searchOutput{}
+	}
+
+	return searchOutput{Stopped: true, SearchedTo: timeIfSet(scan.SearchedTo)}
+}
+
+type logsPage struct {
+	Items      []logOutput `json:"items"`
+	NextCursor string      `json:"next_cursor,omitempty"`
+	searchOutput
 }
 
 type logOutput struct {
@@ -45,8 +68,8 @@ type logIssueOutput struct {
 	Title string `json:"title"`
 }
 
-func (handler *handlers) listLogs(ctx context.Context, call Call, input listLogsInput) (Page[logOutput], error) {
-	output := Page[logOutput]{Items: []logOutput{}}
+func (handler *handlers) listLogs(ctx context.Context, call Call, input listLogsInput) (logsPage, error) {
+	output := logsPage{Items: []logOutput{}}
 	filter, err := handler.logFilter(call, input.logFiltersInput)
 
 	if err != nil {
@@ -61,20 +84,24 @@ func (handler *handlers) listLogs(ctx context.Context, call Call, input listLogs
 		return output, Invalid("offset out of range")
 	}
 
+	if input.FromID < 0 {
+		return output, Invalid("from_id out of range")
+	}
+
 	limit := pageLimit(input.Limit)
-	filter.Limit, filter.Offset = limit+1, input.Offset
+	filter.Limit, filter.Offset, filter.FromID = limit+1, input.Offset, input.FromID
 
 	if filter.BeforeID, err = parseCursor(input.Cursor); err != nil {
 		return output, err
 	}
 
-	logs, err := handler.services.Logs.List(ctx, call.Access(), filter)
+	page, err := handler.services.Logs.List(ctx, call.Access(), filter)
 
 	if err != nil {
 		return output, err
 	}
 
-	logs, more := store.Page(logs, limit)
+	logs, more := store.Page(page.Logs, limit)
 	issues, err := handler.services.Logs.Issues(ctx, call.Access(), logs)
 
 	if err != nil {
@@ -94,8 +121,14 @@ func (handler *handlers) listLogs(ctx context.Context, call Call, input listLogs
 		output.Items = append(output.Items, item)
 	}
 
-	if more {
+	// A search that ran out of time goes on below where it stopped, unless it
+	// may have stopped while skipping the offset: the cursor would then give
+	// the rows the offset was to skip.
+	switch output.searchOutput = searchOf(page.LogScan); {
+	case more:
 		output.NextCursor = strconv.FormatInt(logs[limit-1].ID, 10)
+	case page.Stopped && page.Rest > 0 && (input.Offset == 0 || len(logs) > 0):
+		output.NextCursor = strconv.FormatInt(page.Rest, 10)
 	}
 
 	return output, nil
@@ -129,16 +162,24 @@ type countOutput struct {
 	More bool `json:"more,omitempty"`
 }
 
-func (handler *handlers) countLogs(ctx context.Context, call Call, input logFiltersInput) (countOutput, error) {
+type logCountOutput struct {
+	countOutput
+	searchOutput
+	// FromID is list_logs' from_id for these logs: the list then searches no
+	// further back than this count did.
+	FromID int64 `json:"from_id,omitempty"`
+}
+
+func (handler *handlers) countLogs(ctx context.Context, call Call, input logFiltersInput) (logCountOutput, error) {
 	filter, err := handler.logFilter(call, input)
 
 	if err != nil {
-		return countOutput{}, err
+		return logCountOutput{}, err
 	}
 
-	count, more, err := handler.services.Logs.Count(ctx, call.Access(), filter)
+	count, err := handler.services.Logs.Count(ctx, call.Access(), filter)
 
-	return countOutput{Count: count, More: more}, err
+	return logCountOutput{countOutput: countOutput{Count: count.Count, More: count.More}, searchOutput: searchOf(count.LogScan), FromID: count.FromID}, err
 }
 
 type levelsOutput struct {
@@ -178,6 +219,7 @@ type traceOutput struct {
 	TraceID string               `json:"trace_id"`
 	Events  []store.EventSummary `json:"events"`
 	Logs    []store.LogRecord    `json:"logs"`
+	searchOutput
 }
 
 // listTrace is REST only: log attributes are raw SDK data.
@@ -201,7 +243,8 @@ func (handler *handlers) listTrace(ctx context.Context, call Call, input listTra
 		return output, err
 	}
 
-	output.Events, output.Logs = append([]store.EventSummary{}, events...), append([]store.LogRecord{}, logs...)
+	output.Events, output.Logs = append([]store.EventSummary{}, events...), append([]store.LogRecord{}, logs.Logs...)
+	output.searchOutput = searchOf(logs.LogScan)
 
 	return output, nil
 }

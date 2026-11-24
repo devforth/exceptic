@@ -15,21 +15,22 @@
 	import { exactTime } from '#lib/format.ts';
 	import { withQuery } from '#lib/nav.ts';
 	import type { PageProps } from './$types';
+	import { arrivedLine, compactionLine, compactionState, heldLine, type Run } from './cleanups.ts';
 
 	let { data }: PageProps = $props();
+	const history = $derived(data.history);
 
-	type Run = NonNullable<typeof data.history.runs>[number];
 	type Step = NonNullable<Run['steps']>[number];
 	type RunColumn = TableColumn<
 		| 'started'
 		| 'status'
 		| 'limit'
 		| 'before'
-		| 'compacted'
 		| 'after'
 		| 'deleted'
 		| 'result'
 		| 'took'
+		| 'compaction'
 		| 'details'
 	>;
 	type StepColumn = TableColumn<'number' | 'name' | 'freed' | 'took' | 'projects'>;
@@ -39,11 +40,11 @@
 		{ key: 'status', label: 'Status' },
 		{ key: 'limit', label: 'Limit', number: true, wideOnly: true },
 		{ key: 'before', label: 'Before', number: true, wideOnly: true },
-		{ key: 'compacted', label: 'Compacted', number: true, wideOnly: true },
 		{ key: 'after', label: 'After', number: true },
 		{ key: 'deleted', label: 'Deleted in steps', wideOnly: true },
 		{ key: 'result', label: 'Result' },
 		{ key: 'took', label: 'Took', number: true, wideOnly: true },
+		{ key: 'compaction', label: 'Files compacted', number: true, wideOnly: true },
 		{ key: 'details', label: 'Details', actions: true }
 	];
 
@@ -81,17 +82,21 @@
 />
 <PageHeading title="Cleanup history">
 	{#snippet description()}
-		When the database reaches <code>MAX_DATABASE_SIZE</code>
-		<Hint text={help.settings.MAX_DATABASE_SIZE} />, the ingest queue and the issues are compacted
-		first: deleted data keeps its space on disk until then. If the database is still at the limit,
-		data is deleted step by step until it is at {data.history.stop_percent}% of the limit. Sizes are
-		on disk; the last {data.history.kept} runs are kept.
+		When the data the database holds reaches {history.start_percent}% of
+		<code>MAX_DATABASE_SIZE</code>
+		<Hint text={help.settings.MAX_DATABASE_SIZE} />, data is deleted step by step until the database
+		holds {history.stop_percent}% of the limit. When its files take over {history.files_percent}% of
+		it, deleted data is compacted away first, and if they still do, deleting goes on until they are
+		under the limit. Before and after are of the data a run started with, so data arriving meanwhile
+		is shown apart; the files shrink when the compaction after the run frees what it deleted. Runs
+		recorded before that show the files' size before and no after. The last
+		{history.kept} runs are kept.
 	{/snippet}
 </PageHeading>
 
 <Table
 	columns={runColumns}
-	rows={data.history.runs ?? []}
+	rows={history.runs ?? []}
 	rowKey={(run: Run) => run.id}
 	label="Cleanup runs"
 	compact
@@ -106,10 +111,10 @@
 			{run.limit}
 		{:else if column.key === 'before'}
 			{run.size_before}
-		{:else if column.key === 'compacted'}
-			{run.compacted}
+			{#if run.before_files}<span class="text-xs text-muted">files</span>{/if}
 		{:else if column.key === 'after'}
-			{run.status === 'running' ? '…' : run.size_after}
+			{#if run.status === 'running'}…{:else if run.size_after}{run.size_after}
+				<span class="text-xs text-muted">−{run.freed}</span>{:else}—{/if}
 		{:else if column.key === 'deleted'}
 			{run.deleted_steps || '—'}
 		{:else if column.key === 'result'}
@@ -117,6 +122,13 @@
 			{#if run.error}<p class="text-xs text-error">{run.error}</p>{/if}
 		{:else if column.key === 'took'}
 			{run.took}
+		{:else if column.key === 'compaction'}
+			{#if run.compaction}
+				{@const state = compactionState(run.compaction)}
+				<StatusText tone={state.tone}>{state.text}</StatusText>
+			{:else}
+				—
+			{/if}
 		{:else if run.steps?.length}
 			<Button variant="link" popup="dialog" onclick={() => details(run)}>Details</Button>
 		{/if}
@@ -130,10 +142,15 @@
 >
 	{#if shown}
 		<p class="mb-3 text-sm">
-			Limit {shown.limit}: deleting goes down to {shown.stop}. On disk: {shown.size_before} before,
-			{shown.compacted} after compacting, so about {shown.needed} to free; {shown.size_after} after.
+			Limit {shown.limit}: deleting goes down to {shown.stop}. {heldLine(shown)}
+			{arrivedLine(shown)}
+			{#if shown.files}
+				Started by the files: {shown.files} after compacting, over {history.files_percent}% of the
+				limit, so deleting goes on until they are back under it.
+			{/if}
 			<br />
 			{shown.result}. Took {shown.took}.
+			{compactionLine(shown.compaction, history.stale_percent, history.compaction_attempts)}
 		</p>
 		<Table
 			columns={stepColumns}

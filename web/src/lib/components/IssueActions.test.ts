@@ -6,11 +6,12 @@ import {
 	actionsFor,
 	confirmationOf,
 	doneMessage,
+	ignoreOptions,
 	selectionProblem,
 	type IssueAction
 } from './issueActions.ts';
 import StatusBadge from './StatusBadge.svelte';
-import { statusRowTone, statusTitle } from './issueStatus.ts';
+import { ignoreBoundText, issueStatusTitle, statusRowTone, statusTitle } from './issueStatus.ts';
 
 describe('the actions an issue offers', () => {
 	it('follow its status, and Delete only for who may delete', () => {
@@ -32,6 +33,22 @@ describe('the actions an issue offers', () => {
 			tone: 'danger'
 		});
 		expect(confirmationOf('reopen', 1).message).toBe('Reopen 1 selected issue?');
+		expect(confirmationOf('ignore', 2, ignoreOptions[2]).message).toBe(
+			'Ignore 2 selected issues for 24 hours? New events are still recorded, but it stays out of the unresolved list until then.'
+		);
+	});
+
+	it('ignore for good, for each time the server takes, or until events more', () => {
+		expect(ignoreOptions.map((option) => option.label)).toEqual([
+			'Ignore forever',
+			'For 1 hour',
+			'For 24 hours',
+			'For 7 days',
+			'For 30 days',
+			'Until 10 more events',
+			'Until 100 more events',
+			'Until 1,000 more events'
+		]);
 	});
 
 	it('say what was done, and why nothing can be', () => {
@@ -49,6 +66,20 @@ describe('issue statuses', () => {
 		expect(statusTitle('all')).toBeUndefined();
 		expect(statusRowTone('unresolved')).toBe('error');
 		expect(statusRowTone('ignored')).toBe('faded');
+	});
+
+	it('say what ends an ignore', () => {
+		expect(ignoreBoundText({})).toBeUndefined();
+		expect(ignoreBoundText({ ignored_until: '2026-11-25T14:00:30Z' })).toBe(
+			'until 25 Nov 14:00 UTC'
+		);
+		expect(ignoreBoundText({ ignored_until: '2026-11-25T14:00:00Z', ignore_events_left: 1 })).toBe(
+			'until 25 Nov 14:00 UTC or for 1 more event'
+		);
+		expect(issueStatusTitle({ status: 'ignored', ignore_events_left: 1200 })).toBe(
+			'Ignored for 1,200 more events'
+		);
+		expect(issueStatusTitle({ status: 'ignored' })).toBe(statusTitle('ignored'));
 	});
 
 	it('show their sign to the eye only', () => {
@@ -95,6 +126,26 @@ describe('IssueActions', () => {
 		for (const name of ['Resolve', 'Ignore', 'Reopen', 'Delete']) {
 			expect(screen.getByRole<HTMLButtonElement>('button', { name }).disabled).toBe(true);
 		}
+	});
+
+	it('ignores as chosen in its menu, once confirmed', async () => {
+		const ondone = renderActions({ issueIds: ['issue001'], status: 'unresolved' });
+
+		await userEvent.click(screen.getByRole('button', { name: 'Ignore' }));
+		await userEvent.click(screen.getByRole('menuitem', { name: 'Until 100 more events' }));
+		expect(screen.getByText(/Ignore this issue until it happens 100 more times\?/)).toBeTruthy();
+
+		const confirm = [...screen.getByRole('dialog').querySelectorAll('button')].find(
+			(button) => button.textContent?.trim() === 'Ignore'
+		)!;
+
+		await userEvent.click(confirm);
+		await waitFor(() => expect(ondone).toHaveBeenCalledWith('ignore'));
+		expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({
+			action: 'ignore',
+			issue_ids: ['issue001'],
+			ignore_until_events: 100
+		});
 	});
 
 	it('sends nothing when cancelled, the action once confirmed', async () => {

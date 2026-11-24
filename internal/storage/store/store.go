@@ -51,6 +51,8 @@ type Store interface {
 	GetIssues(ctx context.Context, issueIDs []string) ([]Issue, error)
 	// SetIssuesStatus changes all or none (ErrNotFound for a missing ID).
 	SetIssuesStatus(ctx context.Context, issueIDs []string, status string, actor Actor) ([]Issue, error)
+	// IgnoreIssues sets them ignored until bound (the zero value: for good), all or none.
+	IgnoreIssues(ctx context.Context, issueIDs []string, bound IgnoreBound, actor Actor) ([]Issue, error)
 	IssueStatusHistory(ctx context.Context, issueID string) ([]StatusChange, error)
 
 	// Notification outbox.
@@ -64,6 +66,8 @@ type Store interface {
 	RetryOutboxNow(ctx context.Context, channel string, now time.Time) error
 	MarkOutboxFailed(ctx context.Context, id int64, lastError string, now time.Time) error
 	CleanOutbox(ctx context.Context, sentBefore, failedBefore time.Time) (int64, error)
+	// HasPendingOutbox says whether a channel has messages to send, due or not.
+	HasPendingOutbox(ctx context.Context, channel string) (bool, error)
 	// PendingChannels lists channels with messages to send, for a restart.
 	PendingChannels(ctx context.Context) ([]string, error)
 	ListOutbox(ctx context.Context, filter OutboxFilter) ([]OutboxRecord, error)
@@ -99,12 +103,14 @@ type Store interface {
 	// GetEvent finds an event by its SDK event_id within a project.
 	GetEvent(ctx context.Context, projectID int, eventID string) (Event, error)
 	LatestEvent(ctx context.Context, issueID string) (Event, error)
-	// CountLogs stops at LogCountLimit; more says there are more.
-	CountLogs(ctx context.Context, filter LogFilter) (count int, more bool, err error)
+	// CountLogs stops at LogCountLimit or, when it reads the logs rather
+	// than counting keys, at config.LogSearchTime.
+	CountLogs(ctx context.Context, filter LogFilter) (LogCount, error)
 	// LogLevels returns the levels at least one log of the projects has
 	// (every project when none is given).
 	LogLevels(ctx context.Context, projectIDs []int) ([]string, error)
-	ListLogs(ctx context.Context, filter LogFilter) ([]LogRecord, error)
+	// ListLogs stops at config.LogSearchTime too.
+	ListLogs(ctx context.Context, filter LogFilter) (LogPage, error)
 	// IssuesForLogs finds the issue of each log's request, by span.
 	IssuesForLogs(ctx context.Context, logs []LogRecord) (map[int64]LogIssue, error)
 	// DeleteLogs deletes the logs that exist and access sees; it says how many.

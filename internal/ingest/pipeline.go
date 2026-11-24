@@ -38,6 +38,8 @@ type Pipeline struct {
 	ParseBytes int64
 	// LogsPerMessage caps the copies of a repeated log message (0: none).
 	LogsPerMessage int
+	// EventsPerIssue caps the events an issue stores a minute (0: none).
+	EventsPerIssue int
 	// Rescan is how often the inbox is read again for entries missed.
 	Rescan time.Duration
 
@@ -69,7 +71,7 @@ func NewPipeline(logger *slog.Logger, settings *config.Config, projects config.P
 	handler := newHandler(logger, settings, projects)
 	pipeline := &Pipeline{
 		handler: handler, store: db, sink: sink, logger: logger,
-		MaxInboxBytes: config.MaxInboxBytes(config.DefaultMaxDatabaseBytes), LogsPerMessage: config.LogsPerMessage, BatchSize: 512, BatchBytes: 4 << 20, BatchWait: 5 * time.Millisecond, ParseBytes: 32 << 20, Rescan: 10 * time.Second,
+		MaxInboxBytes: config.MaxInboxBytes(config.DefaultMaxDatabaseBytes), LogsPerMessage: config.LogsPerMessage, EventsPerIssue: config.EventsPerIssuePerMinute, BatchSize: 512, BatchBytes: 4 << 20, BatchWait: 5 * time.Millisecond, ParseBytes: 32 << 20, Rescan: 10 * time.Second,
 		fresh: make(chan database.InboxEntry, 4*runtime.GOMAXPROCS(0)), wake: make(chan struct{}, 1), progress: make(chan struct{}),
 	}
 	handler.pipeline = pipeline
@@ -79,6 +81,9 @@ func NewPipeline(logger *slog.Logger, settings *config.Config, projects config.P
 
 // Handler serves POST /api/{projectID}/envelope/.
 func (pipeline *Pipeline) Handler() *Handler { return pipeline.handler }
+
+// Dropped counts what ingest refused per project.
+func (pipeline *Pipeline) Dropped() *DropCounter { return pipeline.handler.dropped }
 
 // WaitStored waits until the inbox is empty and no batch is being written:
 // every envelope accepted before the call is stored or dropped and reported,
@@ -348,6 +353,7 @@ func (pipeline *Pipeline) process(entry database.InboxEntry) (processed, bool) {
 	}
 
 	result.LogsPerMessage = pipeline.LogsPerMessage
+	result.EventsPerIssue = pipeline.EventsPerIssue
 
 	return result, true
 }

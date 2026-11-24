@@ -105,6 +105,7 @@ export function issueChips(url: Address, filters: IssueFilters): FilterChip[] {
 		listChip(url, 'Project', 'project', filters.project, 'project'),
 		{
 			label: 'Status',
+			remove: withStatus(url, defaultStatus),
 			values:
 				filters.status === defaultStatus
 					? []
@@ -115,6 +116,7 @@ export function issueChips(url: Address, filters: IssueFilters): FilterChip[] {
 		daysChip(url, filters.from, filters.to),
 		{
 			label: 'Sort',
+			remove: sortedBy(url, defaultSort),
 			values:
 				filters.sort === defaultSort
 					? []

@@ -59,6 +59,10 @@ func TestStalledBodyTimesOutThroughServer(t *testing.T) {
 		t.Errorf("got %d, want 408", response.StatusCode)
 	}
 
+	if dropped := fmt.Sprint(ingest.handler.dropped.Dropped(1)); dropped != "[{incomplete envelopes 1}]" {
+		t.Errorf("dropped %s, want the envelope as not received whole", dropped)
+	}
+
 	ingest.handler.reading.mutex.Lock()
 	defer ingest.handler.reading.mutex.Unlock()
 

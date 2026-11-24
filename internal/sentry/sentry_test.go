@@ -214,6 +214,33 @@ func TestEnvelopeWithLengthAndTrailingNewline(t *testing.T) {
 	}
 }
 
+// Encode writes the envelope as it came, without the items left out; a
+// payload with "length" keeps its newlines.
+func TestEnvelopeEncode(t *testing.T) {
+	body := "{\"event_id\":\"9ec79c33ec9942ab8353589fcb2e04dc\",\"x\":1}\n" +
+		"{\"type\":\"event\",\"length\":7}\nab\ncdef\n" +
+		"{\"type\":\"log\"}\n{\"items\":[]}\n" +
+		"{\"type\":\"span\"}\n{}"
+	envelope, err := ParseEnvelope([]byte(body))
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	envelope.Items = append(envelope.Items[:1], envelope.Items[2])
+	want := "{\"event_id\":\"9ec79c33ec9942ab8353589fcb2e04dc\",\"x\":1}\n" +
+		"{\"type\":\"event\",\"length\":7}\nab\ncdef\n" +
+		"{\"type\":\"span\"}\n{}\n"
+
+	if encoded := string(envelope.Encode()); encoded != want {
+		t.Fatalf("encoded %q, want %q", encoded, want)
+	}
+
+	if _, err := ParseEnvelope(envelope.Encode()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestEnvelopeErrors(t *testing.T) {
 	testCases := map[string]string{
 		"empty":             "",
@@ -240,7 +267,8 @@ func TestLenientFieldShapes(t *testing.T) {
 		"event_id": "9EC79C33-EC99-42AB-8353-589FCB2E04DC",
 		"timestamp": "2026-11-10T16:27:00.5Z",
 		"logentry": {"formatted": "formatted text", "message": "template %s"},
-		"exception": [{"type": "ValueError", "value": "bad"}],
+		"exception": [{"type": "ValueError", "value": "bad", "mechanism": {"is_exception_group": true, "exception_id": 1, "parent_id": 0}}],
+		"logger": "orders",
 		"breadcrumbs": {"values": [{"message": "step"}]},
 		"tags": [["release_stage", "beta"], ["attempt", 3]],
 		"fingerprint": ["{{ default }}", 42],
@@ -257,6 +285,10 @@ func TestLenientFieldShapes(t *testing.T) {
 		"event_id":    {event.EventID, "9ec79c33ec9942ab8353589fcb2e04dc"},
 		"timestamp":   {event.Timestamp.Format(time.RFC3339Nano), "2026-11-10T16:27:00.5Z"},
 		"message":     {string(event.Message), "formatted text"},
+		"template":    {event.MessageTemplate, "template %s"},
+		"logger":      {event.Logger, "orders"},
+		"group":       {strconv.FormatBool(event.Exception[0].Mechanism.IsExceptionGroup), "true"},
+		"parent":      {strconv.Itoa(*event.Exception[0].Mechanism.ParentID), "0"},
 		"title":       {event.Title(), "ValueError: bad"},
 		"breadcrumb":  {event.Breadcrumbs[0].Message, "step"},
 		"tag string":  {event.Tags["release_stage"], "beta"},
@@ -388,7 +420,7 @@ func TestWrongTypedLogFields(t *testing.T) {
 		t.Fatalf("first = %+v", first)
 	}
 
-	if logs[1].Body != "second" || !logs[1].Timestamp.Equal(received) || logs[1].Level != "info" {
+	if logs[1].Body != "second" || !logs[1].Timestamp.Equal(received) || logs[1].Level != "" {
 		t.Fatalf("second = %+v", logs[1])
 	}
 
@@ -464,5 +496,34 @@ func TestTimestampOutOfRange(t *testing.T) {
 		if _, err := json.Marshal(timestamp.Time); err != nil {
 			t.Errorf("%s: %v", input, err)
 		}
+	}
+}
+
+func TestClientReport(t *testing.T) {
+	envelope, err := ParseEnvelope(fixtures.Envelope(t, "node-client-report"))
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var reported []Discarded
+
+	for _, item := range envelope.Items {
+		if item.Header.Type == ItemClientReport {
+			reported = append(reported, ParseClientReport(item.Payload)...)
+		}
+	}
+
+	if len(reported) != 1 || reported[0] != (Discarded{Reason: "event_processor", Category: "error", Quantity: 1}) {
+		t.Fatalf("reported %+v", reported)
+	}
+
+	// Lenient: an odd entry is dropped, the others kept.
+	if got := ParseClientReport([]byte(`{"discarded_events":[{"reason":"queue_overflow","category":"log_item","quantity":"7"},"x",{"reason":1}]}`)); len(got) < 1 || got[0].Quantity != 7 {
+		t.Errorf("got %+v", got)
+	}
+
+	if got := ParseClientReport([]byte(`null`)); got != nil {
+		t.Errorf("got %+v", got)
 	}
 }

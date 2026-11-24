@@ -14,7 +14,7 @@
 	import FilterPicker from '#lib/components/FilterPicker.svelte';
 	import IssueActions from '#lib/components/IssueActions.svelte';
 	import { doneMessage, selectionProblem, type IssueAction } from '#lib/components/issueActions.ts';
-	import { statusLabel, statusRowTone, statusTitle } from '#lib/components/issueStatus.ts';
+	import { issueStatusTitle, statusLabel, statusRowTone } from '#lib/components/issueStatus.ts';
 	import LevelBadge from '#lib/components/LevelBadge.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import Pager from '#lib/components/Pager.svelte';
@@ -24,7 +24,8 @@
 	import type { TableColumn } from '#lib/components/table.ts';
 	import Time from '#lib/components/Time.svelte';
 	import { changed, cleared } from '#lib/filters.ts';
-	import { showChanged } from '#lib/navigate.ts';
+	import { reloading } from '#lib/loading.svelte.ts';
+	import { showChanged, shown } from '#lib/navigate.svelte.ts';
 	import { toast } from '#lib/toast.svelte.ts';
 	import type { PageProps } from './$types';
 	import { columnSorts, issueChips, showsResolved, sortedBy, statusChange } from './issues.ts';
@@ -74,29 +75,29 @@
 	<FilterPicker
 		kind="project"
 		options={data.projectNames}
-		selected={data.filters.project}
+		selected={shown('project', data.filters.project)}
 		onchange={(project: string[]) => showChanged(url, { project })}
 	/>
 	<Select
 		label="Status"
-		value={data.filters.status}
+		value={shown('status', data.filters.status)}
 		options={statusOptions}
-		onchange={(status: string) => showChanged(url, statusChange(status))}
+		onchange={(status: string) => showChanged(url, statusChange(status), { shown: { status } })}
 	/>
 	<FilterPicker
 		kind="level"
 		options={data.levelChoices}
-		selected={data.filters.level}
+		selected={shown('level', data.filters.level)}
 		onchange={(level: string[]) => showChanged(url, { level })}
 	/>
 	<SearchField
-		value={data.filters.query}
+		value={shown('query', data.filters.query)}
 		label="Search title or location"
-		onchange={(query: string) => showChanged(url, { query }, true)}
+		onchange={(query: string, now: boolean) => showChanged(url, { query }, { typing: true, now })}
 	/>
 	<DateRange
-		from={data.filters.from}
-		to={data.filters.to}
+		from={shown('from', data.filters.from)}
+		to={shown('to', data.filters.to)}
 		onchange={(from: string, to: string) => showChanged(url, { from, to })}
 	/>
 </FilterBar>
@@ -110,6 +111,7 @@
 {/if}
 
 <Table
+	busy={reloading()}
 	{columns}
 	rows={data.issues}
 	label="Issues"
@@ -118,7 +120,7 @@
 	selectLabel={(issue: Issue) => `Select ${issue.title}`}
 	sort={{ current: data.filters.sort, href: (sort: string) => sortedBy(url, sort) }}
 	rowTone={(issue: Issue) => statusRowTone(issue.status)}
-	rowTitle={(issue: Issue) => statusTitle(issue.status)}
+	rowTitle={(issue: Issue) => issueStatusTitle(issue)}
 >
 	{#snippet cell(issue: Issue, column: IssueColumn)}
 		{#if column.key === 'issue'}
@@ -167,5 +169,5 @@
 	perPage={data.perPage}
 	total={data.count}
 	href={(number: number) => changed(url, { page: number > 1 ? String(number) : null })}
-	onperpage={(perPage: number) => showChanged(url, { per_page: String(perPage) })}
+	onperpage={(perPage: number) => showChanged(url, { per_page: String(perPage) }, { now: true })}
 />

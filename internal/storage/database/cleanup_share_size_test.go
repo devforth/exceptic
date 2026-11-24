@@ -22,6 +22,9 @@ import (
 // may be from the files a store holding only its data takes.
 const measuredBound = 10.0
 
+// cleanupStop is where a run stops, as a part of its limit.
+const cleanupStop = float64(config.CleanupStopPercent) / 100
+
 // measuredPart is the error logs from (inclusive) to (exclusive) of a project.
 type measuredPart struct {
 	project, from, to int
@@ -176,24 +179,18 @@ func appendBacklog(t *testing.T, database *Store, count int) int64 {
 }
 
 // honest is a project's part of the files when they hold no deleted
-// records: the files without the ingest queue's, in the proportion of its
-// bytes to all counted.
+// records: the files without the ingest queue's and the other records', in
+// the proportion of its bytes to all counted.
 func honest(t *testing.T, database *Store, project int) int64 {
 	t.Helper()
 
-	size, err := database.db.Size()
+	disk, err := database.diskUsage()
 
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	inbox, err := database.db.SizeOf(database.inbox.KeyRange())
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return int64(float64(size-inbox) * float64(database.projectBytes(project)) / float64(database.logicalSize()))
+	return int64(float64(disk.files-disk.inbox-disk.other) * float64(database.projectBytes(project)) / float64(database.logicalSize()))
 }
 
 // What the Projects page shows and the cleanup compares with a share is a
@@ -260,8 +257,8 @@ func TestDiskShareMeasuresProjectsHonestly(t *testing.T) {
 		t.Errorf("the run ends measured at %.1f%% of the share's limit, want about %d%%", after*100, config.CleanupStopPercent)
 	}
 
-	if alone := float64(truth[2]) / float64(run.Limit); alone < cleanupStop-0.03 || alone > cleanupStop {
-		t.Errorf("the project's data alone takes %.1f%% of the share's limit after the run, want just under %d%%", alone*100, config.CleanupStopPercent)
+	if alone := float64(truth[2]) / float64(run.Limit); alone < cleanupStop-0.03 || alone > cleanupStop+0.01 {
+		t.Errorf("the project's data alone takes %.1f%% of the share's limit after the run, want about %d%%", alone*100, config.CleanupStopPercent)
 	}
 
 	check("after the run, its deletes in the files")
@@ -364,7 +361,8 @@ func TestDiskShareLeavesOutTheInbox(t *testing.T) {
 
 // One ratio serves every project (docs: an estimate): a project whose data
 // compresses well is measured above its files, one whose data does not
-// below. The parts still add up to the files without the inbox.
+// below. The parts and the other records still add up to the files without
+// the inbox, and to what the database holds.
 func TestDiskShareMeasuresMixedCompression(t *testing.T) {
 	database := openOnDisk(t, t.TempDir())
 	seedShares(t, database, 100, 100)
@@ -385,12 +383,17 @@ func TestDiskShareMeasuresMixedCompression(t *testing.T) {
 	truth := map[int]int64{1: trueSize(t, parts[0]), 2: trueSize(t, parts[1])}
 	compareMeasured(t, database, "compressible and random", truth)
 
-	size, _ := database.db.Size()
-	inbox, _ := database.db.SizeOf(database.inbox.KeyRange())
-	onDisk := usage(t, database).OnDisk
+	disk, _ := database.diskUsage()
+	measured := usage(t, database)
 
-	if off := percentOff(onDisk[1]+onDisk[2], size-inbox); math.Abs(off) > 1 {
-		t.Errorf("the parts add up to %d, the files without the inbox %d (%+.1f%%)", onDisk[1]+onDisk[2], size-inbox, off)
+	if off := percentOff(measured.OnDisk[1]+measured.OnDisk[2]+disk.other, disk.files-disk.inbox); math.Abs(off) > 1 {
+		t.Errorf("the parts and the other records add up to %d, the files without the inbox %d (%+.1f%%)",
+			measured.OnDisk[1]+measured.OnDisk[2]+disk.other, disk.files-disk.inbox, off)
+	}
+
+	// Up to a byte of rounding per part.
+	if parts := measured.OnDisk[1] + measured.OnDisk[2] + disk.other; measured.Live < parts || measured.Live > parts+2 {
+		t.Errorf("the database holds %d, its parts add up to %d", measured.Live, measured.OnDisk[1]+measured.OnDisk[2]+disk.other)
 	}
 }
 

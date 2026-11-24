@@ -158,16 +158,23 @@ var issueActions = map[string]string{
 
 var ErrUnknownAction = errors.New("unknown action")
 
+// ErrBoundWithoutIgnore: an ignore bound was given with another status.
+var ErrBoundWithoutIgnore = errors.New("ignore_for and ignore_until_events only go with ignoring")
+
 // ApplyAction runs action on the issues for the viewer, who is recorded in
 // the status history; deleting needs CanAdminister. Statuses change in
 // batches, each all or nothing. An issue that no longer exists (deleted
 // from another tab) or is outside the viewer's access is skipped, the
-// others are still processed.
-func (issues *Issues) ApplyAction(ctx context.Context, viewer store.User, action string, issueIDs []string) error {
+// others are still processed. An ignore ends by bound (the zero value: never).
+func (issues *Issues) ApplyAction(ctx context.Context, viewer store.User, action string, bound store.IgnoreBound, issueIDs []string) error {
 	status, ok := issueActions[action]
 
 	if !ok {
 		return ErrUnknownAction
+	}
+
+	if action != ActionIgnore && bound != (store.IgnoreBound{}) {
+		return ErrBoundWithoutIgnore
 	}
 
 	if action == ActionDelete && !viewer.CanAdminister() {
@@ -182,7 +189,7 @@ func (issues *Issues) ApplyAction(ctx context.Context, viewer store.User, action
 		if action == ActionDelete {
 			err = issues.deleteBatch(ctx, access, batch)
 		} else {
-			err = issues.setStatus(ctx, access, batch, status, viewer.Actor(store.SourceUI))
+			err = issues.setStatus(ctx, access, batch, status, bound, viewer.Actor(store.SourceUI))
 		}
 
 		if err != nil {
@@ -218,7 +225,7 @@ func issueIDsOf(list []store.Issue) []string {
 // setStatus changes the issues of a batch that still exist. The batch
 // update is all or nothing, so one deleted meanwhile means another try
 // without it.
-func (issues *Issues) setStatus(ctx context.Context, access store.Access, issueIDs []string, status string, actor store.Actor) error {
+func (issues *Issues) setStatus(ctx context.Context, access store.Access, issueIDs []string, status string, bound store.IgnoreBound, actor store.Actor) error {
 	for {
 		existing, _, err := issues.GetMany(ctx, access, issueIDs)
 
@@ -226,7 +233,7 @@ func (issues *Issues) setStatus(ctx context.Context, access store.Access, issueI
 			return err
 		}
 
-		_, err = issues.store.SetIssuesStatus(ctx, issueIDsOf(existing), status, actor)
+		_, err = issues.writeStatus(ctx, issueIDsOf(existing), status, bound, actor)
 
 		if !errors.Is(err, store.ErrNotFound) {
 			return err
@@ -237,8 +244,12 @@ func (issues *Issues) setStatus(ctx context.Context, access store.Access, issueI
 // SetStatus sets the status of every issue of ids, recorded with actor, and
 // returns them: all or nothing. Issues outside access are ErrHidden, checked
 // before missing ones (store.ErrNotFound, naming them); projects never
-// change, so the check before the write holds.
-func (issues *Issues) SetStatus(ctx context.Context, access store.Access, issueIDs []string, status string, actor store.Actor) ([]store.Issue, error) {
+// change, so the check before the write holds. An ignore ends by bound.
+func (issues *Issues) SetStatus(ctx context.Context, access store.Access, issueIDs []string, status string, bound store.IgnoreBound, actor store.Actor) ([]store.Issue, error) {
+	if status != store.StatusIgnored && bound != (store.IgnoreBound{}) {
+		return nil, ErrBoundWithoutIgnore
+	}
+
 	visible, hiddenIDs, err := issues.GetMany(ctx, access, issueIDs)
 
 	switch {
@@ -255,6 +266,14 @@ func (issues *Issues) SetStatus(ctx context.Context, access store.Access, issueI
 		slices.Sort(missing)
 
 		return nil, Missing("issue", slices.Compact(missing)...)
+	}
+
+	return issues.writeStatus(ctx, issueIDs, status, bound, actor)
+}
+
+func (issues *Issues) writeStatus(ctx context.Context, issueIDs []string, status string, bound store.IgnoreBound, actor store.Actor) ([]store.Issue, error) {
+	if status == store.StatusIgnored {
+		return issues.store.IgnoreIssues(ctx, issueIDs, bound, actor)
 	}
 
 	return issues.store.SetIssuesStatus(ctx, issueIDs, status, actor)
@@ -283,7 +302,8 @@ func (issues *Issues) History(ctx context.Context, issue store.Issue) ([]store.S
 }
 
 // TraceLogs reports whether the event's trace has logs: its trace ID links
-// to them only then.
+// to them only then. A search that ran out of time links too: the logs page
+// says how far it got.
 func (issues *Issues) TraceLogs(ctx context.Context, access store.Access, event store.Event) (bool, error) {
 	filter := store.LogFilter{TraceID: event.TraceID, Limit: 1}
 
@@ -291,9 +311,9 @@ func (issues *Issues) TraceLogs(ctx context.Context, access store.Access, event 
 		return false, nil
 	}
 
-	logs, err := issues.store.ListLogs(ctx, filter)
+	page, err := issues.store.ListLogs(ctx, filter)
 
-	return len(logs) > 0, err
+	return len(page.Logs) > 0 || page.Stopped, err
 }
 
 // ClockDrift is how far the device's clock was off: the stored time of an
@@ -322,19 +342,34 @@ const maxRelatedLogs = 100
 // matches (SDKs that send no spans), it falls back to logs of the same trace
 // within relatedLogsWindow of the error, by the server's time or the device's
 // (parsed): logs sent without sent_at keep the device's.
-func (issues *Issues) RelatedLogs(ctx context.Context, access store.Access, event store.Event, parsed *sentry.Event) ([]store.LogRecord, bool, error) {
+func (issues *Issues) RelatedLogs(ctx context.Context, access store.Access, event store.Event, parsed *sentry.Event) (RelatedLogs, error) {
 	return issues.RelatedLogsLimit(ctx, access, event, parsed, maxRelatedLogs)
 }
 
+// RelatedLogs are the logs written around an event, oldest first: FromRequest
+// when they are of its request (by span), Stopped when the search ran out of
+// time (config.LogSearchTime), so there may be more.
+type RelatedLogs struct {
+	Logs        []store.LogRecord
+	FromRequest bool
+	Stopped     bool
+}
+
 // RelatedLogsLimit is RelatedLogs with at most limit logs, the newest.
-func (issues *Issues) RelatedLogsLimit(ctx context.Context, access store.Access, event store.Event, parsed *sentry.Event, limit int) (logs []store.LogRecord, fromRequest bool, err error) {
+func (issues *Issues) RelatedLogsLimit(ctx context.Context, access store.Access, event store.Event, parsed *sentry.Event, limit int) (RelatedLogs, error) {
 	limit = min(max(limit, 1), maxRelatedLogs)
 
 	var projectIDs []int
 
 	if event.TraceID == "" || !access.Restrict(&projectIDs) {
-		return nil, false, nil
+		return RelatedLogs{}, nil
 	}
+
+	var (
+		logs        []store.LogRecord
+		fromRequest bool
+		err         error
+	)
 
 	var spans []string
 
@@ -344,31 +379,41 @@ func (issues *Issues) RelatedLogsLimit(ctx context.Context, access store.Access,
 		}
 	}
 
+	// A span search that ran out of time is not followed by the trace's: the
+	// page would wait for both.
+	stopped := false
+
 	if len(spans) > 0 {
-		logs, err = issues.store.ListLogs(ctx, store.LogFilter{ProjectIDs: projectIDs, TraceID: event.TraceID, SpanIDs: spans, Limit: limit})
+		var page store.LogPage
+
+		page, err = issues.store.ListLogs(ctx, store.LogFilter{ProjectIDs: projectIDs, TraceID: event.TraceID, SpanIDs: spans, Limit: limit})
+		logs, stopped = page.Logs, page.Stopped
 		fromRequest = len(logs) > 0
 	}
 
-	if err == nil && len(logs) == 0 {
+	if err == nil && len(logs) == 0 && !stopped {
 		earliest, latest := event.Timestamp, event.Timestamp.Add(-ClockDrift(event, parsed))
 
 		if latest.Before(earliest) {
 			earliest, latest = latest, earliest
 		}
 
-		logs, err = issues.store.ListLogs(ctx, store.LogFilter{
+		var page store.LogPage
+
+		page, err = issues.store.ListLogs(ctx, store.LogFilter{
 			ProjectIDs: projectIDs,
 			TraceID:    event.TraceID,
 			Since:      earliest.Add(-relatedLogsWindow),
 			Until:      latest.Add(relatedLogsWindow),
 			Limit:      limit,
 		})
+		logs, stopped = page.Logs, page.Stopped
 	}
 
 	// Oldest first: read what happened in order.
 	slices.Reverse(logs)
 
-	return logs, fromRequest, err
+	return RelatedLogs{Logs: logs, FromRequest: fromRequest, Stopped: stopped}, err
 }
 
 // AgentPrompt is the text of the "Prompt" button: what a coding agent needs

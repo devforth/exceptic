@@ -39,16 +39,23 @@ type listIssuesInput struct {
 var statusFilters = append(slices.Clone(store.IssueStatuses), store.StatusAll)
 
 type issueOutput struct {
-	ID         string     `json:"id"`
-	Project    string     `json:"project"`
-	Title      string     `json:"title"`
-	Location   string     `json:"location,omitempty"`
-	Level      string     `json:"level"`
-	Status     string     `json:"status"`
-	EventCount int        `json:"event_count"`
-	FirstSeen  time.Time  `json:"first_seen"`
-	LastSeen   time.Time  `json:"last_seen"`
-	ResolvedAt *time.Time `json:"resolved_at,omitempty"`
+	ID         string `json:"id"`
+	Project    string `json:"project"`
+	Title      string `json:"title"`
+	Location   string `json:"location,omitempty"`
+	Level      string `json:"level"`
+	Status     string `json:"status"`
+	EventCount int    `json:"event_count"`
+	// NotStored of EventCount: over the events an issue stores a minute.
+	NotStored int `json:"not_stored,omitempty"`
+	// StoredEvents are the events stored now, what list_issue_events reaches.
+	StoredEvents int        `json:"stored_events"`
+	FirstSeen    time.Time  `json:"first_seen"`
+	LastSeen     time.Time  `json:"last_seen"`
+	ResolvedAt   *time.Time `json:"resolved_at,omitempty"`
+	// IgnoredUntil and IgnoreEventsLeft end an ignore: then it is unresolved again.
+	IgnoredUntil     *time.Time `json:"ignored_until,omitempty"`
+	IgnoreEventsLeft int        `json:"ignore_events_left,omitempty"`
 	// MCPReference is the request that has a coding agent fetch the issue
 	// ("Copy for agent"); the web app's only, agents know the tool.
 	MCPReference string `json:"mcp_reference,omitempty"`
@@ -57,7 +64,8 @@ type issueOutput struct {
 func (handler *handlers) issueOutput(call Call, issue store.Issue) issueOutput {
 	output := issueOutput{
 		ID: issue.ID, Project: handler.projectName(issue.ProjectID), Title: call.Text(issue.Title), Location: call.Text(issue.Culprit),
-		Level: issue.Level, Status: issue.Status, EventCount: issue.EventCount, FirstSeen: issue.FirstSeen, LastSeen: issue.LastSeen, ResolvedAt: issue.ResolvedAt,
+		Level: issue.Level, Status: issue.Status, EventCount: issue.EventCount, NotStored: issue.NotStored, StoredEvents: issue.Stored, FirstSeen: issue.FirstSeen, LastSeen: issue.LastSeen, ResolvedAt: issue.ResolvedAt,
+		IgnoredUntil: issue.IgnoredUntil, IgnoreEventsLeft: issue.IgnoreEventsLeft(),
 	}
 
 	if call.Transport == TransportUI {
@@ -238,10 +246,9 @@ const relatedLogsLimit = 20
 // whoever asks.
 func (handler *handlers) describe(ctx context.Context, call Call, issue store.Issue, event store.Event) (Text, error) {
 	var (
-		parsed      *sentry.Event
-		logs        []store.LogRecord
-		fromRequest bool
-		err         error
+		parsed  *sentry.Event
+		related services.RelatedLogs
+		err     error
 	)
 
 	ids := []string{fmt.Sprintf("Issue ID: %s", issue.ID)}
@@ -251,7 +258,7 @@ func (handler *handlers) describe(ctx context.Context, call Call, issue store.Is
 			return "", err
 		}
 
-		if logs, fromRequest, err = handler.services.Issues.RelatedLogsLimit(ctx, call.Access(), event, parsed, relatedLogsLimit+1); err != nil {
+		if related, err = handler.services.Issues.RelatedLogsLimit(ctx, call.Access(), event, parsed, relatedLogsLimit+1); err != nil {
 			return "", err
 		}
 
@@ -264,12 +271,18 @@ func (handler *handlers) describe(ctx context.Context, call Call, issue store.Is
 		ids = append(ids, "No stored event: only the issue history is known.")
 	}
 
+	logs := related.Logs
+
+	if related.Stopped {
+		ids = append(ids, fmt.Sprintf("Related logs: the search stopped after %s; there may be more (list_logs with trace_id).", logSearchTime))
+	}
+
 	if len(logs) > relatedLogsLimit {
 		logs = logs[len(logs)-relatedLogsLimit:] // oldest first: keep the newest
 		ids = append(ids, fmt.Sprintf("Related logs: the %d most recent matches; use filtered list_logs for more.", relatedLogsLimit))
 	}
 
-	input := services.AgentInput(handler.projectName(issue.ProjectID), issue, parsed, logs, fromRequest)
+	input := services.AgentInput(handler.projectName(issue.ProjectID), issue, parsed, logs, related.FromRequest)
 
 	return Text(strings.Join(ids, "\n") + "\n\n" + agentprompt.Build(input)), nil
 }
@@ -384,9 +397,26 @@ func (handler *handlers) getIssues(ctx context.Context, call Call, input issueID
 	return handler.batchOutput(call, ids, issues, hiddenIDs), nil
 }
 
+// ignoreBoundInput bounds an ignore; both empty ignore for good.
+type ignoreBoundInput struct {
+	IgnoreFor         string `json:"ignore_for,omitempty" jsonschema:"With ignore only: unresolved again after this time."`
+	IgnoreUntilEvents int    `json:"ignore_until_events,omitempty" jsonschema:"With ignore only: unresolved again once it happens this many more times."`
+}
+
+func (input ignoreBoundInput) bound() (store.IgnoreBound, error) {
+	duration, ok := store.ParseIgnoreFor(input.IgnoreFor)
+
+	if !ok {
+		return store.IgnoreBound{}, Invalid("unknown ignore_for %q", input.IgnoreFor)
+	}
+
+	return store.IgnoreBound{For: duration, Events: input.IgnoreUntilEvents}, nil
+}
+
 type updateIssueStatusInput struct {
 	IssueIDs []string `json:"issue_ids" jsonschema:"1 to 100 issue IDs; one ID for a single issue."`
 	Status   string   `json:"status" jsonschema:"The status of every issue in the call."`
+	ignoreBoundInput
 }
 
 // updateIssueStatus changes one or many issues at once: all or none (an
@@ -399,7 +429,17 @@ func (handler *handlers) updateIssueStatus(ctx context.Context, call Call, input
 		return issueBatchOutput{}, Invalid("%s", err)
 	}
 
-	issues, err := handler.services.Issues.SetStatus(ctx, call.Access(), ids, input.Status, call.Actor)
+	bound, err := input.bound()
+
+	if err != nil {
+		return issueBatchOutput{}, err
+	}
+
+	issues, err := handler.services.Issues.SetStatus(ctx, call.Access(), ids, input.Status, bound, call.Actor)
+
+	if errors.Is(err, services.ErrBoundWithoutIgnore) {
+		return issueBatchOutput{}, Invalid("%s", err)
+	}
 
 	if err != nil {
 		return issueBatchOutput{}, err
@@ -427,6 +467,7 @@ func (handler *handlers) deleteIssue(ctx context.Context, call Call, input delet
 type applyIssueActionInput struct {
 	Action   string   `json:"action" jsonschema:"What to do with the issues."`
 	IssueIDs []string `json:"issue_ids" jsonschema:"The issues; issues deleted meanwhile are skipped."`
+	ignoreBoundInput
 }
 
 type appliedOutput struct {
@@ -449,9 +490,18 @@ func (handler *handlers) applyIssueAction(ctx context.Context, call Call, input 
 		return appliedOutput{}, Invalid("invalid issue id")
 	}
 
-	if err := handler.services.Issues.ApplyAction(ctx, call.Viewer, input.Action, ids); err != nil {
-		if errors.Is(err, services.ErrUnknownAction) {
+	bound, err := input.bound()
+
+	if err != nil {
+		return appliedOutput{}, err
+	}
+
+	if err := handler.services.Issues.ApplyAction(ctx, call.Viewer, input.Action, bound, ids); err != nil {
+		switch {
+		case errors.Is(err, services.ErrUnknownAction):
 			return appliedOutput{}, Invalid("unknown action %q", input.Action)
+		case errors.Is(err, services.ErrBoundWithoutIgnore):
+			return appliedOutput{}, Invalid("%s", err)
 		}
 
 		return appliedOutput{}, err

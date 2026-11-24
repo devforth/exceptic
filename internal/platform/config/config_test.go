@@ -20,7 +20,7 @@ func TestLoadDefaults(t *testing.T) {
 	}
 
 	if config.Port != DefaultPort || config.DataDir != DefaultDataDir || config.LogLevel != DefaultLogLevel || config.Projects != nil || config.APIToken != "" || config.AllowedIPs != nil ||
-		len(config.AllowedOrigins) != 1 || config.AllowedOrigins[0] != DefaultAllowedOrigins || config.RateLimitPerMinute != DefaultRateLimitPerMinute ||
+		len(config.AllowedOrigins) != 1 || config.AllowedOrigins[0] != DefaultAllowedOrigins || config.RateLimitEventsPerMinute != 10000 || config.RateLimitLogsPerMinute != 10000 ||
 		config.AdminUsername != DefaultAdminUsername || config.AdminPassword != "" || config.SessionLifetime != 24*time.Hour {
 		t.Fatalf("unexpected defaults: %+v", config)
 	}
@@ -28,11 +28,14 @@ func TestLoadDefaults(t *testing.T) {
 
 func TestLoadValues(t *testing.T) {
 	config, err := loadFrom(env(map[string]string{
-		"PORT":                  "9000",
-		"DATA_DIR":              "/data",
-		"LOG_LEVEL":             "debug",
-		"ALLOWED_ORIGINS":       "https://App.example.com, http://localhost:3500,http://[::1]:8080",
-		"RATE_LIMIT_PER_MINUTE": "0",
+		"PORT":                         "9000",
+		"DATA_DIR":                     "/data",
+		"LOG_LEVEL":                    "debug",
+		"ALLOWED_ORIGINS":              "https://App.example.com, http://localhost:3500,http://[::1]:8080",
+		"RATE_LIMIT_EVENTS_PER_MINUTE": "0",
+		"RATE_LIMIT_LOGS_PER_MINUTE":   "500",
+		// Replaced by the two above: ignored, whatever its value (main warns).
+		"RATE_LIMIT_PER_MINUTE": "-1",
 		"API_TOKEN":             "0123456789abcdef0123456789abcdef",
 		"ALLOWED_IPS":           "10.0.0.0/8, 203.0.113.7,::1",
 		"TRUSTED_PROXIES":       "172.17.0.1",
@@ -55,8 +58,8 @@ func TestLoadValues(t *testing.T) {
 		t.Fatalf("origins = %q", config.AllowedOrigins)
 	}
 
-	if config.RateLimitPerMinute != 0 {
-		t.Fatalf("rate limit = %d, want 0 (disabled)", config.RateLimitPerMinute)
+	if config.RateLimitEventsPerMinute != 0 || config.RateLimitLogsPerMinute != 500 {
+		t.Fatalf("rate limits = %d events, %d logs; want 0 (off), 500", config.RateLimitEventsPerMinute, config.RateLimitLogsPerMinute)
 	}
 
 	if config.APIToken != "0123456789abcdef0123456789abcdef" {
@@ -108,7 +111,8 @@ func TestLoadErrors(t *testing.T) {
 		{"origin with path", "ALLOWED_ORIGINS", "https://app.example.com/", "invalid origin"},
 		{"origin without scheme", "ALLOWED_ORIGINS", "app.example.com", "invalid origin"},
 		{"only commas in origins", "ALLOWED_ORIGINS", ",,", "no origins"},
-		{"negative rate limit", "RATE_LIMIT_PER_MINUTE", "-1", "RATE_LIMIT_PER_MINUTE"},
+		{"negative events rate limit", "RATE_LIMIT_EVENTS_PER_MINUTE", "-1", "RATE_LIMIT_EVENTS_PER_MINUTE"},
+		{"bad logs rate limit", "RATE_LIMIT_LOGS_PER_MINUTE", "10k", "RATE_LIMIT_LOGS_PER_MINUTE"},
 		{"short api token", "API_TOKEN", "secret", "at least"},
 		{"short admin password", "ADMIN_PASSWORD", "short-pass", "12 to 256"},
 		{"long admin password", "ADMIN_PASSWORD", strings.Repeat("p", MaxPasswordLength+1), "12 to 256"},

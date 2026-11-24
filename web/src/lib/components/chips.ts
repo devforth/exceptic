@@ -11,7 +11,8 @@ export type FilterValue = {
 	remove: string;
 };
 
-export type FilterChip = { label: string; values: FilterValue[] };
+/** A filter's values and the address without the whole filter. */
+export type FilterChip = { label: string; values: FilterValue[]; remove: string };
 
 /** An address: a URL, or SvelteKit's page.url. */
 type Address = { pathname: string; search: string };
@@ -26,6 +27,7 @@ export function listChip(
 ): FilterChip {
 	return {
 		label,
+		remove: changed(url, { [name]: null }),
 		values: values.map((value) => ({
 			text: value,
 			...(kind ? { kind } : {}),
@@ -36,17 +38,19 @@ export function listChip(
 
 /** A text filter (?query=…): its text, removed with its parameter. */
 export function textChip(url: Address, label: string, name: string, value: string): FilterChip {
-	return { label, values: value ? [{ text: value, remove: changed(url, { [name]: null }) }] : [] };
+	const remove = changed(url, { [name]: null });
+
+	return { label, remove, values: value ? [{ text: value, remove }] : [] };
 }
 
 /** The days of a DateRange (?from=…&to=…), removed together. */
 export function daysChip(url: Address, from: string, to: string): FilterChip {
+	const remove = changed(url, { from: null, to: null });
+
 	return {
 		label: 'Dates',
-		values:
-			from || to
-				? [{ text: rangeText(from, to, today()), remove: changed(url, { from: null, to: null }) }]
-				: []
+		remove,
+		values: from || to ? [{ text: rangeText(from, to, today()), remove }] : []
 	};
 }
 

@@ -62,8 +62,12 @@ func New(ctx context.Context, options Options) (*App, error) {
 		Store: db, Channels: options.Factory, Logger: logger,
 		RetryFor: settings.Notifications.RetryFor, KeepSent: settings.Notifications.KeepSent, KeepFailed: settings.Notifications.KeepFailed,
 	})
+	sink := ingest.StoreSink{Logger: logger, Notifier: notifier, PublicURL: settings.Notifications.PublicURL, Recording: settings.Recording}
+	pipeline := ingest.NewPipeline(logger, settings, registry, db, sink)
+	pipeline.MaxInboxBytes = config.MaxInboxBytes(settings.Retention.MaxDatabaseBytes)
 	all := services.New(services.Dependencies{
 		Logger: logger, Store: db, Registry: registry, Settings: settings, Factory: options.Factory, Notifier: notifier, OAuth: authorization,
+		Dropped: pipeline.Dropped(),
 	})
 
 	// The first start creates the superadmin from env; later starts do not
@@ -84,10 +88,7 @@ func New(ctx context.Context, options Options) (*App, error) {
 		spa = options.Web
 	}
 
-	app := &App{Registry: registry, OAuth: authorization, Services: all, options: options, notifier: notifier}
-	sink := ingest.StoreSink{Logger: logger, Notifier: app.notifier, PublicURL: settings.Notifications.PublicURL, Recording: settings.Recording}
-	app.pipeline = ingest.NewPipeline(logger, settings, registry, db, sink)
-	app.pipeline.MaxInboxBytes = config.MaxInboxBytes(settings.Retention.MaxDatabaseBytes)
+	app := &App{Registry: registry, OAuth: authorization, Services: all, options: options, notifier: notifier, pipeline: pipeline}
 
 	// One catalog of requests, served as the REST API, as MCP tools and to the web app.
 	endpoints := api.Endpoints(registry, all)

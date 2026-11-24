@@ -147,8 +147,11 @@ type Config struct {
 	// AllowedOrigins lists the browser origins allowed to send events (CORS).
 	// ["*"] allows any origin. Requests without an Origin header (backend SDKs) are always allowed.
 	AllowedOrigins []string
-	// RateLimitPerMinute caps envelopes per project per minute. 0 disables the limit.
-	RateLimitPerMinute int
+	// RateLimitEventsPerMinute and RateLimitLogsPerMinute cap the events and
+	// the logs a project may send per minute, a guard against abuse (an
+	// error in a loop is capped per issue, EventsPerIssuePerMinute); 0 turns a limit off.
+	RateLimitEventsPerMinute int
+	RateLimitLogsPerMinute   int
 	// APIToken authorizes REST API requests (Authorization: Bearer <token>).
 	// Empty means the API is closed.
 	APIToken string
@@ -176,12 +179,16 @@ type Config struct {
 
 // Defaults used when the corresponding environment variable is not set.
 const (
-	DefaultPort               = 8000
-	DefaultDataDir            = "./data"
-	DefaultLogLevel           = slog.LevelInfo
-	DefaultAllowedOrigins     = "*"
-	DefaultRateLimitPerMinute = 1000
-	DefaultMemoryLimit        = 200 << 20 // GOMEMLIMIT, the Go runtime's soft limit
+	DefaultPort                     = 8000
+	DefaultDataDir                  = "./data"
+	DefaultLogLevel                 = slog.LevelInfo
+	DefaultAllowedOrigins           = "*"
+	DefaultRateLimitEventsPerMinute = 10000
+	DefaultRateLimitLogsPerMinute   = 10000
+	// SDKLogBatch is the most logs the JavaScript SDK sends in one envelope; a
+	// log limit below it drops every full batch whole.
+	SDKLogBatch        = 100
+	DefaultMemoryLimit = 200 << 20 // GOMEMLIMIT, the Go runtime's soft limit
 
 	DefaultAdminUsername = "admin"
 
@@ -235,13 +242,14 @@ func LimitMemory() {
 
 func loadFrom(getenv func(string) string) (*Config, error) {
 	config := &Config{
-		Port:               DefaultPort,
-		DataDir:            DefaultDataDir,
-		LogLevel:           DefaultLogLevel,
-		AllowedOrigins:     []string{DefaultAllowedOrigins},
-		RateLimitPerMinute: DefaultRateLimitPerMinute,
-		AdminUsername:      DefaultAdminUsername,
-		SessionLifetime:    DefaultSessionLifetime,
+		Port:                     DefaultPort,
+		DataDir:                  DefaultDataDir,
+		LogLevel:                 DefaultLogLevel,
+		AllowedOrigins:           []string{DefaultAllowedOrigins},
+		RateLimitEventsPerMinute: DefaultRateLimitEventsPerMinute,
+		RateLimitLogsPerMinute:   DefaultRateLimitLogsPerMinute,
+		AdminUsername:            DefaultAdminUsername,
+		SessionLifetime:          DefaultSessionLifetime,
 	}
 
 	var err error
@@ -286,14 +294,19 @@ func loadFrom(getenv func(string) string) (*Config, error) {
 		config.AllowedOrigins = origins
 	}
 
-	if value := getenv("RATE_LIMIT_PER_MINUTE"); value != "" {
-		limit, err := strconv.Atoi(value)
+	for name, limit := range map[string]*int{
+		"RATE_LIMIT_EVENTS_PER_MINUTE": &config.RateLimitEventsPerMinute,
+		"RATE_LIMIT_LOGS_PER_MINUTE":   &config.RateLimitLogsPerMinute,
+	} {
+		if value := getenv(name); value != "" {
+			parsed, err := strconv.Atoi(value)
 
-		if err != nil || limit < 0 {
-			return nil, fmt.Errorf("RATE_LIMIT_PER_MINUTE: invalid value %q (0 or a positive integer)", value)
+			if err != nil || parsed < 0 {
+				return nil, fmt.Errorf("%s: invalid value %q (0 or a positive integer)", name, value)
+			}
+
+			*limit = parsed
 		}
-
-		config.RateLimitPerMinute = limit
 	}
 
 	if value := getenv("API_TOKEN"); value != "" {

@@ -6,6 +6,10 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/devforth/exceptic/internal/ingest/grouping"
+	"github.com/devforth/exceptic/internal/sentry"
 )
 
 func TestCompactDropsWhatDoesNotHelpAFix(t *testing.T) {
@@ -91,9 +95,158 @@ func TestCompactLeavesOtherInputAlone(t *testing.T) {
 func compactJSON(payload []byte) []byte {
 	var output bytes.Buffer
 
-	if err := compactEvent(newTokenDecoder(payload), newTokenEncoder(&output)); err != nil {
+	if _, err := compactEvent(newTokenDecoder(payload), newTokenEncoder(&output)); err != nil {
 		return payload
 	}
 
 	return bytes.TrimRight(output.Bytes(), "\n")
+}
+
+// stackEvent is an event whose exception has count frames of the
+// application, oldest first, each with its source and variables.
+func stackEvent(count int) []byte {
+	frames := make([]map[string]any, count)
+
+	for index := range frames {
+		frames[index] = map[string]any{
+			"filename": "/app/src/tree.ts", "function": fmt.Sprintf("walk%d", index), "lineno": index + 1, "in_app": true,
+			"context_line": fmt.Sprintf("return walk%d(node.next)", index), "pre_context": []string{"before"}, "post_context": []string{"after"},
+			"vars": map[string]any{"depth": index},
+		}
+	}
+
+	payload, _ := json.Marshal(map[string]any{
+		"platform":  "node",
+		"exception": map[string]any{"values": []any{map[string]any{"type": "RangeError", "value": "Maximum call stack size exceeded", "stacktrace": map[string]any{"frames": frames}}}},
+		"threads":   []any{map[string]any{"stacktrace": map[string]any{"frames": frames}}},
+	})
+
+	return payload
+}
+
+func preparedFrames(t *testing.T, prepared []byte) (exception, thread []map[string]any, truncated []any) {
+	t.Helper()
+
+	var event struct {
+		Exception struct {
+			Values []struct {
+				Stacktrace struct {
+					Frames []map[string]any `json:"frames"`
+				} `json:"stacktrace"`
+			} `json:"values"`
+		} `json:"exception"`
+		Threads []struct {
+			Stacktrace struct {
+				Frames []map[string]any `json:"frames"`
+			} `json:"stacktrace"`
+		} `json:"threads"`
+		Truncated []any `json:"_exceptic_truncated"`
+	}
+
+	if err := json.Unmarshal(prepared, &event); err != nil {
+		t.Fatal(err)
+	}
+
+	return event.Exception.Values[0].Stacktrace.Frames, event.Threads[0].Stacktrace.Frames, event.Truncated
+}
+
+// A stack keeps at most its 50 oldest and 200 newest frames (a recursion of
+// 10,000 frames), and the cut is named.
+func TestStackKeepsOldestAndNewestFrames(t *testing.T) {
+	exception, thread, truncated := preparedFrames(t, prepareEvent(stackEvent(10_000)))
+
+	for _, frames := range [][]map[string]any{exception, thread} {
+		if len(frames) != 250 {
+			t.Fatalf("%d frames, want 250", len(frames))
+		}
+
+		if frames[0]["function"] != "walk0" || frames[49]["function"] != "walk49" || frames[50]["function"] != "walk9800" || frames[249]["function"] != "walk9999" {
+			t.Errorf("kept %v … %v, %v … %v", frames[0]["function"], frames[49]["function"], frames[50]["function"], frames[249]["function"])
+		}
+	}
+
+	if fmt.Sprint(truncated) != "[frames]" {
+		t.Errorf("truncated %v", truncated)
+	}
+}
+
+// Over 50 frames with source, the middle ones lose their variables and the
+// lines around them; every frame keeps its source line, which grouping uses.
+func TestLongStackKeepsDetailAtItsEnds(t *testing.T) {
+	exception, thread, truncated := preparedFrames(t, prepareEvent(stackEvent(60)))
+
+	for _, frames := range [][]map[string]any{exception, thread} {
+		if len(frames) != 60 {
+			t.Fatalf("%d frames", len(frames))
+		}
+
+		for index, frame := range frames {
+			detailed := index < 25 || index >= 35
+
+			if _, hasVars := frame["vars"]; hasVars != detailed || (frame["pre_context"] != nil) != detailed || (frame["post_context"] != nil) != detailed {
+				t.Errorf("frame %d: %v, detailed %v", index, frame, detailed)
+			}
+
+			if frame["context_line"] == nil {
+				t.Errorf("frame %d lost its source line", index)
+			}
+		}
+	}
+
+	if truncated != nil {
+		t.Errorf("truncated %v: no frame was dropped", truncated)
+	}
+
+	// Up to 50 frames everything stays.
+	exception, _, _ = preparedFrames(t, prepareEvent(stackEvent(50)))
+
+	for index, frame := range exception {
+		if frame["vars"] == nil || frame["pre_context"] == nil {
+			t.Errorf("frame %d of 50 lost detail", index)
+		}
+	}
+}
+
+// Library frames already lose their source; only the frames that keep it
+// count for the 50, so an application frame deep in a library stack keeps it.
+func TestLongStackCountsOnlyFramesWithSource(t *testing.T) {
+	frames := []any{}
+
+	for index := range 120 {
+		frames = append(frames, map[string]any{"filename": "/app/node_modules/lib/x.js", "function": fmt.Sprint("lib", index), "context_line": "lib", "vars": map[string]any{"a": 1}})
+	}
+
+	frames = append(frames[:60:60], append([]any{map[string]any{"filename": "/app/src/a.ts", "in_app": true, "context_line": "app", "vars": map[string]any{"a": 1}}}, frames[60:]...)...)
+	payload, _ := json.Marshal(map[string]any{"exception": []any{map[string]any{"type": "Error", "stacktrace": map[string]any{"frames": frames}}}})
+
+	var event struct {
+		Exception []struct {
+			Stacktrace struct {
+				Frames []map[string]any `json:"frames"`
+			} `json:"stacktrace"`
+		} `json:"exception"`
+	}
+
+	if err := json.Unmarshal(prepareEvent(payload), &event); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, frame := range event.Exception[0].Stacktrace.Frames {
+		if frame["context_line"] == "app" && frame["vars"] == nil {
+			t.Errorf("the application frame lost its variables: %v", frame)
+		}
+	}
+}
+
+// Grouping reads the frames kept: under the cap it is the same as before.
+func TestFrameCapKeepsGrouping(t *testing.T) {
+	for _, count := range []int{10, 60, 250} {
+		payload := stackEvent(count)
+		before, _ := sentry.ParseEvent(payload, "", time.Now())
+		after, _ := sentry.ParseEvent(prepareEvent(payload), "", time.Now())
+
+		if grouping.Fingerprint(before) != grouping.Fingerprint(after) {
+			t.Errorf("%d frames: grouping changed", count)
+		}
+	}
 }

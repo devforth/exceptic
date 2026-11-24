@@ -3,6 +3,7 @@ import { projectPalette } from '#lib/api/catalog.gen.ts';
 import {
 	deleteConfirmation,
 	deleteProject,
+	droppedText,
 	freeColor,
 	keptFacts,
 	errorsKept,
@@ -111,6 +112,9 @@ describe('usageSegments', () => {
 		used: '400 B',
 		limit_bytes: 1000,
 		limit: '1000 B',
+		files_bytes: 600,
+		files: '600 B',
+		cleanup_start_percent: 99,
 		cleanup_stop_percent: 80,
 		projects: [
 			{ id: 1, name: 'backend', bytes: 300, size: '300 B', limit_bytes: 0, oldest: {} },
@@ -161,5 +165,21 @@ describe('errorsKept', () => {
 	it('says nothing without errors', () => {
 		expect(errorsKept({ error_logs: new Date(2026, 10, 20).toISOString() }, now)).toBeUndefined();
 		expect(errorsKept(undefined, now)).toBeUndefined();
+	});
+});
+
+describe('what a project dropped', () => {
+	it('counts each kind with its reason, largest first as the server sends them', () => {
+		expect(
+			droppedText([
+				{ kind: 'logs', count: 50000, reason: 'rate_limit', reason_text: 'rate limit' },
+				{ kind: 'envelopes', count: 1, reason: 'too_large', reason_text: 'too large' }
+			])
+		).toBe('Dropped in 24 h: 50,000 logs (rate limit), 1 envelope (too large)');
+	});
+
+	it('says nothing when nothing was dropped', () => {
+		expect(droppedText([])).toBeUndefined();
+		expect(droppedText(null)).toBeUndefined();
 	});
 });

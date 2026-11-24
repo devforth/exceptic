@@ -57,8 +57,16 @@ type uiIssue struct {
 	Title        string     `json:"title"`
 	Level        string     `json:"level"`
 	Status       string     `json:"status"`
+	EventCount   int        `json:"event_count"`
+	NotStored    int        `json:"not_stored"`
+	StoredEvents int        `json:"stored_events"`
+	FirstSeen    time.Time  `json:"first_seen"`
+	LastSeen     time.Time  `json:"last_seen"`
 	ResolvedAt   *time.Time `json:"resolved_at"`
 	MCPReference string     `json:"mcp_reference"`
+	// The bounds of an ignore.
+	IgnoredUntil     *time.Time `json:"ignored_until"`
+	IgnoreEventsLeft int        `json:"ignore_events_left"`
 }
 
 type uiIssues struct {
@@ -558,6 +566,86 @@ func TestUIApplyIssueAction(t *testing.T) {
 	}
 }
 
+// Ignoring takes a time or a count of events more, shown on the issue, in
+// bulk too; the bounds go only with ignore, as the token's REST calls show.
+func TestUIIgnoreBounds(t *testing.T) {
+	server := newRESTServer(t)
+	server.ingestFixtures()
+
+	user := server.webUser(store.RoleUser, false)
+	frontend := user.issueIDs("project=frontend")
+	apply := func(input map[string]any) int {
+		t.Helper()
+
+		body, err := json.Marshal(input)
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return user.call(http.MethodPost, "apply_issue_action", string(body)).Code
+	}
+
+	if code := apply(map[string]any{"action": "ignore", "issue_ids": frontend[:2], "ignore_for": "24h"}); code != http.StatusOK {
+		t.Fatalf("ignore for 24h: %d", code)
+	}
+
+	for _, id := range frontend[:2] {
+		issue := user.details(id, "").Issue
+
+		if issue.Status != store.StatusIgnored || issue.IgnoredUntil == nil || time.Until(*issue.IgnoredUntil) < 23*time.Hour {
+			t.Errorf("ignored for 24h: %+v", issue)
+		}
+	}
+
+	if code := apply(map[string]any{"action": "ignore", "issue_ids": frontend[2:3], "ignore_until_events": 10}); code != http.StatusOK {
+		t.Fatalf("ignore until 10 events: %d", code)
+	}
+
+	if issue := user.details(frontend[2], "").Issue; issue.IgnoreEventsLeft != 10 || issue.IgnoredUntil != nil {
+		t.Errorf("ignored until 10 events: %+v", issue)
+	}
+
+	user.act("reopen", frontend[2])
+
+	if issue := user.details(frontend[2], "").Issue; issue.IgnoreEventsLeft != 0 || issue.Status != store.StatusUnresolved {
+		t.Errorf("reopened: %+v", issue)
+	}
+
+	for label, input := range map[string]map[string]any{
+		"a time with resolve":   {"action": "resolve", "issue_ids": frontend[:1], "ignore_for": "1h"},
+		"events with reopen":    {"action": "reopen", "issue_ids": frontend[:1], "ignore_until_events": 10},
+		"an unknown time":       {"action": "ignore", "issue_ids": frontend[:1], "ignore_for": "2h"},
+		"no events":             {"action": "ignore", "issue_ids": frontend[:1], "ignore_until_events": 0},
+		"too many events":       {"action": "ignore", "issue_ids": frontend[:1], "ignore_until_events": store.MaxIgnoreEvents + 1},
+		"events that are text":  {"action": "ignore", "issue_ids": frontend[:1], "ignore_until_events": "10"},
+		"a time that is a word": {"action": "ignore", "issue_ids": frontend[:1], "ignore_for": "forever"},
+	} {
+		if code := apply(input); code != http.StatusBadRequest {
+			t.Errorf("%s: %d", label, code)
+		}
+	}
+
+	update := func(body string) *httptest.ResponseRecorder {
+		return server.do(http.MethodPost, "/api/v1/update_issue_status", body)
+	}
+
+	if response := update(fmt.Sprintf(`{"issue_ids":[%q],"status":"resolved","ignore_for":"1h"}`, frontend[3])); response.Code != http.StatusBadRequest {
+		t.Errorf("REST resolve with a time: %d %s", response.Code, response.Body)
+	}
+
+	response := update(fmt.Sprintf(`{"issue_ids":[%q],"status":"ignored","ignore_for":"7d","ignore_until_events":100}`, frontend[3]))
+
+	var updated struct {
+		Issues []uiIssue `json:"issues"`
+	}
+
+	if err := json.Unmarshal(response.Body.Bytes(), &updated); err != nil || response.Code != http.StatusOK || len(updated.Issues) != 1 ||
+		updated.Issues[0].IgnoredUntil == nil || updated.Issues[0].IgnoreEventsLeft != 100 {
+		t.Errorf("REST ignore with both bounds: %d %s", response.Code, response.Body)
+	}
+}
+
 // What the issue page shows when its event is not there: a missing one keeps
 // the history and the events; an issue whose events the cleanup deleted
 // keeps its history; a stored payload that does not read is said so.
@@ -617,13 +705,43 @@ func TestUIIssueEventStates(t *testing.T) {
 	}
 }
 
+// An error in a loop stores config.EventsPerIssuePerMinute events a minute;
+// the issue counts the others as not stored and says how many it stores.
+func TestUIEventsNotStored(t *testing.T) {
+	server := newRESTServer(t)
+	user := server.webUser(store.RoleUser, false)
+
+	const sent = config.EventsPerIssuePerMinute + 2
+
+	for index := range sent {
+		server.sendEnvelope(fmt.Sprintf(`{"event_id":"%032x"}`, index+1) + "\n" + `{"type":"event"}` + "\n" + `{"message":"in a loop","level":"error"}`)
+	}
+
+	details := user.details(user.issueIDs("")[0], "")
+	issue := details.Issue
+	oneMinute := issue.FirstSeen.Truncate(time.Minute).Equal(issue.LastSeen.Truncate(time.Minute))
+
+	if issue.EventCount != sent || len(details.Events.Items)+issue.NotStored != sent || issue.StoredEvents != len(details.Events.Items) || oneMinute && issue.NotStored != 2 {
+		t.Errorf("%d stored, %+v", len(details.Events.Items), issue)
+	}
+}
+
 // The events of an issue come 20 at a time; Load more follows the cursor.
 func TestUIIssueEventsPages(t *testing.T) {
 	server := newRESTServer(t)
 	user := server.webUser(store.RoleUser, false)
+	start := time.Now().Add(-time.Hour)
 
+	// Over minutes: ingest stores config.EventsPerIssuePerMinute of an issue a minute.
 	for index := range 23 {
-		server.sendEnvelope(fmt.Sprintf(`{"event_id":"%032x"}`, index+1) + "\n" + `{"type":"event"}` + "\n" + `{"message":"again and again","level":"error"}`)
+		at := start.Add(time.Duration(index) * time.Minute)
+
+		if _, err := server.database.SaveEvent(context.Background(), store.NewEvent{
+			ProjectID: 1, EventID: fmt.Sprintf("%032x", index+1), Fingerprint: "again", Title: "again and again", Level: "error",
+			Timestamp: at, ReceivedAt: at, Payload: []byte(`{"message":"again and again","level":"error"}`),
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	details := user.details(user.issueIDs("")[0], "")

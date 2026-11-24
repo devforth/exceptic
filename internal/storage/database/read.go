@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/platform/textutil"
@@ -15,22 +17,45 @@ import (
 
 // newestFirst merges queries newest first by the sequence number ending their keys.
 func newestFirst[T any](reader kv.Reader, queries []kv.Query[T], visit func(entry kv.Entry[T]) bool) error {
-	return merged(reader, queries, true, visit)
+	_, err := merged(reader, queries, true, visit)
+
+	return err
 }
 
 // oldestFirst merges queries oldest first by the sequence number ending their keys.
 func oldestFirst[T any](reader kv.Reader, queries []kv.Query[T], visit func(entry kv.Entry[T]) bool) error {
-	return merged(reader, queries, false, visit)
+	_, err := merged(reader, queries, false, visit)
+
+	return err
 }
 
-func merged[T any](reader kv.Reader, queries []kv.Query[T], newest bool, visit func(entry kv.Entry[T]) bool) error {
+// merged walks the queries in sequence order, key by key: the keys a walk
+// skips (Raw) take their turn too, so the walks advance together. When a
+// context stops them, rest is where the merge can go on newest first: every
+// record visited has a sequence at or above it, every one not visited yet is
+// below it (math.MaxUint64 when a walk stopped before its first key).
+func merged[T any](reader kv.Reader, queries []kv.Query[T], newest bool, visit func(entry kv.Entry[T]) bool) (rest uint64, err error) {
 	type head struct {
-		cursor *kv.Cursor[T]
-		entry  kv.Entry[T]
-		valid  bool
+		cursor   *kv.Cursor[T]
+		entry    kv.Entry[T]
+		sequence uint64 // of the last key read
+		read     bool
+		kept     bool
+		valid    bool
+	}
+
+	step := func(current *head) bool {
+		current.entry, current.kept, current.valid = current.cursor.Step()
+
+		if current.valid {
+			current.sequence, current.read = sequenceOf(current.entry.Key), true
+		}
+
+		return !current.cursor.Stopped()
 	}
 
 	heads := make([]*head, 0, len(queries))
+	going := true
 
 	for _, query := range queries {
 		if newest {
@@ -38,37 +63,51 @@ func merged[T any](reader kv.Reader, queries []kv.Query[T], newest bool, visit f
 		}
 
 		current := &head{cursor: query.Open(reader)}
-		current.entry, current.valid = current.cursor.Next()
 		heads = append(heads, current)
+		going = step(current) && going
 	}
 
-	for {
+	for going {
 		var next *head
 
 		for _, current := range heads {
-			if !current.valid {
-				continue
-			}
-
-			if next == nil || (sequenceOf(current.entry.Key) > sequenceOf(next.entry.Key)) == newest {
+			if current.valid && (next == nil || (current.sequence > next.sequence) == newest) {
 				next = current
 			}
 		}
 
-		if next == nil || !visit(next.entry) {
+		if next == nil || next.kept && !visit(next.entry) {
 			break
 		}
 
-		next.entry, next.valid = next.cursor.Next()
+		going = step(next)
 	}
 
-	var err error
-
 	for _, current := range heads {
+		if !going {
+			rest = max(rest, restOf(current.cursor.Stopped(), current.read, current.valid, current.kept, current.sequence))
+		}
+
 		err = errors.Join(err, current.cursor.Close())
 	}
 
-	return err
+	return rest, err
+}
+
+// restOf is one above the newest sequence a stopped newest-first walk may
+// still give: its kept head is not visited yet, a skipped head or the last
+// key a stopped walk read is done with.
+func restOf(stopped, read, valid, kept bool, sequence uint64) uint64 {
+	switch {
+	case valid && kept:
+		return sequence + 1
+	case valid || stopped && read:
+		return sequence
+	case stopped:
+		return math.MaxUint64
+	default:
+		return 0
+	}
 }
 
 func before[T any](query kv.Query[T], sequence uint64) kv.Query[T] {
@@ -145,7 +184,8 @@ func (database *Store) LatestEvent(_ context.Context, issueID string) (store.Eve
 }
 
 // logQueries picks the walks a log filter reads; they stop when ctx ends.
-func (database *Store) logQueries(ctx context.Context, filter store.LogFilter) []kv.Query[logRecord] {
+// logsBefore is the sequence a filter's walks start below, or 0 for none.
+func (database *Store) logsBefore(filter store.LogFilter) uint64 {
 	beforeSequence := uint64(max(filter.BeforeID, 0))
 
 	if !filter.Until.IsZero() {
@@ -153,6 +193,12 @@ func (database *Store) logQueries(ctx context.Context, filter store.LogFilter) [
 			beforeSequence = end
 		}
 	}
+
+	return beforeSequence
+}
+
+func (database *Store) logQueries(ctx context.Context, filter store.LogFilter) []kv.Query[logRecord] {
+	beforeSequence := database.logsBefore(filter)
 
 	var queries []kv.Query[logRecord]
 
@@ -200,13 +246,50 @@ func logMatches(record logRecord, filter store.LogFilter) bool {
 	return true
 }
 
-// scanLogs visits matching logs newest first until visit returns false or ctx ends.
-func (database *Store) scanLogs(ctx context.Context, filter store.LogFilter, visit func(record logRecord) bool) error {
-	queries := database.logQueries(ctx, filter)
+// errSearchTime ends a log scan at config.LogSearchTime.
+var errSearchTime = errors.New("log search time is up")
+
+// searchBudget is a scan's context that also ends at deadline by the store's
+// clock; only Err tells it, which a kv walk checks at every key.
+type searchBudget struct {
+	context.Context
+	now      func() time.Time
+	deadline time.Time
+}
+
+func (budget searchBudget) Err() error {
+	if err := budget.Context.Err(); err != nil {
+		return err
+	}
+
+	if !budget.now().Before(budget.deadline) {
+		return errSearchTime
+	}
+
+	return nil
+}
+
+// scanLogs visits matching logs newest first until visit returns false, ctx
+// ends or config.LogSearchTime has passed, which it reports as stopped.
+func (database *Store) scanLogs(ctx context.Context, filter store.LogFilter, visit func(record logRecord) bool) (store.LogScan, error) {
+	budget := searchBudget{Context: ctx, now: database.now, deadline: database.now().Add(config.LogSearchTime)}
+	queries := database.logQueries(budget, filter)
+	// Where the walks start: every log they may give is below it.
+	top := database.logsBefore(filter)
+
+	if top == 0 {
+		top = database.db.Peek()
+	}
+
+	from := uint64(max(filter.FromID, 0))
+
+	if !filter.Since.IsZero() {
+		from = max(from, database.sequenceAt(filter.Since.Add(-markSlack)))
+	}
 
 	for index := range queries {
-		if !filter.Since.IsZero() {
-			queries[index] = queries[index].From(kv.U64(database.sequenceAt(filter.Since.Add(-markSlack))))
+		if from > 0 {
+			queries[index] = queries[index].From(kv.U64(from))
 		}
 
 		if rawSearchable(filter.Query) {
@@ -214,9 +297,24 @@ func (database *Store) scanLogs(ctx context.Context, filter store.LogFilter, vis
 		}
 	}
 
-	return newestFirst(database.db, queries, func(entry kv.Entry[logRecord]) bool {
+	rest, err := merged(database.db, queries, true, func(entry kv.Entry[logRecord]) bool {
 		return !logMatches(entry.Record, filter) || visit(entry.Record)
 	})
+
+	if rest == math.MaxUint64 {
+		// A walk stopped before its first key: it searched nothing below top.
+		rest = top
+	}
+
+	switch {
+	case !errors.Is(err, errSearchTime):
+		return store.LogScan{}, err
+	case rest <= from:
+		// Stopped at its lower bound: nothing was left.
+		return store.LogScan{}, nil
+	}
+
+	return store.LogScan{Stopped: true, Rest: int64(rest), SearchedTo: database.receivedFrom(rest)}, nil
 }
 
 // rawSearchable: the text appears as is in a stored log, since JSON escapes
@@ -238,7 +336,7 @@ func rawSearchable(query string) bool {
 // countByKeys: the walks of the filter select exactly the logs it means, so
 // counting their keys is enough.
 func countByKeys(filter store.LogFilter) bool {
-	exact := filter.Query == "" && filter.Since.IsZero() && filter.Until.IsZero()
+	exact := filter.Query == "" && filter.Since.IsZero() && filter.Until.IsZero() && filter.FromID == 0
 
 	if filter.TraceID != "" {
 		return exact && len(filter.ProjectIDs) == 0 && len(filter.Levels) == 0 && len(filter.SpanIDs) == 0
@@ -259,23 +357,24 @@ func logView(record logRecord) store.LogRecord {
 	}
 }
 
-func (database *Store) ListLogs(ctx context.Context, filter store.LogFilter) ([]store.LogRecord, error) {
-	logs := []store.LogRecord{}
+func (database *Store) ListLogs(ctx context.Context, filter store.LogFilter) (store.LogPage, error) {
+	page := store.LogPage{Logs: []store.LogRecord{}}
 	skip := max(filter.Offset, 0)
 
-	err := database.scanLogs(ctx, filter, func(record logRecord) bool {
+	scan, err := database.scanLogs(ctx, filter, func(record logRecord) bool {
 		if skip > 0 {
 			skip--
 
 			return true
 		}
 
-		logs = append(logs, logView(record))
+		page.Logs = append(page.Logs, logView(record))
 
-		return filter.Limit <= 0 || len(logs) < filter.Limit
+		return filter.Limit <= 0 || len(page.Logs) < filter.Limit
 	})
+	page.LogScan = scan
 
-	return logs, err
+	return page, err
 }
 
 // LogLevels looks for one key per level: a log's key starts with its
@@ -327,7 +426,7 @@ func anyKey(reader kv.Reader, queries []kv.Query[logRecord]) (bool, error) {
 	return false, nil
 }
 
-func (database *Store) CountLogs(ctx context.Context, filter store.LogFilter) (int, bool, error) {
+func (database *Store) CountLogs(ctx context.Context, filter store.LogFilter) (store.LogCount, error) {
 	count := 0
 
 	if countByKeys(filter) {
@@ -336,28 +435,37 @@ func (database *Store) CountLogs(ctx context.Context, filter store.LogFilter) (i
 			found, _, err := query.Count(database.db, store.LogCountLimit+1-count)
 
 			if count += found; err != nil {
-				return 0, false, err
+				return store.LogCount{}, err
 			}
 
 			if count > store.LogCountLimit {
-				return store.LogCountLimit, true, nil
+				return store.LogCount{Count: store.LogCountLimit, More: true}, nil
 			}
 		}
 
-		return count, false, nil
+		return store.LogCount{Count: count}, nil
 	}
 
-	err := database.scanLogs(ctx, filter, func(logRecord) bool {
+	var oldest uint64
+
+	scan, err := database.scanLogs(ctx, filter, func(record logRecord) bool {
 		count++
+		oldest = record.Sequence
 
 		return count <= store.LogCountLimit
 	})
 
-	if count > store.LogCountLimit {
-		return store.LogCountLimit, true, err
+	result := store.LogCount{Count: count, FromID: int64(oldest), LogScan: scan}
+
+	if scan.Stopped {
+		result.FromID = scan.Rest
 	}
 
-	return count, false, err
+	if count > store.LogCountLimit {
+		result.Count, result.More = store.LogCountLimit, true
+	}
+
+	return result, err
 }
 
 func (database *Store) IssuesForLogs(_ context.Context, logs []store.LogRecord) (map[int64]store.LogIssue, error) {

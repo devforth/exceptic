@@ -5,7 +5,8 @@ Keyboard: the arrows move (and wrap), Home and End go to the ends, Esc closes it
 the button, Tab closes it; a click outside, scrolling or resizing close it too. An item with a
 confirmation asks in a ConfirmDialog first; a disabled item stays in the list (arrows reach it)
 and says why under its label. The menu is fixed under the button (above it when
-there is no room below), so a table's scroll box does not cut it.
+there is no room below), so a table's scroll box does not cut it. With text it is a menu
+button of its own (Ignore ▾ of an issue) instead of the "⋯".
 -->
 <script lang="ts">
 	import { tick } from 'svelte';
@@ -13,6 +14,7 @@ there is no room below), so a table's scroll box does not cut it.
 	import { movedIndex } from '#lib/roving.ts';
 	import { toast } from '#lib/toast.svelte.ts';
 	import Button from './Button.svelte';
+	import type { ButtonVariant } from './button.ts';
 	import type { ConfirmedAction, Confirmation } from './confirm.ts';
 	import ConfirmDialog from './ConfirmDialog.svelte';
 	import Icon from './Icon.svelte';
@@ -23,9 +25,17 @@ there is no room below), so a table's scroll box does not cut it.
 		/** What the actions are for, e.g. "Actions for backend": the button's and menu's name. */
 		label: string;
 		items: MenuItem[];
+		/** The button's text, with a chevron: a labeled menu button instead of "⋯". */
+		text?: string;
+		/** The labeled button's look. */
+		variant?: ButtonVariant;
+		/** Nothing to act on yet (no issue checked): the button is off. */
+		disabled?: boolean;
+		/** The labeled button's tooltip: why it is off. */
+		title?: string;
 	};
 
-	let { label, items }: Props = $props();
+	let { label, items, text, variant = 'default', disabled = false, title }: Props = $props();
 
 	const menuId = $props.id();
 
@@ -166,14 +176,29 @@ there is no room below), so a table's scroll box does not cut it.
 {/snippet}
 
 <span bind:this={toggleBox} class="inline-flex">
-	<Button
-		variant="menu"
-		icon="more"
-		title={label}
-		popup="menu"
-		expanded={open}
-		onclick={() => (open ? close(false) : show())}
-	/>
+	{#if text}
+		<Button
+			{variant}
+			{disabled}
+			{title}
+			popup="menu"
+			expanded={open}
+			onclick={() => (open ? close(false) : show())}
+		>
+			<span class="inline-flex items-center gap-1">
+				{text}<Icon name="expand" size={14} />
+			</span>
+		</Button>
+	{:else}
+		<Button
+			variant="menu"
+			icon="more"
+			title={label}
+			popup="menu"
+			expanded={open}
+			onclick={() => (open ? close(false) : show())}
+		/>
+	{/if}
 </span>
 
 {#if open}

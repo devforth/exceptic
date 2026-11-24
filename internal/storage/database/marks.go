@@ -105,6 +105,23 @@ func (database *Store) sequenceAfter(at time.Time) uint64 {
 	return database.marks[index].First
 }
 
+// receivedFrom is the start of the first interval whose records all have a
+// sequence at or above sequence: every record received since then has one.
+// The store's time when no interval is past it yet.
+func (database *Store) receivedFrom(sequence uint64) time.Time {
+	database.marksMutex.RLock()
+
+	defer database.marksMutex.RUnlock()
+
+	index, _ := slices.BinarySearchFunc(database.marks, sequence, func(mark timeMark, sequence uint64) int { return cmp.Compare(mark.First, sequence) })
+
+	if index >= len(database.marks) {
+		return database.now()
+	}
+
+	return time.Unix(int64(database.marks[index].Interval)*int64(markInterval/time.Second), 0).UTC()
+}
+
 func compareMark(mark timeMark, interval uint64) int { return cmp.Compare(mark.Interval, interval) }
 
 // sequenceOf returns the sequence number that ends an event or log key.

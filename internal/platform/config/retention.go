@@ -19,10 +19,18 @@ const (
 	// LogsPerMessage caps a message logged over and over (the same text
 	// with other numbers or IDs) as it is written: its newest copies stay.
 	LogsPerMessage = 10
+	// EventsPerIssuePerMinute caps the events an issue stores a minute (by
+	// receive time); the others count without being stored.
+	EventsPerIssuePerMinute = 10
 
-	// The cleanup (database/cleanup.go; order in docs/configuration.md).
-	CleanupStartPercent = 100
+	// The cleanup (database/cleanup.go; order in docs/configuration.md):
+	// it starts when the data held reaches CleanupStartPercent of the limit
+	// and deletes down to CleanupStopPercent.
+	CleanupStartPercent = 99
 	CleanupStopPercent  = 80
+	// CleanupFilesPercent: when the files still take more than this part of
+	// the limit after compacting, a cleanup runs whatever the data held.
+	CleanupFilesPercent = 125
 	CleanupAge          = 30 * 24 * time.Hour
 	CleanupRecentAge    = 7 * 24 * time.Hour
 	OldEventsPerIssue   = 20

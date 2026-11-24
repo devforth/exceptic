@@ -1,6 +1,7 @@
 // The rules of the issue page that are not drawing: what a stack frame shows, who changed a
 // status, what is said of an event that is not shown.
 import type { Out } from '#lib/api/client.ts';
+import { eventsPerIssuePerMinute } from '#lib/api/catalog.gen.ts';
 
 export type IssueDetails = Out<'get_issue_details'>;
 export type EventDetails = NonNullable<IssueDetails['event']>;
@@ -34,9 +35,24 @@ export function frameStartsOpen(frame: Frame): boolean {
 
 /** Who made a status change: a user (via MCP), or the event that reopened it. */
 export function changeAuthor(change: StatusChange): string {
+	if (change.by_expiry) return 'ignore ended: its time ran out';
+	if (change.by_event && change.from === 'ignored')
+		return 'ignore ended: reached its count of events';
 	if (change.by_event) return 'reopened: happened again';
 
 	return `by ${change.name || 'a deleted user'}${change.via_mcp ? ' via MCP' : ''}`;
+}
+
+/** The events an issue counted without storing them, over its cap a minute. */
+export function notStoredText(count: number): string {
+	return `${count.toLocaleString('en-US')} ${count === 1 ? 'event' : 'events'} (over ${eventsPerIssuePerMinute} a minute)`;
+}
+
+/** The rows of the events card against the events stored; nothing once all are shown. */
+export function eventsShownText(shown: number, stored: number): string | undefined {
+	if (stored <= shown) return undefined;
+
+	return `Showing the latest ${shown} of ${stored.toLocaleString('en-US')} stored events.`;
 }
 
 /** What is said instead of an event that is not shown; nothing when it is. */

@@ -72,6 +72,8 @@ func (sink StoreSink) report(project config.Project, event *sentry.Event, result
 	case result.Regression:
 		sink.Logger.Info("issue regressed", attributes...)
 		sink.notify(notify.Regression, project, result.IssueID, event, receivedAt)
+	case result.NotStored:
+		sink.Logger.Debug("event counted, not stored: its issue is over its events a minute", attributes...)
 	default:
 		sink.Logger.Debug("event stored", attributes...)
 	}
@@ -112,7 +114,7 @@ func (sink StoreSink) logRecords(project config.Project, logs []sentry.Log) ([]s
 	levels := sink.Recording.LogLevelsFor(project.LogLevels)
 
 	for _, record := range logs {
-		level := config.LogLevel(record.Level)
+		level := config.LogLevelOf(record.Level, record.SeverityNumber)
 
 		if !config.Records(levels, level) {
 			continue

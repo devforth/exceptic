@@ -493,14 +493,18 @@ func TestGetStorage(t *testing.T) {
 	response := server.webUser(store.RoleUser, false).call(http.MethodGet, "get_storage", "")
 
 	var storage struct {
-		UsedBytes          int64  `json:"used_bytes"`
-		Used               string `json:"used"`
-		Limit              string `json:"limit"`
-		CleanupStopPercent int    `json:"cleanup_stop_percent"`
+		UsedBytes           int64  `json:"used_bytes"`
+		Used                string `json:"used"`
+		FilesBytes          int64  `json:"files_bytes"`
+		Files               string `json:"files"`
+		Limit               string `json:"limit"`
+		CleanupStartPercent int    `json:"cleanup_start_percent"`
+		CleanupStopPercent  int    `json:"cleanup_stop_percent"`
 	}
 
 	if err := json.Unmarshal(response.Body.Bytes(), &storage); err != nil || response.Code != http.StatusOK ||
-		storage.UsedBytes == 0 || storage.Used == "" || storage.Limit != "" || storage.CleanupStopPercent == 0 {
+		storage.UsedBytes == 0 || storage.Used == "" || storage.FilesBytes == 0 || storage.Files == "" || storage.Limit != "" ||
+		storage.CleanupStartPercent == 0 || storage.CleanupStopPercent == 0 {
 		t.Fatalf("%d %s", response.Code, response.Body)
 	}
 }

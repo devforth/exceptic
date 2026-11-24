@@ -16,7 +16,8 @@
 	import type { TableColumn } from '#lib/components/table.ts';
 	import Time from '#lib/components/Time.svelte';
 	import { changed } from '#lib/filters.ts';
-	import { showChanged } from '#lib/navigate.ts';
+	import { reloading } from '#lib/loading.svelte.ts';
+	import { showChanged, shown } from '#lib/navigate.svelte.ts';
 	import { deliveryStatus } from '#lib/notifications.ts';
 	import type { PageProps } from './$types';
 
@@ -79,14 +80,14 @@
 	<Select
 		label="Connection"
 		all="All connections"
-		value={data.filters.connection}
+		value={shown('connection', data.filters.connection)}
 		options={connectionOptions}
 		onchange={(connection: string) => showChanged(url, { connection })}
 	/>
 	<Select
 		label="Status"
 		all="Any status"
-		value={data.filters.status}
+		value={shown('status', data.filters.status)}
 		options={statusOptions}
 		onchange={(status: string) => showChanged(url, { status })}
 	/>
@@ -105,6 +106,7 @@
 {/snippet}
 
 <Table
+	busy={reloading()}
 	{columns}
 	rows={data.deliveries}
 	rowKey={(delivery: Delivery) => delivery.id}
@@ -153,7 +155,7 @@
 	perPage={data.perPage}
 	total={data.count}
 	href={(number: number) => changed(url, { page: number > 1 ? String(number) : null })}
-	onperpage={(perPage: number) => showChanged(url, { per_page: String(perPage) })}
+	onperpage={(perPage: number) => showChanged(url, { per_page: String(perPage) }, { now: true })}
 />
 
 <Dialog title={summary?.title ?? 'Summary'} bind:open={summaryOpen}>

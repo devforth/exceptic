@@ -3,6 +3,7 @@ package api_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -331,6 +332,40 @@ func TestUIStorageByProject(t *testing.T) {
 
 	if total != storage.UsedBytes || storage.OtherBytes < 0 {
 		t.Errorf("parts add up to %d, used %d", total, storage.UsedBytes)
+	}
+}
+
+// The Projects page shows what each project's limits dropped in the last
+// day, only for the projects that dropped something.
+func TestUIStorageShowsDropped(t *testing.T) {
+	server := newRESTServerWith(t, func(settings *config.Config) { settings.RateLimitEventsPerMinute = 1 })
+
+	for index := range 3 {
+		body := fmt.Sprintf("{\"event_id\":\"%032x\"}\n{\"type\":\"event\"}\n{\"message\":\"hello\"}\n", index+1)
+		request := httptest.NewRequest(http.MethodPost, fixtures.BackendEnvelopeURL, strings.NewReader(body))
+		server.handler.ServeHTTP(httptest.NewRecorder(), request)
+	}
+
+	var storage struct {
+		Projects []struct {
+			ID      int `json:"id"`
+			Dropped []struct {
+				Kind       string `json:"kind"`
+				Count      int64  `json:"count"`
+				Reason     string `json:"reason"`
+				ReasonText string `json:"reason_text"`
+			} `json:"dropped"`
+		} `json:"projects"`
+	}
+
+	server.webUser(store.RoleUser, false).request(http.MethodGet, "get_storage", "", &storage)
+
+	for _, project := range storage.Projects {
+		got := fmt.Sprint(project.Dropped)
+
+		if project.ID == 1 && got != "[{events 2 rate_limit rate limit}]" || project.ID != 1 && len(project.Dropped) != 0 {
+			t.Errorf("project %d dropped %s", project.ID, got)
+		}
 	}
 }
 

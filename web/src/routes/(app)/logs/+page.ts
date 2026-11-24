@@ -11,6 +11,7 @@ import {
 	readText
 } from '#lib/filters.ts';
 import type { PageLoad } from './$types';
+import { listPage, stoppedList } from './logs.ts';
 
 export const load: PageLoad = async ({ url }) => {
 	const params = url.searchParams;
@@ -35,11 +36,11 @@ export const load: PageLoad = async ({ url }) => {
 	const paging = readPaging(params);
 	const count = await get('count_logs', input).catch(pageError);
 	const page = pageWithin(paging, count.count);
-	const logs = await get('list_logs', {
-		...input,
-		limit: paging.perPage,
-		offset: (page - 1) * paging.perPage
-	}).catch(pageError);
+	// The list reads only what the count found: none when it found nothing.
+	const listed = listPage(count, page, paging.perPage);
+	const logs = listed
+		? await get('list_logs', { ...input, ...listed }).catch(pageError)
+		: undefined;
 
 	return {
 		filters,
@@ -48,6 +49,7 @@ export const load: PageLoad = async ({ url }) => {
 		count,
 		page,
 		perPage: paging.perPage,
-		logs: logs.items ?? []
+		logs: logs?.items ?? [],
+		listStopped: stoppedList(logs)
 	};
 };

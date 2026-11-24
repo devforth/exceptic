@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/devforth/exceptic/internal/platform/background"
+	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/platform/logging"
+	"github.com/devforth/exceptic/internal/server"
 )
 
 const shutdownTimeout = 10 * time.Second
@@ -35,13 +37,7 @@ func (app *App) Run(ctx context.Context, listener net.Listener) error {
 		defer func() { _ = controlServer.Close() }()
 	}
 
-	httpServer := &http.Server{
-		Handler:           app.Handler,
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       120 * time.Second,
-	}
+	httpServer, listener := serveLimited(app.Handler, listener, config.MaxConnections)
 	served := make(chan error, 1)
 
 	go func() { served <- httpServer.Serve(listener) }()
@@ -64,6 +60,26 @@ func (app *App) Run(ctx context.Context, listener net.Listener) error {
 	}
 
 	return nil
+}
+
+// serveLimited is the HTTP server of handler with its limits, and listener
+// limited to most connections at once: when they are all taken, idle
+// keep-alive connections are closed to make room.
+func serveLimited(handler http.Handler, listener net.Listener, most int) (*http.Server, net.Listener) {
+	httpServer := &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    config.MaxHeaderBytes,
+	}
+	closeIdle := func() {
+		httpServer.SetKeepAlivesEnabled(false)
+		httpServer.SetKeepAlivesEnabled(true)
+	}
+
+	return httpServer, server.LimitListener(listener, most, closeIdle)
 }
 
 // Start runs the pipeline of a server whose Handler the caller serves

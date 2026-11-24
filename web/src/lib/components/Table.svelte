@@ -10,6 +10,7 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 - `rowTone` tints a row (error, success, faded) and `rowTitle` is its tooltip; `selectedKey`
   marks the row shown elsewhere on the page; `headerless` keeps the headings for screen
   readers only.
+- `busy`: the rows are being loaded again (a filter changed): faded under a running bar.
 -->
 <script lang="ts" generics="Row, Key extends string">
 	import type { Snippet } from 'svelte';
@@ -46,6 +47,7 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 		rowTone?: (row: Row) => RowTone | undefined;
 		rowTitle?: (row: Row) => string | undefined;
 		selectedKey?: RowKey;
+		busy?: boolean;
 	};
 
 	let {
@@ -64,7 +66,8 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 		selectLabel,
 		rowTone,
 		rowTitle,
-		selectedKey
+		selectedKey,
+		busy = false
 	}: Props = $props();
 
 	const box = $derived(
@@ -150,12 +153,21 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 	<!-- A scroll box takes focus, so the keyboard can scroll a table without focusable cells. -->
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 	<div
-		class={box}
+		class={[box, 'relative']}
+		aria-busy={busy || undefined}
 		tabindex={scroll ? 0 : undefined}
 		role={scroll ? 'region' : undefined}
 		aria-label={scroll ? label : undefined}
 	>
-		<table class="w-full border-collapse" aria-label={label}>
+		{#if busy}
+			<div class="absolute inset-x-0 top-0 z-10 h-0.5 overflow-hidden" aria-hidden="true">
+				<div class="h-full w-1/3 animate-loading-bar bg-accent motion-reduce:animate-none"></div>
+			</div>
+		{/if}
+		<table
+			class={['w-full border-collapse transition-opacity', busy && 'opacity-50']}
+			aria-label={label}
+		>
 			<thead class={headerless ? 'sr-only' : undefined}>
 				<tr>
 					{#if selectable}

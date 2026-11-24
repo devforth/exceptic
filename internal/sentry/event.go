@@ -17,27 +17,38 @@ import (
 // typed; Raw keeps the whole payload so nothing the SDK sent is lost.
 // Format: https://develop.sentry.dev/sdk/data-model/event-payloads/
 type Event struct {
-	EventID     string                     `json:"event_id"`
-	Timestamp   Timestamp                  `json:"timestamp"`
-	Level       string                     `json:"level"`
-	Platform    string                     `json:"platform"`
-	Environment string                     `json:"environment"`
-	Release     string                     `json:"release"`
-	ServerName  string                     `json:"server_name"`
-	Transaction string                     `json:"transaction"`
-	Message     Message                    `json:"message"`
-	LogEntry    Message                    `json:"logentry"`
-	Exception   ExceptionList              `json:"exception"`
-	Fingerprint StringList                 `json:"fingerprint"`
-	Tags        Tags                       `json:"tags"`
-	User        *User                      `json:"user"`
-	Contexts    map[string]json.RawMessage `json:"contexts"`
-	Breadcrumbs BreadcrumbList             `json:"breadcrumbs"`
-	Request     json.RawMessage            `json:"request"`
-	SDK         *SDK                       `json:"sdk"`
+	EventID     string    `json:"event_id"`
+	Timestamp   Timestamp `json:"timestamp"`
+	Level       string    `json:"level"`
+	Platform    string    `json:"platform"`
+	Environment string    `json:"environment"`
+	Release     string    `json:"release"`
+	Dist        string    `json:"dist"`
+	ServerName  string    `json:"server_name"`
+	Transaction string    `json:"transaction"`
+	Logger      string    `json:"logger"`
+	// Message is the text of the message, MessageTemplate its unformatted
+	// form ("Order %s failed") when the SDK sent one; both come from
+	// MessageEntry, or LogEntry when it has none.
+	Message         Message                    `json:"-"`
+	MessageTemplate string                     `json:"-"`
+	MessageEntry    MessageEntry               `json:"message"`
+	LogEntry        MessageEntry               `json:"logentry"`
+	Exception       ExceptionList              `json:"exception"`
+	Fingerprint     StringList                 `json:"fingerprint"`
+	Tags            Tags                       `json:"tags"`
+	User            *User                      `json:"user"`
+	Contexts        map[string]json.RawMessage `json:"contexts"`
+	Breadcrumbs     BreadcrumbList             `json:"breadcrumbs"`
+	Request         json.RawMessage            `json:"request"`
+	SDK             *SDK                       `json:"sdk"`
 
 	Raw json.RawMessage `json:"-"`
 }
+
+// TruncatedField is the top-level field the server adds to an event it cut
+// to its size limits: the names of the cuts, never sent by an SDK.
+const TruncatedField = "_exceptic_truncated"
 
 type Exception struct {
 	Type       string      `json:"type"`
@@ -49,6 +60,11 @@ type Exception struct {
 type Mechanism struct {
 	Type    string `json:"type"`
 	Handled *bool  `json:"handled"`
+	// An exception group (Python's ExceptionGroup, JS AggregateError) is sent
+	// flat: each exception has an ID and names its parent's.
+	IsExceptionGroup bool `json:"is_exception_group"`
+	ExceptionID      *int `json:"exception_id"`
+	ParentID         *int `json:"parent_id"`
 }
 
 type Stacktrace struct {
@@ -60,6 +76,7 @@ type Frame struct {
 	Filename    string          `json:"filename"`
 	AbsPath     string          `json:"abs_path"`
 	Module      string          `json:"module"`
+	Package     string          `json:"package"`
 	Function    string          `json:"function"`
 	Lineno      int             `json:"lineno"`
 	Colno       int             `json:"colno"`
@@ -116,9 +133,14 @@ func ParseEvent(payload []byte, headerEventID string, received time.Time) (*Even
 		event.Level = "error"
 	}
 
-	if event.Message == "" {
-		event.Message = event.LogEntry
+	entry := event.MessageEntry
+
+	if entry.Text() == "" {
+		entry = event.LogEntry
 	}
+
+	event.Message = Message(entry.Text())
+	event.MessageTemplate = entry.Template
 
 	return event, nil
 }
@@ -315,14 +337,30 @@ func (timestamp *Timestamp) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// Message accepts a plain string or {"formatted": ..., "message": ..., "params": [...]}.
+// Message is the text of a message event.
 type Message string
 
-func (message *Message) UnmarshalJSON(data []byte) error {
+// MessageEntry accepts a plain string (the text) or {"formatted": ...,
+// "message": ..., "params": [...]}, where "message" is the template.
+type MessageEntry struct {
+	Formatted string
+	Template  string
+}
+
+// Text is the formatted text, or the template when the SDK sent no other.
+func (entry MessageEntry) Text() string {
+	if entry.Formatted != "" {
+		return entry.Formatted
+	}
+
+	return entry.Template
+}
+
+func (entry *MessageEntry) UnmarshalJSON(data []byte) error {
 	var text string
 
 	if err := json.Unmarshal(data, &text); err == nil {
-		*message = Message(text)
+		*entry = MessageEntry{Formatted: text}
 		return nil
 	}
 
@@ -332,11 +370,7 @@ func (message *Message) UnmarshalJSON(data []byte) error {
 	}
 
 	if err := json.Unmarshal(data, &object); err == nil {
-		if object.Formatted != "" {
-			*message = Message(object.Formatted)
-		} else {
-			*message = Message(object.Message)
-		}
+		*entry = MessageEntry{Formatted: object.Formatted, Template: object.Message}
 	}
 
 	return nil

@@ -135,4 +135,17 @@ describe('columnSort', () => {
 			next: 'last_seen'
 		});
 	});
+
+	it('marks the rows busy while they load again', () => {
+		const { container } = renderTable({ busy: true });
+
+		expect(container.querySelector('[aria-busy="true"]')).toBeTruthy();
+		expect(screen.getByRole('table').classList.contains('opacity-50')).toBe(true);
+	});
+
+	it('is not busy by default', () => {
+		const { container } = renderTable();
+
+		expect(container.querySelector('[aria-busy]')).toBeNull();
+	});
 });

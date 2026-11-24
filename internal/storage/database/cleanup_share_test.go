@@ -65,8 +65,19 @@ func intoTables(t *testing.T, database *Store) {
 	}
 }
 
-// checkSize runs the size check of the database lane once.
+// checkSize runs the size check of the database lane once, then the
+// compaction it wakes (as the lane does), and returns the runs as they ran.
 func checkSize(t *testing.T, database *Store, maxBytes int64) []CleanupRun {
+	t.Helper()
+
+	runs := checkSizeOnly(t, database, maxBytes)
+	compactCleanups(t, database)
+
+	return runs
+}
+
+// checkSizeOnly runs the size check of the database lane once, without the compaction after it.
+func checkSizeOnly(t *testing.T, database *Store, maxBytes int64) []CleanupRun {
 	t.Helper()
 
 	ctx := context.Background()
@@ -446,7 +457,8 @@ func testFloodCutBack(t *testing.T, percent, floodEvents, floodLogs int, times f
 		t.Fatalf("the database (%d) should stay under its limit (%d)", size, maxBytes)
 	}
 
-	runs := checkSize(t, database, maxBytes)
+	// Measured as the run left it, before the compaction after it.
+	runs := checkSizeOnly(t, database, maxBytes)
 
 	if len(runs) != 1 {
 		t.Fatalf("runs: %+v", runs)
@@ -487,14 +499,16 @@ func testFloodCutBack(t *testing.T, percent, floodEvents, floodLogs int, times f
 		t.Errorf("the ingest queue holds %d envelopes, want 5 (%v)", len(pending), err)
 	}
 
+	compactCleanups(t, database)
+
 	if again := checkSize(t, database, maxBytes); len(again) != 0 {
 		t.Errorf("the next check runs again: %+v; project 2 measures %d of %d", again, measured(t, database, 2), share)
 	}
 }
 
 // A project's run takes the steps of docs/configuration.md (Retention) in
-// their order: steps 1 to 4 in full, then 5 and 6 until the project is at 80%
-// of its share, where it stops in the middle of step 7 with the oldest error
+// their order: steps 1 to 4 in full, then 5 to 7 until the project is at 80%
+// of its share, where it stops in the middle of step 8 with the oldest error
 // logs gone and everything after kept; the other project keeps all of it.
 func TestDiskShareStepOrder(t *testing.T) {
 	ctx := context.Background()
@@ -512,7 +526,7 @@ func TestDiskShareStepOrder(t *testing.T) {
 		return database.projectBytes(2) - before
 	}
 
-	var oldLogs, oldData, resolved, debugLogs, warnings, errorLogs int64
+	var oldLogs, oldData, resolved, debugLogs, warnings, errorLogs, fresh int64
 
 	clockAt(database, old)
 
@@ -550,26 +564,26 @@ func TestDiskShareStepOrder(t *testing.T) {
 		})
 		errorLogs += grown(func() { scenarioLogs(t, database, random, project, 400, "error") })
 
-		scenarioEvents(t, database, random, project, "fresh", 1, 30, "error", recent.Add(2*time.Hour))
+		fresh += grown(func() { scenarioEvents(t, database, random, project, "fresh", 1, 30, "error", recent.Add(2*time.Hour)) })
 	}
 
 	clockAt(database, scenarioNow)
 
-	// The goal falls half way through the error logs of step 7.
-	goal := database.projectBytes(2) - (oldLogs + oldEvents/3 + resolved*5/6 + debugLogs + warnings*9/10 + errorLogs/2)
+	// The goal falls half way through the error logs of step 8.
+	goal := database.projectBytes(2) - (oldLogs + oldEvents/3 + resolved*5/6 + debugLogs + warnings*9/10 + fresh/3 + errorLogs/2)
 
 	// As the check finds it: the thinned events' old versions compacted away.
-	if err := database.compactStale(); err != nil {
+	if _, err := database.compactStale(); err != nil {
 		t.Fatal(err)
 	}
 
-	ratio, err := database.diskRatio()
+	disk, err := database.diskUsage()
 
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	maxBytes := int64(float64(goal) * ratio / 0.8 * 100 / 20)
+	maxBytes := int64(float64(goal) * disk.ratio / 0.8 * 100 / 20)
 	quiet := scenarioSnapshot(t, database, 1)
 	errorsBefore := levelLogs(t, database, 2, "error")
 
@@ -579,7 +593,7 @@ func TestDiskShareStepOrder(t *testing.T) {
 
 	runs := checkSize(t, database, maxBytes)
 
-	if len(runs) != 1 || runs[0].Project != 2 || runs[0].Status != cleanupDone || runs[0].Reached != 7 {
+	if len(runs) != 1 || runs[0].Project != 2 || runs[0].Status != cleanupDone || runs[0].Reached != 8 {
 		t.Fatalf("runs: %+v", runs)
 	}
 
@@ -594,10 +608,10 @@ func TestDiskShareStepOrder(t *testing.T) {
 		deleted[step.Number] = *step.Projects[2]
 	}
 
-	want := map[int]CleanupCounts{2: {Logs: 100}, 3: {Events: 10}, 4: {Events: 5}, 5: {Logs: 200}, 6: {Events: 9}}
+	want := map[int]CleanupCounts{2: {Logs: 100}, 3: {Events: 10}, 4: {Events: 5}, 5: {Logs: 200}, 6: {Events: 9}, 7: {Events: 10}}
 
-	if !slices.Equal(numbers, []int{2, 3, 4, 5, 6, 7}) {
-		t.Fatalf("steps %v, want 2 to 7: %+v", numbers, runs[0].Steps)
+	if !slices.Equal(numbers, []int{2, 3, 4, 5, 6, 7, 8}) {
+		t.Fatalf("steps %v, want 2 to 8: %+v", numbers, runs[0].Steps)
 	}
 
 	for number, counts := range want {
@@ -607,8 +621,8 @@ func TestDiskShareStepOrder(t *testing.T) {
 	}
 
 	// The goal is half way through its 400 error logs.
-	if logs := deleted[7].Logs; logs < 100 || logs > 300 {
-		t.Errorf("step 7 deleted %d of 400 error logs, want about 200", logs)
+	if logs := deleted[8].Logs; logs < 100 || logs > 300 {
+		t.Errorf("step 8 deleted %d of 400 error logs, want about 200", logs)
 	}
 
 	errorsAfter := levelLogs(t, database, 2, "error")
@@ -617,7 +631,7 @@ func TestDiskShareStepOrder(t *testing.T) {
 		t.Errorf("the error logs kept are not the newest %d of %d", len(errorsAfter), len(errorsBefore))
 	}
 
-	for fingerprint, stored := range map[string]int{"old-0": 20, "resolved-0": 1, "warning-0": 1, "fresh-0": 30} {
+	for fingerprint, stored := range map[string]int{"old-0": 20, "resolved-0": 1, "warning-0": 1, "fresh-0": 20} {
 		if issue := projectIssue(database, 2, fingerprint); issue == nil || issue.Stored != stored {
 			t.Errorf("issue %s keeps %+v events, want %d", fingerprint, issue, stored)
 		}
@@ -1212,7 +1226,7 @@ func TestDiskShareStorageNumbers(t *testing.T) {
 	}
 
 	maxBytes := before.OnDisk[2] * 10 / 13 * 100 / 20
-	runs := checkSize(t, database, maxBytes)
+	runs := checkSizeOnly(t, database, maxBytes) // as the run left it, before its compaction
 
 	if len(runs) != 1 || runs[0].Project != 2 {
 		t.Fatalf("runs: %+v", runs)

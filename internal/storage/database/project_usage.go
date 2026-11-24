@@ -54,15 +54,17 @@ func (database *Store) ProjectUsage(context.Context) (store.ProjectUsage, error)
 	usage.FirstContact = maps.Clone(database.contacted)
 	database.contactsMutex.RUnlock()
 
-	ratio, err := database.diskRatio()
+	live, disk, err := database.liveSize()
 
 	if err != nil {
 		return usage, err
 	}
 
+	usage.Live, usage.Files = live, disk.files
+
 	for counter, size := range database.db.Groups() {
 		projectID := int(kv.Decode([]byte(counter), 0).U32())
-		usage.Bytes[projectID], usage.OnDisk[projectID] = size, int64(float64(size)*ratio)
+		usage.Bytes[projectID], usage.OnDisk[projectID] = size, disk.onDisk(size)
 	}
 
 	database.issuesMutex.RLock()

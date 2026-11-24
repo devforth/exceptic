@@ -63,13 +63,13 @@ func writeEvents(t *testing.T, database *Store, fingerprint, level string, count
 func countLogs(t *testing.T, database *Store, filter store.LogFilter) int {
 	t.Helper()
 
-	count, _, err := database.CountLogs(context.Background(), filter)
+	count, err := database.CountLogs(context.Background(), filter)
 
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	return count
+	return count.Count
 }
 
 func storedEvents(database *Store, fingerprint string) int {
@@ -393,22 +393,28 @@ func TestCleanupMinorEventsBeforeErrors(t *testing.T) {
 	}
 }
 
-// Logs below error go whenever the cleanup runs, even when less would do;
-// error logs only while needed.
-func TestCleanupMinorLogsAlways(t *testing.T) {
+// Logs below error go oldest first and only while needed, like error logs
+// after them: only the first steps (old and orphaned data) run in full.
+func TestCleanupMinorLogsOldestFirstToTheGoal(t *testing.T) {
 	ctx := context.Background()
 	database := openTest(t)
+	clockAt(database, time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC))
+	writeLogs(t, database, "info", 20, "old")
 	clockAt(database, time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC))
-	writeLogs(t, database, "info", 20, "info")
-	writeLogs(t, database, "warn", 20, "warn")
+	writeLogs(t, database, "warn", 20, "new")
 	writeLogs(t, database, "error", 20, "error")
 
+	// A goal one byte under the size: the oldest minor log goes, nothing more.
 	if _, _, err := database.cleanTo(ctx, database.logicalSize()-1); err != nil {
 		t.Fatal(err)
 	}
 
-	if minor, errors := countLogs(t, database, store.LogFilter{Levels: []string{"info", "warn"}}), countLogs(t, database, store.LogFilter{Levels: []string{"error"}}); minor != 0 || errors != 20 {
-		t.Fatalf("info and warn %d, error %d; want 0 and 20", minor, errors)
+	old := countLogs(t, database, store.LogFilter{Levels: []string{"info"}})
+	newer := countLogs(t, database, store.LogFilter{Levels: []string{"warn"}})
+	errors := countLogs(t, database, store.LogFilter{Levels: []string{"error"}})
+
+	if old != 19 || newer != 20 || errors != 20 {
+		t.Fatalf("info %d, warn %d, error %d; want 19, 20 and 20: only the oldest minor log deleted", old, newer, errors)
 	}
 }
 
@@ -596,9 +602,14 @@ func TestCleanupCountsPerStep(t *testing.T) {
 	writeLogs(t, database, "error", 40, "old")
 
 	clockAt(database, time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC))
+
+	before := database.logicalSize()
+
 	writeLogs(t, database, "info", 10, "minor")
 
-	steps, reached, err := database.cleanTo(ctx, database.logicalSize())
+	// Down to half the minor logs: the old ones go in full (step 2), the minor ones oldest first
+	// until the goal (step 5).
+	steps, reached, err := database.cleanTo(ctx, (database.logicalSize()-before)/2)
 
 	if err != nil {
 		t.Fatal(err)
@@ -614,7 +625,7 @@ func TestCleanupCountsPerStep(t *testing.T) {
 		t.Fatalf("step 2: %+v %+v %+v", old, old.Projects[1], old.Projects[2])
 	}
 
-	if minor.Number != 5 || minor.Projects[1].Logs != 5 || minor.Projects[2].Logs != 5 {
+	if gone := minor.Projects[1].Logs + minor.Projects[2].Logs; minor.Number != 5 || gone < 4 || gone > 6 {
 		t.Fatalf("step 5: %+v", minor)
 	}
 }
@@ -749,8 +760,8 @@ func TestCleanupStopsAtTheGoal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Step 8 deletes one event.
-	if reached != 8 || storedEvents(database, "busy") != 299 || len(steps) != 1 || steps[0].Projects[1].Events != 1 {
+	// Step 7 deletes one event.
+	if reached != 7 || storedEvents(database, "busy") != 299 || len(steps) != 1 || steps[0].Projects[1].Events != 1 {
 		t.Fatalf("reached %d, busy keeps %d, steps %+v", reached, storedEvents(database, "busy"), steps)
 	}
 }
@@ -764,8 +775,8 @@ func TestCleanupGoesOn(t *testing.T) {
 	clockAt(database, time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC))
 	writeLogs(t, database, "error", 10, "error")
 
-	// Stopped at step 7 with the goal still ahead; steps 1 to 6 do not run again.
-	run := CleanupRun{Status: cleanupRunning, Reached: 7, Goal: database.logicalSize() - bytesOf(database, kindLog, levelRank("error")), Limit: 1 << 40}
+	// Stopped at step 8 with the goal still ahead; steps 1 to 7 do not run again.
+	run := CleanupRun{Status: cleanupRunning, Reached: 8, Goal: database.logicalSize() - bytesOf(database, kindLog, levelRank("error")), Limit: 1 << 40, Order: cleanupOrder()}
 
 	if err := database.saveCleanup(&run); err != nil {
 		t.Fatal(err)
@@ -779,7 +790,7 @@ func TestCleanupGoesOn(t *testing.T) {
 
 	done := runs[0]
 
-	if err != nil || done.Status != cleanupDone || done.Reached != 7 || len(done.Steps) != 1 || done.Steps[0].Number != 7 {
+	if err != nil || done.Status != cleanupDone || done.Reached != 8 || len(done.Steps) != 1 || done.Steps[0].Number != 8 {
 		t.Fatalf("run: %+v, %v", done, err)
 	}
 
@@ -789,6 +800,37 @@ func TestCleanupGoesOn(t *testing.T) {
 
 	if runs, _ := database.CleanupHistory(ctx, 10); len(runs) != 1 || runs[0].Status != cleanupDone {
 		t.Fatalf("history: %+v", runs)
+	}
+}
+
+// A run left running by a version with other steps ends there: its step
+// and position would be another step's. The next pass starts a new run.
+func TestCleanupStopsWhenStepsChanged(t *testing.T) {
+	for name, order := range map[string]string{"other steps": "0", "saved before the order": ""} {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			database := openTest(t)
+			clockAt(database, time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC))
+			writeLogs(t, database, "error", 10, "error")
+
+			run := CleanupRun{Status: cleanupRunning, Reached: 8, Position: []byte{1}, Goal: database.logicalSize() - bytesOf(database, kindLog, levelRank("error")), Limit: 1 << 40, Order: order}
+
+			if err := database.saveCleanup(&run); err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := database.cleanupPass(ctx, 1<<40); err != nil {
+				t.Fatal(err)
+			}
+
+			if errors := countLogs(t, database, store.LogFilter{}); errors != 10 {
+				t.Errorf("%d error logs left, want 10", errors)
+			}
+
+			if runs, _ := database.CleanupHistory(ctx, 10); len(runs) != 1 || runs[0].Status != cleanupFailed || runs[0].Error != "stopped: the cleanup's steps changed" {
+				t.Fatalf("history: %+v", runs)
+			}
+		})
 	}
 }
 
@@ -808,7 +850,7 @@ func TestCleanupStopsWhenLimitChanged(t *testing.T) {
 			clockAt(database, time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC))
 			writeLogs(t, database, "error", 10, "error")
 
-			run := CleanupRun{Status: cleanupRunning, Reached: 7, Goal: database.logicalSize() - bytesOf(database, kindLog, levelRank("error")), Limit: 1}
+			run := CleanupRun{Status: cleanupRunning, Reached: 8, Goal: database.logicalSize() - bytesOf(database, kindLog, levelRank("error")), Limit: 1, Order: cleanupOrder()}
 
 			if err := database.saveCleanup(&run); err != nil {
 				t.Fatal(err)
@@ -844,6 +886,30 @@ func TestCleanupErrorAndFatalOldestFirst(t *testing.T) {
 
 	if fatal, errors := countLogs(t, database, store.LogFilter{Levels: []string{"fatal"}}), countLogs(t, database, store.LogFilter{Levels: []string{"error"}}); fatal != 0 || errors != 1 {
 		t.Fatalf("fatal %d, error %d; want the older fatal gone", fatal, errors)
+	}
+}
+
+// An issue fed by a loop loses its events beyond the newest of each issue
+// (step 7) before any error or fatal log goes (step 8).
+func TestCleanupTrimsIssuesBeforeErrorLogs(t *testing.T) {
+	ctx := context.Background()
+	database := openTest(t)
+	clockAt(database, time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC))
+	writeLogs(t, database, "error", 10, "error")
+	writeEvents(t, database, "loop", "error", 300)
+
+	steps, reached, err := database.cleanTo(ctx, database.logicalSize()-bytesOf(database, kindEvent, 255)/2)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if errors := countLogs(t, database, store.LogFilter{}); errors != 10 || reached != 7 || len(steps) != 1 || steps[0].Number != 7 {
+		t.Fatalf("error logs %d, reached %d, steps %+v", errors, reached, steps)
+	}
+
+	if stored := storedEvents(database, "loop"); stored < 20 || stored >= 300 {
+		t.Fatalf("loop keeps %d events", stored)
 	}
 }
 

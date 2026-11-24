@@ -15,8 +15,9 @@ const MaxItems = 100
 // Envelope is a parsed envelope: one header line followed by items.
 // Format: https://develop.sentry.dev/sdk/data-model/envelopes/
 type Envelope struct {
-	Header EnvelopeHeader
-	Items  []Item
+	Header     EnvelopeHeader
+	Items      []Item
+	headerLine []byte // as sent, for Encode
 }
 
 type EnvelopeHeader struct {
@@ -32,8 +33,9 @@ type SDK struct {
 }
 
 type Item struct {
-	Header  ItemHeader
-	Payload []byte
+	Header     ItemHeader
+	Payload    []byte
+	headerLine []byte // as sent, for Encode
 }
 
 type ItemHeader struct {
@@ -42,10 +44,12 @@ type ItemHeader struct {
 }
 
 // Item types the server stores. Everything else (span, transaction, session,
-// client_report, attachment, replay, ...) is accepted and dropped.
+// attachment, replay, ...) is accepted and dropped; a client_report is only
+// counted (ParseClientReport).
 const (
-	ItemEvent = "event"
-	ItemLog   = "log"
+	ItemEvent        = "event"
+	ItemLog          = "log"
+	ItemClientReport = "client_report"
 )
 
 // ParseEnvelopeHeader reads the header line alone; a malformed one gives the zero value.
@@ -69,7 +73,7 @@ func ParseEnvelope(body []byte) (*Envelope, error) {
 		return nil, errors.New("empty envelope")
 	}
 
-	envelope := &Envelope{}
+	envelope := &Envelope{headerLine: headerLine}
 
 	if err := json.Unmarshal(headerLine, &envelope.Header); err != nil {
 		return nil, fmt.Errorf("envelope header: %w", err)
@@ -93,7 +97,7 @@ func ParseEnvelope(body []byte) (*Envelope, error) {
 			return nil, fmt.Errorf("too many items (max %d)", MaxItems)
 		}
 
-		var item Item
+		item := Item{headerLine: itemHeaderLine}
 
 		if err := json.Unmarshal(itemHeaderLine, &item.Header); err != nil {
 			return nil, fmt.Errorf("item %d header: %w", len(envelope.Items)+1, err)
@@ -120,6 +124,24 @@ func ParseEnvelope(body []byte) (*Envelope, error) {
 	}
 
 	return envelope, nil
+}
+
+// Encode writes the envelope back with the header lines as they were sent,
+// so it keeps every field; used after items were left out.
+func (envelope *Envelope) Encode() []byte {
+	var buffer bytes.Buffer
+
+	buffer.Write(envelope.headerLine)
+	buffer.WriteByte('\n')
+
+	for _, item := range envelope.Items {
+		buffer.Write(item.headerLine)
+		buffer.WriteByte('\n')
+		buffer.Write(item.Payload)
+		buffer.WriteByte('\n')
+	}
+
+	return buffer.Bytes()
 }
 
 // nextLine returns the bytes up to the next '\n' (without it) and the remainder.

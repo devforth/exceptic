@@ -14,9 +14,10 @@ afterEach(() => {
 });
 
 describe('the chip builders', () => {
-	it('remove each value of a list filter on its own, from the first page', () => {
+	it('remove each value of a list filter on its own, or the whole filter, from the first page', () => {
 		expect(listChip(url, 'Project', 'project', ['backend', 'frontend'], 'project')).toEqual({
 			label: 'Project',
+			remove: '/logs?query=boom',
 			values: [
 				{ text: 'backend', kind: 'project', remove: '/logs?query=boom&project=frontend' },
 				{ text: 'frontend', kind: 'project', remove: '/logs?query=boom&project=backend' }
@@ -34,6 +35,7 @@ describe('the chip builders', () => {
 	it('remove a text filter with its parameter', () => {
 		expect(textChip(url, 'Search', 'query', 'boom')).toEqual({
 			label: 'Search',
+			remove: '/logs?project=backend&project=frontend',
 			values: [{ text: 'boom', remove: '/logs?project=backend&project=frontend' }]
 		});
 		expect(textChip(url, 'Search', 'query', '').values).toEqual([]);
@@ -44,6 +46,7 @@ describe('the chip builders', () => {
 
 		expect(daysChip(ranged, '2026-11-01', '2026-11-10')).toEqual({
 			label: 'Dates',
+			remove: '/issues',
 			values: [{ text: '1 Nov – 10 Nov', remove: '/issues' }]
 		});
 		expect(daysChip(ranged, '', '').values).toEqual([]);

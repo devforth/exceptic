@@ -34,8 +34,7 @@ import (
 // INGEST_LOAD=1 INGEST_DIR=$PWD/data go test ./internal/ingest -run 'TestIngestLoad$' -v -timeout 1h
 // CLEANUP_BENCH_DIR=$PWD/data/bench-cleanup go test ./internal/ingest -run TestCleanupUnderIngestLoad -v -timeout 2h
 // Both run the server's ingest and cleanup loop under its memory limit, with
-// the rate limit off: the default (1000 envelopes a DSN a minute) would answer
-// 429 to the logs that follow the 1000 errors.
+// the rate limits off, so every envelope reaches the store.
 
 // load is the peak: projects DSNs at once, each sending events errors and logs envelopes of 11 logs.
 type load struct{ projects, events, logs int }
@@ -164,7 +163,7 @@ func TestIngestLoad(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	logs, more, err := db.CountLogs(ctx, store.LogFilter{})
+	logs, err := db.CountLogs(ctx, store.LogFilter{})
 
 	if err != nil {
 		t.Fatal(err)
@@ -180,7 +179,7 @@ func TestIngestLoad(t *testing.T) {
 
 	runtime.ReadMemStats(&memory)
 
-	reports = append(reports, fmt.Sprintf("database %s on disk, %d logs kept (more: %v), Go heap %d MB", config.FormatSize(size), logs, more, memory.HeapAlloc>>20))
+	reports = append(reports, fmt.Sprintf("database %s on disk, %d logs kept (more: %v), Go heap %d MB", config.FormatSize(size), logs.Count, logs.More, memory.HeapAlloc>>20))
 
 	for _, report := range reports {
 		t.Log(report)
