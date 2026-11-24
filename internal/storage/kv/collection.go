@@ -30,8 +30,8 @@ type Definition[T any] struct {
 	Backfill *Backfill
 	// Tally, when set, counts each record once under each of its keys (how
 	// many records of a project have a status, say), kept exact in the same
-	// batch as the record (DB.Tally). Not with Backfill: a record the
-	// backfill has not reached would be counted wrong.
+	// batch as the record (DB.Tally). A Backfill may add indexes but no
+	// Group: tallies count every record from the start, reached or not.
 	Tally func(T) []Key
 }
 
@@ -81,8 +81,8 @@ func Define[T any](schema *Schema, definition Definition[T]) *Collection[T] {
 		name: definition.Name, prefix: Key(definition.Name + "/"), definition: definition, indexes: map[string]*index[T]{},
 	}
 
-	if definition.Tally != nil && definition.Backfill != nil {
-		panic(fmt.Sprintf("kv: collection %s cannot have both Tally and Backfill", definition.Name))
+	if definition.Tally != nil && definition.Backfill != nil && definition.Backfill.Group {
+		panic(fmt.Sprintf("kv: collection %s cannot have both Tally and a Backfill of its Group", definition.Name))
 	}
 
 	schema.register(string(collection.prefix), "collection "+definition.Name)

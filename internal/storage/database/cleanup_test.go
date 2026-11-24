@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/storage/kv"
 	"github.com/devforth/exceptic/internal/storage/store"
 )
@@ -1053,4 +1054,43 @@ func storedIssueByID(database *Store, id string) *issueRecord {
 	}
 
 	return &issue
+}
+
+// Step 7 passes over no issue whose events grow between its batches: it
+// walks the issues storing more than it keeps from the top at every batch,
+// so an issue that stored more after a batch, past the one the batch stopped
+// at, is trimmed too (a position in an index of counts would leave it).
+func TestTrimCopiesFollowsGrowingIssues(t *testing.T) {
+	database := openTest(t)
+	clockAt(database, time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC))
+	writeEvents(t, database, "loop", "error", 60)
+	writeEvents(t, database, "other", "error", 40)
+
+	// The first batch has room for 10 events: it stops halfway through "loop".
+	if _, finished := runBatch(t, database, 7, nil, cleanupChunk-10); finished {
+		t.Fatal("the first batch finished")
+	}
+
+	clockAt(database, time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC))
+	writeEvents(t, database, "other", "error", 40)
+
+	for range 10 {
+		if _, finished := runBatch(t, database, 7, nil, 0); finished {
+			break
+		}
+	}
+
+	issues, err := database.ListIssues(context.Background(), store.IssueFilter{})
+
+	if err != nil || len(issues) != 2 {
+		t.Fatal(issues, err)
+	}
+
+	for _, issue := range issues {
+		if issue.Stored != config.OldEventsPerIssue {
+			t.Errorf("%s stores %d events, want %d", issue.Title, issue.Stored, config.OldEventsPerIssue)
+		}
+	}
+
+	checkCollections(t, database)
 }

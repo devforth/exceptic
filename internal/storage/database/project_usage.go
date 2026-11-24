@@ -39,9 +39,9 @@ func (database *Store) projectBytes(projectID int) int64 {
 	return database.db.Group(projectCounter(projectID))
 }
 
-// backfilled: every record is counted per project.
+// backfilled: every record is counted per project (the issues' backfill is their trim index).
 func (database *Store) backfilled() bool {
-	return database.issues.Backfilled() && database.events.Backfilled() && database.logs.Backfilled()
+	return database.events.Backfilled() && database.logs.Backfilled()
 }
 
 func (database *Store) ProjectUsage(context.Context) (store.ProjectUsage, error) {

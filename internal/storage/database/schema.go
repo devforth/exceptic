@@ -88,9 +88,14 @@ func defineCollections(schema *kv.Schema) collections {
 					return kv.KIf(issue.Status == store.StatusIgnored && issue.IgnoredUntil != nil,
 						kv.U32(uint32(issue.ProjectID)), kv.U64(uint64(timeValue(issue.IgnoredUntil))), kv.Text(issue.ID))
 				}},
+				// issue.trim/<project>/<stored>/<id>: the issues storing more events than the cleanup's step 7 keeps.
+				{Name: "trim", Key: func(issue issueRecord) kv.Key {
+					return kv.KIf(issue.Stored > config.OldEventsPerIssue, kv.U32(uint32(issue.ProjectID)), kv.U64(uint64(issue.Stored)), kv.Text(issue.ID))
+				}},
 			},
-			Counter: func(issueRecord) kv.Key { return sizeCounter(kindIssue, 0, 0) },
-			Group:   func(issue issueRecord) kv.Key { return projectCounter(issue.ProjectID) },
+			Backfill: &kv.Backfill{Name: "trim", Indexes: []string{"trim"}},
+			Counter:  func(issueRecord) kv.Key { return sizeCounter(kindIssue, 0, 0) },
+			Group:    func(issue issueRecord) kv.Key { return projectCounter(issue.ProjectID) },
 			Tally: func(issue issueRecord) []kv.Key {
 				return []kv.Key{issueTally(issue.ProjectID, issue.Status, issue.Level)}
 			},
