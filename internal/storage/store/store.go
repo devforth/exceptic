@@ -90,7 +90,8 @@ type Store interface {
 
 	// Reading issues, events and logs.
 
-	CountIssues(ctx context.Context, filter IssueFilter) (int, error)
+	// CountIssues counts up to LogCountLimit; more: there are more.
+	CountIssues(ctx context.Context, filter IssueFilter) (count int, more bool, err error)
 	ListIssues(ctx context.Context, filter IssueFilter) ([]Issue, error)
 	GetIssue(ctx context.Context, issueID string) (Issue, error)
 	// DeleteIssues deletes the issues that exist, with their events and history; it says how many.

@@ -228,15 +228,18 @@ func scenarioSnapshot(t *testing.T, database *Store, project int) scenarioConten
 		t.Fatal(err)
 	}
 
-	database.issuesMutex.RLock()
+	issues, err := database.issues.Primary().All(database.db)
 
-	for id, issue := range database.table.byID {
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, issue := range issues {
 		if issue.ProjectID == project {
-			contents.issues = append(contents.issues, fmt.Sprintf("%s:%d", id, issue.Stored))
+			contents.issues = append(contents.issues, fmt.Sprintf("%s:%d", issue.ID, issue.Stored))
 		}
 	}
 
-	database.issuesMutex.RUnlock()
 	slices.Sort(contents.logs)
 	slices.Sort(contents.events)
 	slices.Sort(contents.issues)
@@ -273,11 +276,13 @@ func levelLogs(t *testing.T, database *Store, project int, level string) []uint6
 
 // projectIssue is the issue of a project's fingerprint.
 func projectIssue(database *Store, project int, fingerprint string) *issueRecord {
-	database.issuesMutex.RLock()
+	issue, err := database.issues.GetBy(database.db, "fingerprint", kv.K(kv.U32(uint32(project)), kv.Text(fingerprint)))
 
-	defer database.issuesMutex.RUnlock()
+	if err != nil {
+		return nil
+	}
 
-	return database.table.byFingerprint[fingerprintKey(project, fingerprint)]
+	return &issue
 }
 
 // measured is a project's size as the cleanup compares it with its share (and the Projects page shows it).
@@ -680,7 +685,7 @@ func TestDiskShareStepsKeepOtherProjects(t *testing.T) {
 	clockAt(database, time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC))
 
 	other := func() string {
-		issues, _ := database.CountIssues(ctx, store.IssueFilter{ProjectIDs: []int{2}})
+		issues, _, _ := database.CountIssues(ctx, store.IssueFilter{ProjectIDs: []int{2}})
 
 		return fmt.Sprintf("%d bytes, %d issues, %d logs", database.projectBytes(2), issues, projectLogs(t, database, 2))
 	}
@@ -799,75 +804,6 @@ func TestDiskShareWithoutALimit(t *testing.T) {
 			t.Errorf("project 2 holds %s, held %s when its run stopped", after, flood)
 		}
 	})
-}
-
-// Until the data of an earlier version is counted per project
-// ("counting…"), no project's run starts, even for a project whose new data
-// alone is over its share; once counted, it does.
-func TestDiskShareWaitsForCounting(t *testing.T) {
-	ctx := context.Background()
-	dir := t.TempDir()
-	database := openOnDisk(t, dir)
-	seedShares(t, database, 100, 20)
-	clockAt(database, scenarioNow)
-
-	random := rand.New(rand.NewPCG(19, 23))
-	scenarioLogs(t, database, random, 1, 500, "error")
-	scenarioEvents(t, database, random, 2, "early", 5, 2, "error", scenarioNow.Add(-time.Hour))
-
-	// As written before the project counters: none of them, and no backfill done.
-	err := database.db.Update(true, func(batch *kv.Batch) error {
-		for _, prefix := range []string{"group/", "event.project/", "meta/"} {
-			iterator := database.db.Iterate([]byte(prefix), append([]byte(prefix), 0xff))
-
-			for valid := iterator.First(); valid; valid = iterator.Next() {
-				if prefix != "meta/" || strings.Contains(string(iterator.Key()), "backfill") {
-					batch.Delete(slices.Clone(iterator.Key()))
-				}
-			}
-
-			if err := iterator.Close(); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := database.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	database = reopenWithoutProjectIndex(t, dir)
-	clockAt(database, scenarioNow)
-
-	for range 3 {
-		scenarioLogs(t, database, random, 2, 1000, "error")
-	}
-
-	if !usage(t, database).Counting {
-		t.Fatal("the database is not counting")
-	}
-
-	// Project 2 holds most of the database, twice its share of 20%.
-	size, _ := database.db.Size()
-	maxBytes := size * 2
-
-	if runs := checkSize(t, database, maxBytes); len(runs) != 0 {
-		t.Fatalf("runs while counting: %+v", runs)
-	}
-
-	if err := database.Backfill(ctx); err != nil {
-		t.Fatal(err)
-	}
-
-	if runs := checkSize(t, database, maxBytes); len(runs) != 1 || runs[0].Project != 2 {
-		t.Fatalf("runs once counted: %+v", runs)
-	}
 }
 
 // While a backup runs, no project's run starts (its snapshot keeps deleted

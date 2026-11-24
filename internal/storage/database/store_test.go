@@ -60,11 +60,7 @@ func saveEvent(t *testing.T, database *Store, fingerprint string, at time.Time) 
 }
 
 func storedIssue(database *Store, fingerprint string) *issueRecord {
-	database.issuesMutex.RLock()
-
-	defer database.issuesMutex.RUnlock()
-
-	return database.table.byFingerprint[fingerprintKey(1, fingerprint)]
+	return projectIssue(database, 1, fingerprint)
 }
 
 // An issue counts its stored events per day, not per event: with no limit
@@ -105,7 +101,7 @@ func TestIssueDateRange(t *testing.T) {
 		"the next day":        {day.Add(24 * time.Hour), day.Add(48 * time.Hour), 0},
 		"from the evening on": {morning.Add(12 * time.Hour), time.Time{}, 1},
 	} {
-		count, err := database.CountIssues(ctx, store.IssueFilter{SeenSince: test.since, SeenUntil: test.until})
+		count, _, err := database.CountIssues(ctx, store.IssueFilter{SeenSince: test.since, SeenUntil: test.until})
 
 		if err != nil || count != test.want {
 			t.Errorf("%s: %d issues (%v), want %d", name, count, err, test.want)
@@ -142,7 +138,7 @@ func TestIssueDateRangeWithoutEvents(t *testing.T) {
 		"the last morning": {first.Add(23 * time.Hour), first.Add(25 * time.Hour), 1},
 		"the day after":    {day.Add(48 * time.Hour), day.Add(72 * time.Hour), 0},
 	} {
-		count, err := database.CountIssues(ctx, store.IssueFilter{SeenSince: test.since, SeenUntil: test.until})
+		count, _, err := database.CountIssues(ctx, store.IssueFilter{SeenSince: test.since, SeenUntil: test.until})
 
 		if err != nil || count != test.want {
 			t.Errorf("%s: %d issues (%v), want %d", name, count, err, test.want)
@@ -302,7 +298,7 @@ func TestVerifyFindsWhatIsLeft(t *testing.T) {
 		t.Fatalf("before: %v %v", problems, err)
 	}
 
-	// The message's record goes, its index keys stay; the issue leaves the table, its events and status changes stay.
+	// The message's record goes, its index keys stay; the issue's record goes, its events and status changes stay.
 	messages, _ := database.ListOutbox(ctx, store.OutboxFilter{})
 
 	if err := database.db.Update(true, func(batch *kv.Batch) error {
@@ -313,9 +309,13 @@ func TestVerifyFindsWhatIsLeft(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	database.issuesMutex.Lock()
-	database.table.remove(result.IssueID)
-	database.issuesMutex.Unlock()
+	if err := database.db.Update(true, func(batch *kv.Batch) error {
+		_, err := database.issues.DeleteKey(batch, kv.K(kv.Text(result.IssueID)))
+
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	problems, err := database.Verify()
 	found := strings.Join(problems, "\n")
@@ -757,7 +757,7 @@ func TestDeleteProject(t *testing.T) {
 		t.Fatalf("stopped purge: %v", err)
 	}
 
-	if issues, _ := database.CountIssues(ctx, store.IssueFilter{ProjectIDs: []int{1}}); issues != 3 {
+	if issues, _, _ := database.CountIssues(ctx, store.IssueFilter{ProjectIDs: []int{1}}); issues != 3 {
 		t.Fatalf("a stopped purge deleted %d of 3 issues", 3-issues)
 	}
 
@@ -778,7 +778,7 @@ func TestDeleteProject(t *testing.T) {
 			t.Errorf("project %d keeps %d logs, want %d", project, logs, want)
 		}
 
-		if issues, _ := database.CountIssues(ctx, store.IssueFilter{ProjectIDs: []int{project}}); issues != map[int]int{1: 0, 2: 3}[project] {
+		if issues, _, _ := database.CountIssues(ctx, store.IssueFilter{ProjectIDs: []int{project}}); issues != map[int]int{1: 0, 2: 3}[project] {
 			t.Errorf("project %d keeps %d issues", project, issues)
 		}
 	}
@@ -880,7 +880,7 @@ func TestDeleteProjectAcrossRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if issues, _ := reopened.CountIssues(ctx, store.IssueFilter{}); issues != 0 {
+	if issues, _, _ := reopened.CountIssues(ctx, store.IssueFilter{}); issues != 0 {
 		t.Fatalf("%d issues of the deleted project left", issues)
 	}
 }
@@ -901,7 +901,7 @@ func TestIssuePagesMatchAFullSort(t *testing.T) {
 	}
 
 	for _, sort := range store.IssueSorts {
-		all, err := database.ListIssues(ctx, store.IssueFilter{Sort: sort, Offset: maxKeptIssues})
+		all, err := database.ListIssues(ctx, store.IssueFilter{Sort: sort, Offset: store.LogCountLimit + 1})
 
 		if err != nil || len(all) != 0 {
 			t.Fatalf("%s: %d issues past the end, %v", sort, len(all), err)

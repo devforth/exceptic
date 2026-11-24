@@ -26,10 +26,6 @@ func dropIssueRecord(t *testing.T, database *Store, issue *issueRecord) string {
 		t.Fatal(err)
 	}
 
-	database.issuesMutex.Lock()
-	database.table.remove(issue.ID)
-	database.issuesMutex.Unlock()
-
 	return issue.ID
 }
 

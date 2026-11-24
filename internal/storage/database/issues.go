@@ -2,10 +2,7 @@ package database
 
 import (
 	"cmp"
-	"context"
-	"maps"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/devforth/exceptic/internal/platform/textutil"
@@ -13,7 +10,7 @@ import (
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
-// issueRecord is a stored issue; the whole table is also kept in memory.
+// issueRecord is a stored issue, read through its indexes (issue_reads.go).
 type issueRecord struct {
 	store.Issue
 	Fingerprint string `json:"fingerprint"`
@@ -25,9 +22,6 @@ type issueRecord struct {
 
 	// storedSize is the size of the stored value (kv.Collection.Write).
 	storedSize int
-	// minute counts the events stored in a Unix minute, for the cap of
-	// events an issue stores (overCap); only in memory.
-	minute eventWindow
 }
 
 type dayCount struct {
@@ -35,31 +29,22 @@ type dayCount struct {
 	Count int   `json:"n"`
 }
 
-type eventWindow struct {
-	start  int64
-	events int
+// minuteCounts counts the events each issue stored in the current Unix
+// minute, for the cap of events an issue stores a minute: only the issues
+// written to this minute, all forgotten when it changes (a restart too).
+// An event of an earlier minute (an inbox backlog) counts in the current one.
+type minuteCounts struct {
+	minute int64
+	stored map[string]int
 }
 
-// full moves the window to start and says whether it holds limit events.
-func (window *eventWindow) full(start int64, limit int) bool {
-	if start > window.start {
-		*window = eventWindow{start: start}
+// at moves the counts to minute and returns them.
+func (counts *minuteCounts) at(minute int64) map[string]int {
+	if minute > counts.minute || counts.stored == nil {
+		counts.minute, counts.stored = max(minute, counts.minute), map[string]int{}
 	}
 
-	return limit > 0 && window.events >= limit
-}
-
-// overCap says whether an event received at the time is over the limit of
-// events the issue stores a minute (0: none), and counts it when it is not;
-// an event that must be stored is counted whatever the cap.
-func (issue *issueRecord) overCap(received time.Time, limit int, mustStore bool) bool {
-	if issue.minute.full(received.Unix()/60, limit) && !mustStore {
-		return true
-	}
-
-	issue.minute.events++
-
-	return false
+	return counts.stored
 }
 
 func (issue *issueRecord) addEvent(at time.Time) {
@@ -127,41 +112,9 @@ func (issue *issueRecord) copy() *issueRecord {
 	return &duplicate
 }
 
-type issueTable struct {
-	byID          map[string]*issueRecord
-	byFingerprint map[string]*issueRecord
-}
-
+// fingerprintKey names a fingerprint of a project, for the groups of one batch.
 func fingerprintKey(projectID int, fingerprint string) string {
 	return string(kv.K(kv.U32(uint32(projectID)), kv.Text(fingerprint)))
-}
-
-func (table *issueTable) put(issue *issueRecord) {
-	table.byID[issue.ID] = issue
-	table.byFingerprint[fingerprintKey(issue.ProjectID, issue.Fingerprint)] = issue
-}
-
-func (table *issueTable) remove(id string) {
-	if issue, ok := table.byID[id]; ok {
-		delete(table.byID, id)
-		delete(table.byFingerprint, fingerprintKey(issue.ProjectID, issue.Fingerprint))
-	}
-}
-
-func (database *Store) loadIssues() error {
-	table := &issueTable{byID: map[string]*issueRecord{}, byFingerprint: map[string]*issueRecord{}}
-
-	err := database.issues.Primary().Each(database.db, func(entry kv.Entry[issueRecord]) (bool, error) {
-		issue := entry.Record
-		issue.storedSize = entry.Size
-		table.put(&issue)
-
-		return true, nil
-	})
-
-	database.table = table
-
-	return err
 }
 
 type match int
@@ -242,43 +195,6 @@ func (database *Store) anyEventInRange(issueID string, filter store.IssueFilter)
 	return found, err
 }
 
-// filterIssues visits the issues that match; records in the table are never
-// changed in place (a batch replaces them), so they are read after the lock.
-// Events are read from disk only after releasing the table.
-func (database *Store) filterIssues(filter store.IssueFilter, visit func(issue *issueRecord)) error {
-	var check []*issueRecord
-
-	now := database.now()
-
-	database.issuesMutex.RLock()
-
-	for _, issue := range database.table.byID {
-		switch matches(issue, filter, now) {
-		case isMatch:
-			visit(issue)
-		case checkEvents:
-			check = append(check, issue)
-		case noMatch:
-		}
-	}
-
-	database.issuesMutex.RUnlock()
-
-	for _, issue := range check {
-		found, err := database.anyEventInRange(issue.ID, filter)
-
-		if err != nil {
-			return err
-		}
-
-		if found {
-			visit(issue)
-		}
-	}
-
-	return nil
-}
-
 type issueComparison func(first, second *issueRecord) int
 
 // reversed orders the other way, ties included.
@@ -323,142 +239,4 @@ func issueOrder(sort string, projectNames map[int]string) issueComparison {
 	default: // "": store.SortLastSeen
 		return lastSeen
 	}
-}
-
-func (database *Store) CountIssues(_ context.Context, filter store.IssueFilter) (int, error) {
-	count := 0
-	err := database.filterIssues(filter, func(*issueRecord) { count++ })
-
-	return count, err
-}
-
-// maxKeptIssues: up to this offset+limit, ListIssues keeps the first issues
-// in order as it goes; past it, it sorts every match.
-const maxKeptIssues = 1000
-
-// ListIssues sorts the matching issues and copies only the page.
-func (database *Store) ListIssues(ctx context.Context, filter store.IssueFilter) ([]store.Issue, error) {
-	names := map[int]string{}
-
-	if filter.Sort == store.SortProject || filter.Sort == store.SortProjectDesc {
-		projects, err := database.ListProjects(ctx)
-
-		if err != nil {
-			return nil, err
-		}
-
-		for _, project := range projects {
-			names[project.ID] = strings.ToLower(project.Name)
-		}
-	}
-
-	order := issueOrder(filter.Sort, names)
-	offset := min(max(filter.Offset, 0), store.MaxOffset)
-	keep := offset + filter.Limit
-
-	var matched []*issueRecord
-
-	collect := func(issue *issueRecord) { matched = append(matched, issue) }
-
-	// A page near the start keeps only the first offset+limit, in order, instead of sorting them all.
-	if filter.Limit > 0 && keep <= maxKeptIssues {
-		collect = func(issue *issueRecord) {
-			if len(matched) == keep && order(issue, matched[keep-1]) >= 0 {
-				return
-			}
-
-			at, _ := slices.BinarySearchFunc(matched, issue, order)
-			matched = slices.Insert(matched, at, issue)
-
-			if len(matched) > keep {
-				matched = matched[:keep]
-			}
-		}
-	}
-
-	if err := database.filterIssues(filter, collect); err != nil {
-		return nil, err
-	}
-
-	slices.SortFunc(matched, order)
-
-	start := min(offset, len(matched))
-	end := len(matched)
-
-	if filter.Limit > 0 {
-		end = min(start+filter.Limit, len(matched))
-	}
-
-	issues := make([]store.Issue, 0, end-start)
-	now := database.now()
-
-	for _, issue := range matched[start:end] {
-		issues = append(issues, issue.At(now))
-	}
-
-	return issues, nil
-}
-
-func (database *Store) GetIssue(_ context.Context, issueID string) (store.Issue, error) {
-	database.issuesMutex.RLock()
-
-	defer database.issuesMutex.RUnlock()
-
-	issue, ok := database.table.byID[issueID]
-
-	if !ok {
-		return store.Issue{}, store.ErrNotFound
-	}
-
-	return issue.At(database.now()), nil
-}
-
-func (database *Store) GetIssues(_ context.Context, issueIDs []string) ([]store.Issue, error) {
-	database.issuesMutex.RLock()
-
-	defer database.issuesMutex.RUnlock()
-
-	issues := []store.Issue{}
-	now := database.now()
-
-	for _, id := range issueIDs {
-		if issue, ok := database.table.byID[id]; ok {
-			issues = append(issues, issue.At(now))
-		}
-	}
-
-	return issues, nil
-}
-
-func (database *Store) UnresolvedCounts(context.Context) (map[int]int, error) {
-	database.issuesMutex.RLock()
-
-	defer database.issuesMutex.RUnlock()
-
-	counts := map[int]int{}
-	now := database.now()
-
-	for _, issue := range database.table.byID {
-		if issue.At(now).Status == store.StatusUnresolved {
-			counts[issue.ProjectID]++
-		}
-	}
-
-	return counts, nil
-}
-
-func (database *Store) IssueLevels(_ context.Context, projectIDs []int) ([]string, error) {
-	database.issuesMutex.RLock()
-
-	defer database.issuesMutex.RUnlock()
-
-	seen := map[string]bool{}
-
-	for _, issue := range database.table.byID {
-		if len(projectIDs) == 0 || slices.Contains(projectIDs, issue.ProjectID) {
-			seen[issue.Level] = true
-		}
-	}
-
-	return slices.Collect(maps.Keys(seen)), nil
 }

@@ -645,11 +645,7 @@ func TestDiskShareOtherProjectsChanges(t *testing.T) {
 		"issues deleted": func(t *testing.T, database *Store) {
 			var ids []string
 
-			for _, issue := range database.table.byID {
-				if issue.ProjectID == 1 {
-					ids = append(ids, issue.ID)
-				}
-			}
+			ids = append(ids, database.issueIDs(func(issue *issueRecord) bool { return issue.ProjectID == 1 })...)
 
 			if _, err := database.DeleteIssues(context.Background(), ids); err != nil {
 				t.Fatal(err)

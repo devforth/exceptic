@@ -186,7 +186,7 @@ func TestUIProjectLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if count, _ := server.database.CountIssues(ctx, store.IssueFilter{ProjectIDs: []int{created.ID}}); count != 0 {
+	if count, _, _ := server.database.CountIssues(ctx, store.IssueFilter{ProjectIDs: []int{created.ID}}); count != 0 {
 		t.Errorf("%d issues of the deleted project", count)
 	}
 

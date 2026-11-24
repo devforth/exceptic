@@ -64,14 +64,11 @@ func TestIssueIndexesFollowTheIssues(t *testing.T) {
 		t.Fatalf("verify: %v %v", problems, err)
 	}
 
-	database.issuesMutex.RLock()
-	table := make([]issueRecord, 0, len(database.table.byID))
+	table, err := database.issues.Primary().All(database.db)
 
-	for _, issue := range database.table.byID {
-		table = append(table, *issue)
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	database.issuesMutex.RUnlock()
 
 	// Tallies: per project, status and level, the issues of the table.
 	counted := map[string]int64{}
@@ -100,7 +97,7 @@ func TestIssueIndexesFollowTheIssues(t *testing.T) {
 
 	var walked []string
 
-	err := kv.Merge(database.db, walks, true, func(entry kv.Entry[issueRecord]) (bool, error) {
+	err = kv.Merge(database.db, walks, true, func(entry kv.Entry[issueRecord]) (bool, error) {
 		walked = append(walked, entry.Record.ID)
 
 		return true, nil
@@ -169,4 +166,173 @@ func TestIssueFingerprintIsUnique(t *testing.T) {
 	if !errors.As(err, &conflict) {
 		t.Errorf("a second issue of fingerprint %q in project 1 (first %s): %v", "same", first.IssueID, err)
 	}
+}
+
+// Lists and counts read through the indexes give what filtering and sorting
+// every issue gives (matches, issueOrder), for every sort, the status,
+// level, project, text and date filters, ignores whose time has passed, and
+// pages.
+func TestIssueListsMatchEveryIssue(t *testing.T) {
+	ctx := context.Background()
+	database := openTest(t)
+	random := rand.New(rand.NewPCG(3, 4))
+	start := time.Date(2026, 11, 10, 8, 0, 0, 0, time.UTC)
+	now := start
+
+	database.SetClock(func() time.Time { return now })
+
+	levels := []string{"fatal", "error", "warning", "info", "debug"}
+	titles := []string{"TypeError: x", "RangeError: y", "fetch failed", "timeout"}
+
+	var ids []string
+
+	for index := range 300 {
+		received := start.Add(time.Duration(random.IntN(5000)) * time.Minute)
+		result, err := database.SaveEvent(ctx, store.NewEvent{
+			ProjectID: 1 + random.IntN(3), EventID: fmt.Sprintf("%032x", index), Fingerprint: fmt.Sprintf("fp-%d", random.IntN(80)),
+			Title: titles[random.IntN(len(titles))], Level: levels[random.IntN(len(levels))], Timestamp: received, ReceivedAt: received, Payload: []byte(`{}`),
+		})
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if !slices.Contains(ids, result.IssueID) {
+			ids = append(ids, result.IssueID)
+		}
+	}
+
+	now = start.Add(4 * 24 * time.Hour)
+
+	if _, err := database.SetIssuesStatus(ctx, ids[:10], store.StatusResolved, store.Actor{Source: store.SourceAPI}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := database.IgnoreIssues(ctx, ids[10:15], store.IgnoreBound{For: time.Hour}, store.Actor{Source: store.SourceAPI}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := database.IgnoreIssues(ctx, ids[15:18], store.IgnoreBound{}, store.Actor{Source: store.SourceAPI}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Two hours on: the five ignores for an hour read as unresolved now.
+	now = now.Add(2 * time.Hour)
+
+	all, err := database.issues.Primary().All(database.db)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	projects := map[int]string{1: "backend", 2: "frontend", 3: "api"}
+
+	for id, name := range projects {
+		if err := database.SeedProject(ctx, store.Project{ID: id, Name: name, PublicKey: fmt.Sprintf("%032d", id)}, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	want := func(filter store.IssueFilter) []string {
+		var kept []*issueRecord
+
+		for index := range all {
+			issue := &all[index]
+
+			switch matches(issue, filter, now) {
+			case isMatch:
+				kept = append(kept, issue)
+			case checkEvents:
+				if found, _ := database.anyEventInRange(issue.ID, filter); found {
+					kept = append(kept, issue)
+				}
+			}
+		}
+
+		slices.SortFunc(kept, issueOrder(filter.Sort, projects))
+
+		result := make([]string, 0, len(kept))
+
+		for _, issue := range kept {
+			result = append(result, issue.ID)
+		}
+
+		return result
+	}
+
+	var filters []store.IssueFilter
+
+	for _, status := range []string{"", store.StatusUnresolved, store.StatusResolved, store.StatusIgnored} {
+		filters = append(filters,
+			store.IssueFilter{Status: status},
+			store.IssueFilter{Status: status, Levels: []string{"error", "fatal"}},
+			store.IssueFilter{Status: status, ProjectIDs: []int{2}},
+			store.IssueFilter{Status: status, Query: "error"},
+			store.IssueFilter{Status: status, SeenSince: start.Add(24 * time.Hour), SeenUntil: start.Add(48 * time.Hour)},
+			store.IssueFilter{Status: status, SeenSince: start.Add(24 * time.Hour), SeenUntil: start.Add(48 * time.Hour), DateField: store.DateFirstSeen},
+			store.IssueFilter{Status: status, SeenSince: start.Add(30 * time.Hour), SeenUntil: start.Add(31 * time.Hour)},
+		)
+	}
+
+	for _, sort := range store.IssueSorts {
+		for _, base := range filters {
+			filter := base
+			filter.Sort = sort
+			expected := want(filter)
+
+			var got []string
+
+			for offset := 0; ; offset += 7 {
+				filter.Offset, filter.Limit = offset, 7
+				page, err := database.ListIssues(ctx, filter)
+
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				for _, issue := range page {
+					got = append(got, issue.ID)
+				}
+
+				if len(page) < 7 {
+					break
+				}
+			}
+
+			if !slices.Equal(got, expected) {
+				t.Errorf("sort %q filter %+v:\ngot  %v\nwant %v", sort, base, got, expected)
+			}
+
+			if count, more, err := database.CountIssues(ctx, filter); err != nil || more || count != len(expected) {
+				t.Errorf("count sort %q filter %+v: %d %v %v, want %d", sort, base, count, more, err, len(expected))
+			}
+		}
+	}
+
+	counts, err := database.UnresolvedCounts(ctx)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for project := 1; project <= 3; project++ {
+		if want := len(want(store.IssueFilter{Status: store.StatusUnresolved, ProjectIDs: []int{project}})); counts[project] != want {
+			t.Errorf("unresolved of project %d: %d, want %d", project, counts[project], want)
+		}
+	}
+}
+
+// issueIDs lists, sorted, the stored issues wants accepts (tests).
+func (database *Store) issueIDs(wants func(*issueRecord) bool) []string {
+	ids := []string{}
+
+	_ = database.issues.Primary().Each(database.db, func(entry kv.Entry[issueRecord]) (bool, error) {
+		if wants(&entry.Record) {
+			ids = append(ids, entry.Record.ID)
+		}
+
+		return true, nil
+	})
+
+	return ids
 }

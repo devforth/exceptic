@@ -69,7 +69,7 @@ func defineCollections(schema *kv.Schema) collections {
 			Decode:     decodeInbox,
 			DecodeHead: decodeInboxHead,
 		}),
-		// issue/<id>; also kept in memory. Its indexes list issues by status,
+		// issue/<id>, read through its indexes: they list issues by status,
 		// project and level, each in the order of one sort, and the tallies
 		// count them so (issueTally).
 		issues: kv.Define(schema, kv.Definition[issueRecord]{

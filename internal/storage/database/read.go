@@ -500,11 +500,9 @@ func (database *Store) IssuesForLogs(_ context.Context, logs []store.LogRecord) 
 		err := newestFirst(database.db, queries, func(entry kv.Entry[eventRecord]) bool {
 			meta := entry.Record
 
-			database.issuesMutex.RLock()
-			issue, ok := database.table.byID[meta.IssueID]
-			database.issuesMutex.RUnlock()
+			issue, err := database.issues.Get(database.db, kv.K(kv.Text(meta.IssueID)))
 
-			if ok {
+			if err == nil {
 				for _, span := range []string{meta.SpanID, meta.ParentSpanID} {
 					if key := meta.TraceID + "/" + span; span != "" && bySpan[key] == (store.LogIssue{}) {
 						bySpan[key] = store.LogIssue{IssueID: issue.ID, ProjectID: issue.ProjectID, Title: issue.Title}

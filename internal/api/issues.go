@@ -124,9 +124,9 @@ func (handler *handlers) countIssues(ctx context.Context, call Call, input issue
 		return countOutput{}, err
 	}
 
-	count, err := handler.services.Issues.Count(ctx, call.Access(), filter)
+	count, more, err := handler.services.Issues.Count(ctx, call.Access(), filter)
 
-	return countOutput{Count: count}, err
+	return countOutput{Count: count, More: more}, err
 }
 
 func (handler *handlers) listIssueLevels(ctx context.Context, call Call, _ noInput) (levelsOutput, error) {

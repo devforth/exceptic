@@ -24,7 +24,7 @@ func unresolvedNow(t *testing.T, database *Store) (count int, perProject int) {
 	t.Helper()
 
 	ctx := context.Background()
-	count, err := database.CountIssues(ctx, store.IssueFilter{Status: store.StatusUnresolved})
+	count, _, err := database.CountIssues(ctx, store.IssueFilter{Status: store.StatusUnresolved})
 
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +81,7 @@ func TestIgnoreForATime(t *testing.T) {
 		t.Fatalf("get after the time: %+v %v", read, err)
 	}
 
-	if ignored, _ := database.CountIssues(ctx, store.IssueFilter{Status: store.StatusIgnored}); ignored != 0 {
+	if ignored, _, _ := database.CountIssues(ctx, store.IssueFilter{Status: store.StatusIgnored}); ignored != 0 {
 		t.Fatalf("still listed as ignored: %d", ignored)
 	}
 

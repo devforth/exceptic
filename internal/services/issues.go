@@ -30,10 +30,11 @@ func newIssues(logger *slog.Logger, database store.Store) *Issues {
 // shows nothing outside it: a record asked for there is ErrHidden (Hidden),
 // a missing one store.ErrNotFound.
 
-// Count counts the issues that match filter (its Limit and Offset are ignored).
-func (issues *Issues) Count(ctx context.Context, access store.Access, filter store.IssueFilter) (int, error) {
+// Count counts the issues that match filter (its Limit and Offset are
+// ignored), up to store.LogCountLimit; more: there are more.
+func (issues *Issues) Count(ctx context.Context, access store.Access, filter store.IssueFilter) (int, bool, error) {
 	if !access.Restrict(&filter.ProjectIDs) {
-		return 0, nil
+		return 0, false, nil
 	}
 
 	return issues.store.CountIssues(ctx, filter)
@@ -52,7 +53,9 @@ func (issues *Issues) Levels(ctx context.Context, access store.Access) ([]string
 
 // Unresolved counts the unresolved issues: the counter next to Issues in the menu.
 func (issues *Issues) Unresolved(ctx context.Context, access store.Access) (int, error) {
-	return issues.Count(ctx, access, store.IssueFilter{Status: store.StatusUnresolved})
+	count, _, err := issues.Count(ctx, access, store.IssueFilter{Status: store.StatusUnresolved})
+
+	return count, err
 }
 
 // List returns one page of the issues that match filter.

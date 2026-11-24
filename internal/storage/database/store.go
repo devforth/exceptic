@@ -15,7 +15,7 @@ import (
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
-// Store is the database; issues and time marks are also kept in memory.
+// Store is the database; time marks are also kept in memory.
 type Store struct {
 	db      *kv.DB
 	dataDir string // empty in memory
@@ -25,9 +25,8 @@ type Store struct {
 
 	inboxBytes atomic.Int64
 
-	// table holds every issue; guarded by issuesMutex.
-	issuesMutex sync.RWMutex
-	table       *issueTable
+	// minute is the cap of events an issue stores a minute; used only inside updates.
+	minute minuteCounts
 
 	marksMutex sync.RWMutex
 	marks      []timeMark
@@ -115,7 +114,7 @@ func open(engine kv.Engine) (*Store, error) {
 	}
 
 	if err == nil {
-		err = errors.Join(database.loadIssues(), database.loadInboxSize(), database.loadMarks(), database.loadPurges(), database.loadContacts())
+		err = errors.Join(database.loadInboxSize(), database.loadMarks(), database.loadPurges(), database.loadContacts())
 	}
 
 	if err != nil {

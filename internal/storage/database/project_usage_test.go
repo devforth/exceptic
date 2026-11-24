@@ -1,9 +1,7 @@
 package database
 
 import (
-	"bytes"
 	"context"
-	"maps"
 	"testing"
 	"time"
 
@@ -106,131 +104,6 @@ func TestProjectUsageOldest(t *testing.T) {
 	if want := (store.OldestKept{LogsBelowError: first}); got.Oldest[2] != want {
 		t.Errorf("project 2: %+v, want %+v", got.Oldest[2], want)
 	}
-}
-
-// Data stored before the project counters is counted once in the
-// background: until then the page says so, and what arrives meanwhile is
-// counted right; afterwards the counts and the events' project index are
-// what a database written with them holds. A new database needs no counting.
-func TestBackfillProjectSizes(t *testing.T) {
-	ctx := context.Background()
-	dir := t.TempDir()
-	database, err := Open(dir)
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if usage(t, database).Counting {
-		t.Fatal("a new database counts")
-	}
-
-	writeEvents(t, database, "crash", "error", 5)
-	writeLogs(t, database, "info", 6, "line")
-
-	want := usage(t, database).Bytes
-
-	// As written before: no group counters, no project index of events, no backfill done.
-	err = database.db.Update(true, func(batch *kv.Batch) error {
-		for _, prefix := range []string{"group/", "event.project/", "meta/"} {
-			iterator := database.db.Iterate([]byte(prefix), append([]byte(prefix), 0xff))
-
-			for valid := iterator.First(); valid; valid = iterator.Next() {
-				if prefix != "meta/" || bytes.Contains(iterator.Key(), []byte("backfill")) {
-					batch.Delete(bytes.Clone(iterator.Key()))
-				}
-			}
-
-			if err := iterator.Close(); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := database.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	database = reopenWithoutProjectIndex(t, dir)
-
-	if got := usage(t, database); !got.Counting || len(got.Bytes) != 0 {
-		t.Fatalf("before counting: %+v", got)
-	}
-
-	checkCollections(t, database)
-
-	writeEvents(t, database, "late", "error", 2)
-	writeLogs(t, database, "warn", 2, "late")
-	checkCollections(t, database)
-
-	if err := database.Backfill(ctx); err != nil {
-		t.Fatal(err)
-	}
-
-	checkCollections(t, database)
-
-	got := usage(t, database)
-
-	if got.Counting || got.Bytes[1] <= want[1] || got.Bytes[2] <= want[2] || sum(got.Bytes) != database.logicalSize() {
-		t.Errorf("after counting %+v (before the late data %v), the counters hold %d", got, want, database.logicalSize())
-	}
-
-	if events, _, err := database.events.By("project", kv.U32(1)).Count(database.db, 0); err != nil || events != 7 {
-		t.Errorf("events by project: %d %v", events, err)
-	}
-
-	if err := database.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	reopened, err := Open(dir)
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Cleanup(func() { _ = reopened.Close() })
-
-	if again := usage(t, reopened); again.Counting || !maps.Equal(again.Bytes, got.Bytes) {
-		t.Errorf("after a restart: %+v, want %v", again, got.Bytes)
-	}
-}
-
-// reopenWithoutProjectIndex opens dir, whose event counters still count the
-// project index keys just deleted, and takes those bytes back, as a database
-// of the version before the index holds them.
-func reopenWithoutProjectIndex(t *testing.T, dir string) *Store {
-	t.Helper()
-
-	database, err := Open(dir)
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Cleanup(func() { _ = database.Close() })
-
-	err = database.db.Update(true, func(batch *kv.Batch) error {
-		return database.events.Primary().Head().Each(database.db, func(entry kv.Entry[eventRecord]) (bool, error) {
-			indexKey := kv.K(kv.U32(uint32(entry.Record.ProjectID)), kv.U8(levelRank(entry.Record.Level)), kv.U64(entry.Record.Sequence))
-			size := len("event.project/") + len(indexKey) + len("event/") + len(entry.Key)
-			batch.Count(sizeCounter(kindEvent, levelRank(entry.Record.Level), dayOf(entry.Record.ReceivedAt)), -int64(size))
-
-			return true, nil
-		})
-	})
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return database
 }
 
 // A project's first contact is written once, kept across a restart and

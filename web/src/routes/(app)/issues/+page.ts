@@ -28,6 +28,7 @@ export const load: PageLoad = async ({ url }) => {
 		projectNames: projects.map((project) => project.name),
 		levelChoices: offeredLevels(levels.event, present.levels, filters.level),
 		count: count.count,
+		more: count.more ?? false,
 		page,
 		perPage: paging.perPage,
 		issues: issues.items ?? []

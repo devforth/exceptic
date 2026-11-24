@@ -287,20 +287,27 @@ func (database *Store) purgeProject(ctx context.Context, id int) error {
 		})
 	}
 
-	database.issuesMutex.RLock()
+	// The project's issues by the index, in chunks that DeleteIssues spreads over batches.
+	for ctx.Err() == nil {
+		var issueIDs []string
 
-	var issueIDs []string
+		err := database.walkIssues(ctx, store.IssueFilter{ProjectIDs: []int{id}, Sort: store.SortLastSeenAsc}, func(issue issueRecord) bool {
+			issueIDs = append(issueIDs, issue.ID)
 
-	for issueID, issue := range database.table.byID {
-		if issue.ProjectID == id {
-			issueIDs = append(issueIDs, issueID)
+			return len(issueIDs) < cleanupChunk
+		})
+
+		if err != nil {
+			return err
 		}
-	}
 
-	database.issuesMutex.RUnlock()
+		if len(issueIDs) == 0 {
+			break
+		}
 
-	if _, err := database.DeleteIssues(ctx, issueIDs); err != nil {
-		return err
+		if _, err := database.DeleteIssues(ctx, issueIDs); err != nil {
+			return err
+		}
 	}
 
 	// Each chunk goes on after the last log deleted, so no walk passes deleted keys again.

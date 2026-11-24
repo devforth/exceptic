@@ -1,6 +1,7 @@
 package database
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 
@@ -38,23 +39,15 @@ func (database *Store) Verify() ([]string, error) {
 
 	problems = append(problems, tallies...)
 
-	database.issuesMutex.RLock()
-
-	issues := make(map[string]issueRecord, len(database.table.byID))
-
-	for id, issue := range database.table.byID {
-		issues[id] = *issue
-	}
-
-	database.issuesMutex.RUnlock()
-
 	countedEvents := 0
 
-	for _, issue := range issues {
+	// Issue by issue as stored, none held at once.
+	err = database.issues.Primary().Each(database.db, func(entry kv.Entry[issueRecord]) (bool, error) {
+		issue := entry.Record
 		stored, _, err := database.events.Primary(kv.Text(issue.ID)).Count(database.db, 0)
 
 		if err != nil {
-			return problems, err
+			return false, err
 		}
 
 		days := 0
@@ -68,6 +61,12 @@ func (database *Store) Verify() ([]string, error) {
 		}
 
 		countedEvents += stored
+
+		return true, nil
+	})
+
+	if err != nil {
+		return problems, err
 	}
 
 	if events, _, err := database.events.Primary().Count(database.db, 0); err != nil {
@@ -77,7 +76,7 @@ func (database *Store) Verify() ([]string, error) {
 	}
 
 	err = database.status.Primary().Each(database.db, func(entry kv.Entry[statusRecord]) (bool, error) {
-		if _, ok := issues[entry.Record.IssueID]; !ok {
+		if _, err := database.issues.GetValue(database.db, kv.K(kv.Text(entry.Record.IssueID))); errors.Is(err, kv.ErrNotFound) {
 			problems = append(problems, fmt.Sprintf("status change %x of missing issue %s", entry.Key, entry.Record.IssueID))
 		}
 

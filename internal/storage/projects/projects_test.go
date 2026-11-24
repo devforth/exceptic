@@ -113,7 +113,7 @@ func TestDeleteOutlivesTheRequest(t *testing.T) {
 		t.Fatal("a deleted project is still listed, so its DSN is accepted")
 	}
 
-	if issues, _ := database.CountIssues(ctx, store.IssueFilter{ProjectIDs: []int{id}}); issues != 0 {
+	if issues, _, _ := database.CountIssues(ctx, store.IssueFilter{ProjectIDs: []int{id}}); issues != 0 {
 		t.Fatalf("%d issues of the deleted project left", issues)
 	}
 }

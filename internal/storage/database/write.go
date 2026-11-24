@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -307,17 +308,19 @@ func (writer *batchWriter) deleteIssue(issue *issueRecord) error {
 func (database *Store) IssueStatusHistory(_ context.Context, issueID string) ([]store.StatusChange, error) {
 	changes := []store.StatusChange{}
 
-	database.issuesMutex.RLock()
-	issue, ok := database.table.byID[issueID]
-	database.issuesMutex.RUnlock()
+	issue, err := database.issues.Get(database.db, kv.K(kv.Text(issueID)))
 
-	if ok && issue.IgnoreExpired(database.now()) {
+	switch {
+	case errors.Is(err, kv.ErrNotFound):
+	case err != nil:
+		return nil, err
+	case issue.IgnoreExpired(database.now()):
 		changes = append(changes, store.StatusChange{
 			Actor: store.Actor{Source: store.SourceExpiry}, From: store.StatusIgnored, To: store.StatusUnresolved, CreatedAt: *issue.IgnoredUntil,
 		})
 	}
 
-	err := database.status.Primary(kv.Text(issueID)).Newest().Each(database.db, func(entry kv.Entry[statusRecord]) (bool, error) {
+	err = database.status.Primary(kv.Text(issueID)).Newest().Each(database.db, func(entry kv.Entry[statusRecord]) (bool, error) {
 		changes = append(changes, entry.Record.StatusChange)
 
 		return true, nil
@@ -341,6 +344,36 @@ type batchWriter struct {
 	messageStart map[string]uint64
 	// counted is what this batch deletes per project, inside the cleanup.
 	counted map[int]*CleanupCounts
+	// failed is a read of an issue that failed; the batch is not written.
+	failed error
+	// capped counts the events this batch stores per issue, for the minute's cap.
+	capped map[string]int
+	minute int64
+}
+
+// overCap says whether an event received at the time is over the limit of
+// events its issue stores a minute (0: none), and counts it when it is not;
+// an event that must be stored is counted whatever the cap.
+func (writer *batchWriter) overCap(issueID string, received time.Time, limit int, mustStore bool) bool {
+	minute := max(received.Unix()/60, writer.database.minute.minute)
+
+	if writer.minute != minute {
+		writer.minute = minute
+	}
+
+	before := 0
+
+	if minute == writer.database.minute.minute {
+		before = writer.database.minute.stored[issueID]
+	}
+
+	if limit > 0 && before+writer.capped[issueID] >= limit && !mustStore {
+		return true
+	}
+
+	writer.capped[issueID]++
+
+	return false
 }
 
 // update runs change in one batch; its changes reach memory before the next batch.
@@ -363,14 +396,14 @@ func (database *Store) updateSynced(sync bool, change func(writer *batchWriter) 
 		database: database, issues: map[string]*issueRecord{}, stored: map[string]*issueRecord{}, deleted: map[string]*issueRecord{},
 		created:  map[string]*issueRecord{},
 		messages: map[string]*messageGroup{}, removed: map[string]bool{},
-		messageStart: map[string]uint64{},
+		messageStart: map[string]uint64{}, capped: map[string]int{},
 	}
 
 	err := database.db.Update(sync, func(batch *kv.Batch) error {
 		writer.batch = batch
 		first := database.db.Peek()
 
-		if err := change(writer); err != nil {
+		if err := errors.Join(change(writer), writer.failed); err != nil {
 			return err
 		}
 
@@ -433,51 +466,53 @@ func (writer *batchWriter) apply() {
 		writer.database.messageStart[group] = start
 	}
 
-	writer.database.issuesMutex.Lock()
-	defer writer.database.issuesMutex.Unlock()
+	if len(writer.capped) > 0 {
+		counts := writer.database.minute.at(writer.minute)
 
-	for _, issue := range writer.issues {
-		writer.database.table.put(issue)
-	}
-
-	for id := range writer.deleted {
-		writer.database.table.remove(id)
-	}
-}
-
-// newIssueID returns a random ID no issue has, stored or new in this batch.
-func (writer *batchWriter) newIssueID() string {
-	for {
-		id := store.NewID()
-
-		writer.database.issuesMutex.RLock()
-		_, stored := writer.database.table.byID[id]
-		writer.database.issuesMutex.RUnlock()
-
-		if _, created := writer.issues[id]; !stored && !created {
-			return id
+		for id, stored := range writer.capped {
+			counts[id] += stored
 		}
 	}
 }
 
+// newIssueID returns a random ID no issue has, stored or new in this batch.
+func (writer *batchWriter) newIssueID() (string, error) {
+	for {
+		id := store.NewID()
+		_, err := writer.database.issues.GetValue(writer.batch, kv.K(kv.Text(id)))
+
+		switch {
+		case errors.Is(err, kv.ErrNotFound):
+			if _, created := writer.issues[id]; !created {
+				return id, nil
+			}
+		case err != nil:
+			return "", err
+		}
+	}
+}
+
+// issue takes the issue into this batch: a copy to change, written when the
+// batch finishes. A deleted one is gone.
 func (writer *batchWriter) issue(id string) (*issueRecord, bool) {
 	if issue, ok := writer.issues[id]; ok {
 		return issue, true
 	}
 
-	writer.database.issuesMutex.RLock()
-	stored, ok := writer.database.table.byID[id]
-	writer.database.issuesMutex.RUnlock()
+	if writer.deleted[id] != nil {
+		return nil, false
+	}
+
+	stored, ok := writer.readIssue(id)
 
 	if !ok {
 		return nil, false
 	}
 
-	issue := stored.copy()
-	writer.issues[id] = issue
+	writer.issues[id] = stored.copy()
 	writer.stored[id] = stored
 
-	return issue, true
+	return writer.issues[id], true
 }
 
 // peekIssue is an issue as this batch sees it, without taking it into the batch.
@@ -486,13 +521,30 @@ func (writer *batchWriter) peekIssue(id string) (*issueRecord, bool) {
 		return issue, true
 	}
 
-	writer.database.issuesMutex.RLock()
+	if writer.deleted[id] != nil {
+		return nil, false
+	}
 
-	defer writer.database.issuesMutex.RUnlock()
+	return writer.readIssue(id)
+}
 
-	stored, ok := writer.database.table.byID[id]
+// readIssue reads an issue as stored, with its stored size; a read that
+// fails counts as no issue and fails the batch at its write.
+func (writer *batchWriter) readIssue(id string) (*issueRecord, bool) {
+	entry, err := writer.database.issues.GetEntry(writer.batch, kv.K(kv.Text(id)))
 
-	return stored, ok
+	if err != nil {
+		if !errors.Is(err, kv.ErrNotFound) {
+			writer.failed = errors.Join(writer.failed, err)
+		}
+
+		return nil, false
+	}
+
+	issue := entry.Record
+	issue.storedSize = entry.Size
+
+	return &issue, true
 }
 
 func (writer *batchWriter) statusChange(issue *issueRecord, to string, actor store.Actor, eventID string, at time.Time) error {
@@ -509,22 +561,23 @@ func (writer *batchWriter) statusChange(issue *issueRecord, to string, actor sto
 }
 
 // findIssue returns nil for a new issue.
-func (writer *batchWriter) findIssue(fingerprint string) *issueRecord {
-	if issue := writer.created[fingerprint]; issue != nil {
-		return issue
+func (writer *batchWriter) findIssue(projectID int, fingerprint string) (*issueRecord, error) {
+	if issue := writer.created[fingerprintKey(projectID, fingerprint)]; issue != nil {
+		return issue, nil
 	}
 
-	writer.database.issuesMutex.RLock()
-	existing := writer.database.table.byFingerprint[fingerprint]
-	writer.database.issuesMutex.RUnlock()
+	existing, err := writer.database.issues.GetBy(writer.batch, "fingerprint", kv.K(kv.U32(uint32(projectID)), kv.Text(fingerprint)))
 
-	if existing == nil {
-		return nil
+	switch {
+	case errors.Is(err, kv.ErrNotFound):
+		return nil, nil
+	case err != nil:
+		return nil, err
 	}
 
 	issue, _ := writer.issue(existing.ID)
 
-	return issue
+	return issue, nil
 }
 
 // event stores an event, or only counts it once its issue has stored what
@@ -540,11 +593,19 @@ func (writer *batchWriter) event(event store.NewEvent, limit int) (store.SaveRes
 
 	received := event.ReceivedAt.UTC()
 	fingerprint := fingerprintKey(event.ProjectID, event.Fingerprint)
-	issue := writer.findIssue(fingerprint)
+	issue, err := writer.findIssue(event.ProjectID, event.Fingerprint)
+
+	if err != nil {
+		return result, err
+	}
 
 	switch {
 	case issue == nil:
-		id := writer.newIssueID()
+		id, err := writer.newIssueID()
+
+		if err != nil {
+			return result, err
+		}
 
 		issue = &issueRecord{
 			Issue:       store.Issue{ID: id, ProjectID: event.ProjectID, Status: store.StatusUnresolved, FirstSeen: received},
@@ -595,7 +656,7 @@ func (writer *batchWriter) event(event store.NewEvent, limit int) (store.SaveRes
 
 	result.IssueID = issue.ID
 
-	if issue.overCap(received, limit, result.NewIssue || result.Regression) {
+	if writer.overCap(issue.ID, received, limit, result.NewIssue || result.Regression) {
 		issue.NotStored++
 		result.NotStored = true
 

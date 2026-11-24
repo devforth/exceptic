@@ -176,7 +176,7 @@ func TestCleanupGoesDeeper(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if issues, _ := database.CountIssues(ctx, store.IssueFilter{}); issues != 0 || database.logicalSize() != 0 {
+	if issues, _, _ := database.CountIssues(ctx, store.IssueFilter{}); issues != 0 || database.logicalSize() != 0 {
 		t.Fatalf("issues %d, bytes %d", issues, database.logicalSize())
 	}
 }
@@ -1046,9 +1046,11 @@ func TestOldestEventsPassOverSingleEventIssues(t *testing.T) {
 }
 
 func storedIssueByID(database *Store, id string) *issueRecord {
-	database.issuesMutex.RLock()
+	issue, err := database.issues.Get(database.db, kv.K(kv.Text(id)))
 
-	defer database.issuesMutex.RUnlock()
+	if err != nil {
+		return nil
+	}
 
-	return database.table.byID[id]
+	return &issue
 }

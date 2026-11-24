@@ -67,15 +67,22 @@ func (database *Store) ProjectUsage(context.Context) (store.ProjectUsage, error)
 		usage.Bytes[projectID], usage.OnDisk[projectID] = size, disk.onDisk(size)
 	}
 
-	database.issuesMutex.RLock()
+	// The newest issue of each project, by the "seen" index.
+	for _, prefix := range database.issuePrefixes(store.IssueFilter{}) {
+		newest, err := database.issues.By("seen", kv.U8(statusRank(prefix.status)), kv.U32(uint32(prefix.project)), kv.U8(levelRank(prefix.level))).
+			Newest().First(database.db)
 
-	for _, issue := range database.table.byID {
-		if issue.LastSeen.After(usage.LastReceived[issue.ProjectID]) {
-			usage.LastReceived[issue.ProjectID] = issue.LastSeen
+		switch {
+		case errors.Is(err, kv.ErrNotFound):
+			continue
+		case err != nil:
+			return usage, err
+		}
+
+		if newest.Record.LastSeen.After(usage.LastReceived[prefix.project]) {
+			usage.LastReceived[prefix.project] = newest.Record.LastSeen
 		}
 	}
-
-	database.issuesMutex.RUnlock()
 
 	projects, err := database.projects.Primary().All(database.db)
 

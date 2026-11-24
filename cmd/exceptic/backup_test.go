@@ -53,7 +53,7 @@ func checkBackup(t *testing.T, target string) {
 		t.Errorf("verify: %v %v", problems, err)
 	}
 
-	if count, err := db.CountIssues(context.Background(), store.IssueFilter{}); err != nil || count != 1 {
+	if count, _, err := db.CountIssues(context.Background(), store.IssueFilter{}); err != nil || count != 1 {
 		t.Errorf("backup holds %d issues (%v), want 1", count, err)
 	}
 }

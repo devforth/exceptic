@@ -10,7 +10,6 @@ import (
 	"maps"
 	"math"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -900,61 +899,49 @@ func (scope cleanupScope) eachIssue(accepts func(*issueRecord) bool,
 	database := scope.database
 	wants := func(issue *issueRecord) bool { return scope.has(issue) && accepts(issue) }
 
-	var ids []string // sorted once per step; each batch checks the issues as they are then
-
 	return func(writer *batchWriter, cursor *cleanupCursor) (bool, error) {
-		if ids == nil {
-			ids = database.issueIDs(wants)
+		query := database.issues.Primary()
+
+		if from := kv.Decode(cursor.position, 0).Text(); from != "" {
+			query = query.From(kv.Text(from))
 		}
 
-		from := kv.Decode(cursor.position, 0).Text()
+		finished := true
 
-		for _, id := range ids[sort.SearchStrings(ids, from):] {
-			// The table changes only under the write lock, which this batch holds.
-			database.issuesMutex.RLock()
-			stored, ok := database.table.byID[id]
-			database.issuesMutex.RUnlock()
+		// The stored issues as this batch, holding the write lock, sees them.
+		err := query.Each(writer.batch, func(entry kv.Entry[issueRecord]) (bool, error) {
+			id := entry.Record.ID
+			stored, ok := writer.peekIssue(id)
+			wanted := ok && wants(stored)
 
-			if !ok || !wants(stored) {
-				continue
+			if !wanted {
+				cursor.passed++
 			}
 
 			if cursor.full() {
-				cursor.position = kv.K(kv.Text(id))
+				cursor.position, finished = kv.K(kv.Text(id)), false
 
 				return false, nil
+			}
+
+			if !wanted {
+				return true, nil
 			}
 
 			issue, _ := writer.issue(id)
 			done, err := visit(writer, cursor, issue)
 
 			if err != nil || !done {
-				cursor.position = kv.K(kv.Text(id))
+				cursor.position, finished = kv.K(kv.Text(id)), false
 
 				return false, err
 			}
-		}
 
-		return true, nil
+			return true, nil
+		})
+
+		return finished, err
 	}
-}
-
-// issueIDs lists, sorted, the issues wants accepts now.
-func (database *Store) issueIDs(wants func(*issueRecord) bool) []string {
-	database.issuesMutex.RLock()
-
-	ids := []string{}
-
-	for id, issue := range database.table.byID {
-		if wants(issue) {
-			ids = append(ids, id)
-		}
-	}
-
-	database.issuesMutex.RUnlock()
-	slices.Sort(ids)
-
-	return ids
 }
 
 // trimIssues deletes the oldest events received before cutoff (zero: any)
@@ -1074,22 +1061,7 @@ func (scope cleanupScope) deleteUnseen(seenBefore time.Time, whole bool) cleanup
 		return scope.has(issue) && (whole || issue.Stored > 0) && (seenBefore.IsZero() || issue.LastSeen.Before(seenBefore))
 	}
 
-	var issues []unseen // sorted once per step; each batch checks the issues as they are then
-
 	return func(writer *batchWriter, cursor *cleanupCursor) (bool, error) {
-		if issues == nil {
-			database.issuesMutex.RLock()
-
-			for _, issue := range database.table.byID {
-				if wants(issue) {
-					issues = append(issues, unseen{issue.LastSeen.UnixNano(), issue.ID})
-				}
-			}
-
-			database.issuesMutex.RUnlock()
-			slices.SortFunc(issues, compare)
-		}
-
 		after := unseen{math.MinInt64, ""}
 		started, from := "", uint64(0)
 
@@ -1109,22 +1081,55 @@ func (scope cleanupScope) deleteUnseen(seenBefore time.Time, whole bool) cleanup
 			return true
 		}
 
-		start, _ := slices.BinarySearchFunc(issues, after, compare)
+		// Longest unseen first: the "seen" index of every status and level of
+		// the scope's projects, merged, from where the last batch stopped.
+		var filter store.IssueFilter
 
-		for _, candidate := range issues[start:] {
-			// Gone, or seen again since the list was made: the next run judges it.
-			database.issuesMutex.RLock()
-			stored, ok := database.table.byID[candidate.id]
-			database.issuesMutex.RUnlock()
+		if !scope.all() {
+			filter.ProjectIDs = []int{scope.project}
+		}
 
-			if !ok || compare(candidate, after) <= 0 || !wants(stored) || stored.LastSeen.UnixNano() != candidate.lastSeen {
-				continue
+		var queries []kv.Query[issueRecord]
+
+		for _, prefix := range database.issuePrefixes(filter) {
+			query := database.issues.By("seen", kv.U8(statusRank(prefix.status)), kv.U32(uint32(prefix.project)), kv.U8(levelRank(prefix.level)))
+
+			if after.id != "" {
+				query = query.From(kv.U64(uint64(max(after.lastSeen, 0))))
+			}
+
+			queries = append(queries, query)
+		}
+
+		finished := true
+
+		err := kv.Merge(writer.batch, queries, false, func(entry kv.Entry[issueRecord]) (bool, error) {
+			candidate := unseen{entry.Record.LastSeen.UnixNano(), entry.Record.ID}
+
+			if compare(candidate, after) <= 0 {
+				return true, nil
+			}
+
+			// The index is in last seen order: past seenBefore, nothing more is wanted.
+			if !seenBefore.IsZero() && !entry.Record.LastSeen.Before(seenBefore) {
+				return false, nil
+			}
+
+			stored, ok := writer.peekIssue(candidate.id)
+			wanted := ok && wants(stored)
+
+			if !wanted {
+				cursor.passed++
 			}
 
 			if cursor.full() {
-				cursor.position = kv.K(kv.U64(uint64(after.lastSeen)), kv.Text(after.id))
+				cursor.position, finished = kv.K(kv.U64(uint64(after.lastSeen)), kv.Text(after.id)), false
 
 				return false, nil
+			}
+
+			if !wanted {
+				return true, nil
 			}
 
 			if candidate.id != started {
@@ -1135,7 +1140,7 @@ func (scope cleanupScope) deleteUnseen(seenBefore time.Time, whole bool) cleanup
 			next, done, err := writer.deleteIssueEvents(issue.ID, from, take)
 
 			if err != nil || !done {
-				cursor.position = kv.K(kv.U64(uint64(after.lastSeen)), kv.Text(after.id), kv.Text(issue.ID), kv.U64(next))
+				cursor.position, finished = kv.K(kv.U64(uint64(after.lastSeen)), kv.Text(after.id), kv.Text(issue.ID), kv.U64(next)), false
 
 				return false, err
 			}
@@ -1149,9 +1154,11 @@ func (scope cleanupScope) deleteUnseen(seenBefore time.Time, whole bool) cleanup
 			}
 
 			after = candidate
-		}
 
-		return true, nil
+			return true, nil
+		})
+
+		return finished, err
 	}
 }
 

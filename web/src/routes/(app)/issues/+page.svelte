@@ -168,6 +168,7 @@
 	page={data.page}
 	perPage={data.perPage}
 	total={data.count}
+	more={data.more}
 	href={(number: number) => changed(url, { page: number > 1 ? String(number) : null })}
 	onperpage={(perPage: number) => showChanged(url, { per_page: String(perPage) }, { now: true })}
 />

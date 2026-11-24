@@ -131,11 +131,16 @@ func eachOrphan[T any](reader kv.Reader, database *Store, collection *kv.Collect
 	return query.Groups(reader, issueGroup, func(key kv.Key) (bool, error) {
 		id := kv.Decode(key, 0).Text()
 
-		database.issuesMutex.RLock()
-		_, stored := database.table.byID[id]
-		database.issuesMutex.RUnlock()
+		_, err := database.issues.GetValue(reader, kv.K(kv.Text(id)))
 
-		return visit(id, !stored)
+		switch {
+		case errors.Is(err, kv.ErrNotFound):
+			return visit(id, true)
+		case err != nil:
+			return false, err
+		}
+
+		return visit(id, false)
 	})
 }
 
