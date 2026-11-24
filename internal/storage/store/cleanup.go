@@ -52,6 +52,24 @@ type CleanupCompaction struct {
 	// Running: an attempt started and has not recorded its end; still set
 	// at the next pass, it was interrupted.
 	Running bool `json:"running,omitempty"`
+	// Progress of one not done yet: it goes in parts, and a pass that
+	// yields to the size check leaves the rest to the next.
+	Progress *CompactionProgress `json:"progress,omitempty"`
+}
+
+// CompactionProgress is where a compaction made in parts is.
+type CompactionProgress struct {
+	StartedAt   time.Time     `json:"started_at"`
+	FilesBefore int64         `json:"files_before"`
+	Took        time.Duration `json:"took,omitempty"` // in its passes, the time between them left out
+	// Stale is the stale mark (kv.Collection.StaleMark) of each collection
+	// it compacts when it started: what of it no other compaction took off
+	// is taken off their counts once it is done.
+	Stale map[string]int64 `json:"stale"`
+	// Below: the keys ordered by arrival are compacted up to this sequence;
+	// newer ones hold nothing it frees.
+	Below   uint64 `json:"below"`
+	Reached []byte `json:"reached,omitempty"` // the end of the parts done
 }
 
 // CleanupRun is one cleanup by size: what it aims at, where it is and what

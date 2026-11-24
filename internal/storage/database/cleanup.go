@@ -27,6 +27,7 @@ const (
 	cleanupStart  = float64(config.CleanupStartPercent) / 100
 	cleanupFiles  = float64(config.CleanupFilesPercent) / 100
 	cleanupChunk  = 2000
+	cleanupPassed = 10 * cleanupChunk
 	cleanupDecode = 2 << 20
 	cleanupRest   = 2 * time.Millisecond
 )
@@ -439,40 +440,6 @@ func (database *Store) CleanupHistory(_ context.Context, limit int) ([]CleanupRu
 	return database.cleanups.Primary().Newest().Limit(limit).All(database.db)
 }
 
-// compactable is a collection: compacting it frees what its deletes and rewrites left in the files.
-type compactable interface{ Compact(db *kv.DB) error }
-
-func (database *Store) compact(collections ...compactable) error {
-	if database.compactFault != nil {
-		if err := database.compactFault(); err != nil {
-			return err
-		}
-	}
-
-	for _, collection := range collections {
-		if err := collection.Compact(database.db); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// staleData is the logs and events, of those that hold deleted or replaced records.
-func (database *Store) staleData() []compactable {
-	var stale []compactable
-
-	if database.logs.Stale(database.db) > 0 {
-		stale = append(stale, database.logs)
-	}
-
-	if database.events.Stale(database.db) > 0 {
-		stale = append(stale, database.events)
-	}
-
-	return stale
-}
-
 func (database *Store) logicalSize() int64 {
 	var total int64
 
@@ -508,13 +475,16 @@ type cleanupCursor struct {
 	need     int64 // bytes still to free; only steps that are not always stop there
 	always   bool
 	records  int
+	passed   int // keys passed over without reading their records
 	decoded  int // bytes of payloads parsed (thinning), which is what takes the time
 }
 
-// full says the batch has done enough: cleanupChunk records or cleanupDecode
-// bytes parsed (the write lock is held meanwhile), or freed what is needed.
+// full says the batch has done enough: cleanupChunk records, cleanupPassed
+// keys passed over or cleanupDecode bytes parsed (the write lock is held
+// meanwhile), or freed what is needed.
 func (cursor *cleanupCursor) full() bool {
-	return cursor.records >= cleanupChunk || cursor.decoded >= cleanupDecode || (!cursor.always && -cursor.batch.Counted() >= cursor.need)
+	return cursor.records >= cleanupChunk || cursor.passed >= cleanupPassed || cursor.decoded >= cleanupDecode ||
+		(!cursor.always && -cursor.batch.Counted() >= cursor.need)
 }
 
 func (cursor *cleanupCursor) number(offset int) uint64 {
@@ -662,163 +632,6 @@ func (scope cleanupScope) compactBefore() (bool, error) {
 	return true, database.compact(collections...)
 }
 
-// compactAfter compacts what the run deleted from, so the space comes back
-// now: over all projects what holds deleted records, after a project's run
-// only once the stale records are a sizable part of the files
-// (compactStale). It says whether it compacted.
-func (scope cleanupScope) compactAfter(run CleanupRun) (bool, error) {
-	database := scope.database
-
-	if !scope.all() {
-		return database.compactStale()
-	}
-
-	collections := database.staleData()
-
-	if issuesDeleted(run) {
-		collections = append(collections, database.issues, database.status)
-	}
-
-	return len(collections) > 0, database.compact(collections...)
-}
-
-// CompactCleanups is the compaction after the runs: each run that deleted
-// something waits for it with its deleted records still in the files, after
-// a restart too. It records on the run how long it took and what the files
-// lost. The runs over all projects go first, since theirs frees the
-// projects' runs' deleted records too, then the projects' runs, oldest
-// first. While a backup runs it waits: the backup's snapshot keeps the
-// deleted records in the files.
-func (database *Store) CompactCleanups(ctx context.Context, logger *slog.Logger) error {
-	runs, err := database.pendingCompactions()
-
-	if err != nil {
-		return fmt.Errorf("cleanup compaction: %w", err)
-	}
-
-	for _, run := range runs {
-		if ctx.Err() != nil || database.backups.Load() > 0 {
-			return nil
-		}
-
-		if err := database.compactAfterRun(run, logger); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// pendingCompactions is the runs waiting for their compaction, in the order CompactCleanups takes them.
-func (database *Store) pendingCompactions() ([]CleanupRun, error) {
-	runs, err := database.cleanups.Primary().All(database.db)
-
-	if err != nil {
-		return nil, err
-	}
-
-	runs = slices.DeleteFunc(runs, func(run CleanupRun) bool {
-		return run.Compaction == nil || run.Compaction.Status != store.CompactionPending
-	})
-	allFirst := func(run CleanupRun) int {
-		if run.Project == AllProjects {
-			return 0
-		}
-
-		return 1
-	}
-
-	slices.SortStableFunc(runs, func(first, second CleanupRun) int { return cmp.Compare(allFirst(first), allFirst(second)) })
-
-	return runs, nil
-}
-
-// errCompactionInterrupted is the error of an attempt that never returned.
-const errCompactionInterrupted = "did not finish: the server stopped or the compaction panicked"
-
-// compactAfterRun compacts after a run and records it; a failure leaves it
-// pending for the job's next pass until store.CompactionAttempts. The
-// attempt is saved before it starts, so one that never returns (a panic, a
-// killed process) counts too.
-func (database *Store) compactAfterRun(run CleanupRun, logger *slog.Logger) error {
-	scope := database.scope(run.Project)
-	previous := *run.Compaction
-
-	if previous.Running {
-		previous.Error = errCompactionInterrupted
-	}
-
-	if previous.Attempts >= store.CompactionAttempts {
-		run.Compaction = &store.CleanupCompaction{Status: store.CompactionFailed, Attempts: previous.Attempts, Error: previous.Error}
-
-		return database.db.Update(true, func(batch *kv.Batch) error { return database.cleanups.Save(batch, run) })
-	}
-
-	compaction := &store.CleanupCompaction{Status: store.CompactionDone, StartedAt: database.now().UTC(), Attempts: previous.Attempts + 1}
-	run.Compaction = &store.CleanupCompaction{Status: store.CompactionPending, Attempts: compaction.Attempts, Error: previous.Error, Running: true}
-
-	if err := database.db.Update(true, func(batch *kv.Batch) error { return database.cleanups.Save(batch, run) }); err != nil {
-		return fmt.Errorf("cleanup compaction of %s: %w", scope.name(), err)
-	}
-
-	usage, err := database.diskUsage()
-	stale := database.staleBytes()
-	compacted := false
-
-	if err == nil {
-		compaction.FilesBefore = usage.files
-		compacted, err = scope.compactAfter(run)
-	}
-
-	if err == nil {
-		compaction.FilesAfter, err = database.db.Size()
-	}
-
-	// What it compacted away, measured apart from data arriving meanwhile, or what the files lost when that is more.
-	compaction.Freed = max(usage.onDisk(stale-database.staleBytes()), compaction.FilesBefore-compaction.FilesAfter, 0)
-
-	compaction.Duration = database.now().Sub(compaction.StartedAt)
-
-	switch {
-	case err != nil && compaction.Attempts < store.CompactionAttempts:
-		compaction.Status, compaction.Error = store.CompactionPending, err.Error()
-	case err != nil:
-		compaction.Status, compaction.Error = store.CompactionFailed, err.Error()
-	case !compacted:
-		compaction.Status = store.CompactionSkipped
-	}
-
-	run.Compaction = compaction
-	saved := database.db.Update(true, func(batch *kv.Batch) error { return database.cleanups.Save(batch, run) })
-	attributes := []any{"scope", scope.name(), "run_started", run.StartedAt.Format(time.RFC3339), "files_before", config.FormatSize(compaction.FilesBefore),
-		"files_after", config.FormatSize(compaction.FilesAfter), "freed", config.FormatSize(compaction.Freed), "duration", compaction.Duration.Round(time.Millisecond)}
-
-	switch compaction.Status {
-	case store.CompactionDone:
-		logger.Info("cleanup compaction", attributes...)
-	case store.CompactionSkipped:
-		logger.Debug("cleanup compaction not needed: nothing left to compact or under the stale share", "scope", scope.name(), "stale_percent", config.StalePercent)
-	}
-
-	if err != nil {
-		err = fmt.Errorf("cleanup compaction of %s: %w", scope.name(), err)
-	}
-
-	return errors.Join(err, saved)
-}
-
-func issuesDeleted(run CleanupRun) bool {
-	for _, step := range run.Steps {
-		for _, counts := range step.Projects {
-			if counts.Issues > 0 {
-				return true
-			}
-		}
-	}
-
-	return false
-}
-
 // logs walks the logs of a level by arrival.
 func (scope cleanupScope) logs(rank byte) kv.Query[logRecord] {
 	if scope.project == AllProjects {
@@ -921,7 +734,7 @@ func (database *Store) advance(ctx context.Context, run *CleanupRun) error {
 
 		started := time.Now()
 
-		err := database.update(func(writer *batchWriter) error {
+		err := database.cleanupUpdate(func(writer *batchWriter) error {
 			writer.counted = map[int]*CleanupCounts{}
 			cursor := &cleanupCursor{batch: writer.batch, position: run.Position, need: need, always: step.always}
 			finished, err := step.batch(writer, cursor)
@@ -1177,27 +990,51 @@ func (scope cleanupScope) trimIssues(keep int, cutoff time.Time, match func(*iss
 
 // deleteOldestEvents deletes events of ranks received before cutoff (zero:
 // any), oldest first whatever their level among those, but not the latest of
-// an issue. Position: sequence.
+// an issue. The events of issues with one stored event are passed over by
+// their keys, as the issue table counts them, without being read.
+// Position: sequence.
 func (scope cleanupScope) deleteOldestEvents(cutoff time.Time, ranks []byte) cleanupBatch {
 	database := scope.database
 
 	return func(writer *batchWriter, cursor *cleanupCursor) (bool, error) {
 		from := cursor.number(0)
+		several := func(key kv.Key) bool {
+			issue, ok := writer.peekIssue(kv.Decode(key, 0).Text())
+
+			return ok && issue.Stored > 1
+		}
 		queries := make([]kv.Query[eventRecord], 0, len(ranks))
 
 		for _, rank := range ranks {
-			queries = append(queries, scope.events(rank).From(kv.U64(from)).Head())
+			queries = append(queries, scope.events(rank).From(kv.U64(from)).Head().Keyed(several))
 		}
 
 		full := false
+		// Keys passed over are not decoded, so they stop at the cutoff's sequence (time marks).
+		var stopAt uint64
 
-		err := oldestFirst(database.db, queries, func(entry kv.Entry[eventRecord]) bool {
-			if !cutoff.IsZero() && !entry.Record.ReceivedAt.Before(cutoff) {
+		if !cutoff.IsZero() {
+			stopAt = database.sequenceFrom(cutoff)
+		}
+
+		err := oldestKeysFirst(database.db, queries, func(entry kv.Entry[eventRecord], kept bool) bool {
+			if kept && !cutoff.IsZero() && !entry.Record.ReceivedAt.Before(cutoff) {
+				return false
+			}
+
+			if !kept && stopAt > 0 && sequenceOf(entry.Key) >= stopAt {
 				return false
 			}
 
 			if full = cursor.full(); full {
 				return false
+			}
+
+			if !kept {
+				cursor.passed++
+				from = sequenceOf(entry.Key) + 1
+
+				return true
 			}
 
 			from = entry.Record.Sequence + 1

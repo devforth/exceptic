@@ -120,18 +120,58 @@ func (collection *Collection[T]) Compact(db *DB) error {
 	db.compactMutex.Lock()
 	defer db.compactMutex.Unlock()
 
-	stale := collection.Stale(db)
+	mark := collection.StaleMark(db)
 
-	if err := db.CompactRange(collection.KeyRange()); err != nil || stale == 0 {
+	if err := db.CompactRange(collection.KeyRange()); err != nil {
 		return err
 	}
 
-	return db.Update(true, func(batch *Batch) error {
-		batch.addStale(collection.name, -stale)
+	_, err := collection.TakeStale(db, mark)
+
+	return err
+}
+
+// StaleMark is all the collection's deletes and rewrites have ever added to
+// Stale: what a compaction starting now will free, for TakeStale.
+func (collection *Collection[T]) StaleMark(db *DB) int64 {
+	db.countersMutex.RLock()
+
+	defer db.countersMutex.RUnlock()
+
+	return db.staled[collection.name]
+}
+
+// TakeStale takes off Stale what was added up to mark (StaleMark when a
+// compaction started) and no compaction has taken off yet, and returns it:
+// two compactions over the same records take them off once, and records
+// deleted after mark stay counted.
+func (collection *Collection[T]) TakeStale(db *DB, mark int64) (int64, error) {
+	var taken int64
+
+	err := db.Update(true, func(batch *Batch) error {
+		db.countersMutex.RLock()
+		stale, staled := db.stale[collection.name], db.staled[collection.name]
+		db.countersMutex.RUnlock()
+
+		// staled-stale is what compactions took off so far.
+		taken = min(max(mark-(staled-stale), 0), stale)
+		batch.addStale(collection.name, -taken)
 
 		return nil
 	})
+
+	if err != nil {
+		return 0, err
+	}
+
+	return taken, nil
 }
+
+// Name is the collection's name, which its counters and Stale go by.
+func (collection *Collection[T]) Name() string { return collection.name }
+
+// PrefixEnd is the first key after every key that starts with prefix; nil when there is none.
+func PrefixEnd(prefix []byte) []byte { return prefixEnd(prefix) }
 
 // KeyOf returns the primary key of record, without the prefix.
 func (collection *Collection[T]) KeyOf(record T) Key { return collection.definition.Key(record) }

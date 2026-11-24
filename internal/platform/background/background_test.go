@@ -308,3 +308,56 @@ func TestPanickingPassIsLogged(t *testing.T) {
 		t.Errorf("the panic was not logged with its stack:\n%s", logged)
 	}
 }
+
+// A long pass that returns ErrYielded once another job is Waiting lets that job
+// run, then goes on right after it.
+func TestPassYieldsToAWokenJob(t *testing.T) {
+	record := &recorder{}
+	wake := make(chan struct{}, 1)
+
+	var steps atomic.Int32
+
+	long := Job{Name: "long", First: 10 * time.Millisecond, Every: time.Hour, Run: func(ctx context.Context) error {
+		record.mutex.Lock()
+		record.passes = append(record.passes, "long>")
+		record.mutex.Unlock()
+
+		defer func() {
+			record.mutex.Lock()
+			record.passes = append(record.passes, "<long")
+			record.mutex.Unlock()
+		}()
+
+		for done := 0; steps.Load() < 20; done++ {
+			if done > 0 && Waiting(ctx) {
+				return ErrYielded
+			}
+
+			time.Sleep(10 * time.Millisecond)
+			steps.Add(1)
+		}
+
+		return nil
+	}}
+	check := record.job("check", false, time.Hour, time.Hour, 0)
+	check.Wake = wake
+	stop := Start(context.Background(), slog.New(slog.DiscardHandler), Lane{Name: "database", Jobs: []Job{long, check}})
+
+	time.Sleep(60 * time.Millisecond)
+
+	wake <- struct{}{}
+
+	for deadline := time.Now().Add(2 * time.Second); steps.Load() < 20 && time.Now().Before(deadline); {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	stop()
+
+	if passes, want := record.list(), []string{"long>", "<long", "check>", "<check", "long>", "<long"}; !slices.Equal(passes, want) {
+		t.Errorf("passes %v, want %v", passes, want)
+	}
+
+	if Waiting(context.Background()) {
+		t.Error("waiting outside a lane")
+	}
+}

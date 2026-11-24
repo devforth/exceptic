@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -53,6 +54,41 @@ type Lane struct {
 	Jobs []Job
 }
 
+// ErrYielded is what a pass returns when it stopped for the jobs Waiting: the
+// lane runs them, then the job's next pass, as after its time limit.
+var ErrYielded = errors.New("yielded to the jobs waiting")
+
+type laneKey struct{}
+
+// lanePass is what Waiting reads: the times the lane's jobs were due when the
+// pass started (zero: none) and whether they were woken since.
+type lanePass struct {
+	index   int
+	next    []time.Time
+	waiting []atomic.Bool
+}
+
+// Waiting says, inside a pass, whether another job of its lane is due: woken,
+// or its scheduled pass has come. A long pass may then return ErrYielded
+// between its steps. False outside a lane.
+func Waiting(ctx context.Context) bool {
+	pass, ok := ctx.Value(laneKey{}).(*lanePass)
+
+	if !ok {
+		return false
+	}
+
+	now := time.Now()
+
+	for other, due := range pass.next {
+		if other != pass.index && (pass.waiting[other].Load() || !due.IsZero() && !due.After(now)) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // timeoutGrace is how long a pass past its Timeout, or one running when the
 // lane stops, may take to stop before the lane goes on without it.
 var timeoutGrace = time.Second
@@ -68,6 +104,10 @@ type pass struct {
 func (lane Lane) Run(ctx context.Context, logger *slog.Logger) {
 	next := make([]time.Time, len(lane.Jobs))
 	running := make([]*pass, len(lane.Jobs)) // a pass the lane went on without
+	// At most one waiting pass per job however often it is woken: a job is
+	// in woken only while its flag is set, so the buffer never fills.
+	woken := make(chan int, len(lane.Jobs))
+	waiting := make([]atomic.Bool, len(lane.Jobs))
 
 	failed := func(index int, err error) {
 		logger.Error("background job failed", "lane", lane.Name, "job", lane.Jobs[index].Name, "err", err)
@@ -114,10 +154,10 @@ func (lane Lane) Run(ctx context.Context, logger *slog.Logger) {
 			}
 		}
 
-		passCtx, cancel := ctx, context.CancelFunc(func() {})
+		passCtx, cancel := context.WithValue(ctx, laneKey{}, &lanePass{index: index, next: slices.Clone(next), waiting: waiting}), context.CancelFunc(func() {})
 
 		if job.Timeout > 0 {
-			passCtx, cancel = context.WithTimeout(ctx, job.Timeout)
+			passCtx, cancel = context.WithTimeout(passCtx, job.Timeout)
 		}
 
 		current := &pass{done: make(chan struct{})}
@@ -161,7 +201,8 @@ func (lane Lane) Run(ctx context.Context, logger *slog.Logger) {
 		case ctx.Err() != nil:
 		// Stopped at its time limit: the deadline, not the cancel every pass's
 		// context gets once it returns.
-		case errors.Is(current.err, context.DeadlineExceeded) || (current.err == nil && errors.Is(passCtx.Err(), context.DeadlineExceeded)):
+		case errors.Is(current.err, context.DeadlineExceeded) || errors.Is(current.err, ErrYielded) ||
+			(current.err == nil && errors.Is(passCtx.Err(), context.DeadlineExceeded)):
 			next[index] = time.Now() // goes on soon, after the passes due before it
 		case current.err != nil:
 			failed(index, current.err)
@@ -169,22 +210,6 @@ func (lane Lane) Run(ctx context.Context, logger *slog.Logger) {
 	}
 
 	for index, job := range lane.Jobs {
-		if job.AtStart && ctx.Err() == nil {
-			run(index)
-		}
-	}
-
-	started := time.Now()
-	// At most one waiting pass per job however often it is woken: a job is
-	// in woken only while its flag is set, so the buffer never fills.
-	woken := make(chan int, len(lane.Jobs))
-	waiting := make([]atomic.Bool, len(lane.Jobs))
-
-	for index, job := range lane.Jobs {
-		if next[index].IsZero() {
-			next[index] = started.Add(job.First)
-		}
-
 		if job.Wake != nil {
 			go func() {
 				for {
@@ -198,6 +223,20 @@ func (lane Lane) Run(ctx context.Context, logger *slog.Logger) {
 					}
 				}
 			}()
+		}
+	}
+
+	for index, job := range lane.Jobs {
+		if job.AtStart && ctx.Err() == nil {
+			run(index)
+		}
+	}
+
+	started := time.Now()
+
+	for index, job := range lane.Jobs {
+		if next[index].IsZero() {
+			next[index] = started.Add(job.First)
 		}
 	}
 
@@ -215,6 +254,16 @@ func (lane Lane) Run(ctx context.Context, logger *slog.Logger) {
 		}
 
 		timer.Reset(time.Until(next[soonest]))
+
+		// A woken job goes before one whose time came, such as a pass that yielded to it.
+		select {
+		case index := <-woken:
+			waiting[index].Store(false)
+			run(index)
+
+			continue
+		default:
+		}
 
 		select {
 		case <-ctx.Done():

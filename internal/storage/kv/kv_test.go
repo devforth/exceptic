@@ -198,6 +198,17 @@ func TestQueries(t *testing.T) {
 		t.Errorf("count with raw: %d (%v), want %d", count, err, len(records))
 	}
 
+	// Keyed decides on the record's key before reading it, on an index too.
+	four := func(key Key) bool { return Decode(key, 0).U64() == 4 }
+
+	if records, err := store.items.By("project", U32(1)).Keyed(four).All(store.db); err != nil || len(records) != 1 || records[0].ID != 4 {
+		t.Errorf("keyed walk: %+v %v", records, err)
+	}
+
+	if count, _, err := store.items.By("project", U32(1)).Keyed(four).Count(store.db, 0); count != 1 || err != nil {
+		t.Errorf("count with keyed: %d %v", count, err)
+	}
+
 	ended, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -316,7 +327,7 @@ func TestDelete(t *testing.T) {
 	iterator := store.db.Iterate(nil, nil)
 
 	for valid := iterator.First(); valid; valid = iterator.Next() {
-		if !bytes.HasPrefix(iterator.Key(), []byte("meta/")) && !bytes.HasPrefix(iterator.Key(), []byte("stale/")) {
+		if !bytes.HasPrefix(iterator.Key(), []byte("meta/")) && !bytes.HasPrefix(iterator.Key(), []byte("stale/")) && !bytes.HasPrefix(iterator.Key(), []byte("staled/")) {
 			t.Errorf("left after deleting everything: %q", iterator.Key())
 		}
 	}
@@ -510,5 +521,54 @@ func TestStaleCompactedTwiceAtOnce(t *testing.T) {
 
 	if stale := store.items.Stale(store.db); stale != 0 {
 		t.Errorf("stale %d after two compactions", stale)
+	}
+}
+
+// A compaction made in parts takes off only what was stale at its mark and
+// no other compaction took off meanwhile: records deleted after another
+// compaction stay counted, which it may not have reached.
+func TestStaleTakenOnceAcrossCompactions(t *testing.T) {
+	store := openStore(t, newMemoryEngine())
+	store.insert(t, item{ID: 1}, item{ID: 2}, item{ID: 3})
+
+	remove := func(id uint64) {
+		t.Helper()
+
+		if err := store.db.Update(false, func(batch *Batch) error {
+			_, err := store.items.DeleteKey(batch, K(U64(id)))
+
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	remove(1)
+
+	mark := store.items.StaleMark(store.db)
+
+	if err := store.items.Compact(store.db); err != nil {
+		t.Fatal(err)
+	}
+
+	remove(2)
+
+	deleted := store.items.Stale(store.db)
+
+	if taken, err := store.items.TakeStale(store.db, mark); err != nil || taken != 0 {
+		t.Fatalf("took %d (%v) that another compaction had taken", taken, err)
+	}
+
+	if stale := store.items.Stale(store.db); stale != deleted || stale == 0 {
+		t.Errorf("stale %d, want %d deleted after the other compaction", stale, deleted)
+	}
+
+	store = openStore(t, store.db.Engine)
+	mark = store.items.StaleMark(store.db)
+
+	remove(3)
+
+	if taken, err := store.items.TakeStale(store.db, mark); err != nil || taken != deleted {
+		t.Fatalf("took %d (%v) after a restart, want %d", taken, err, deleted)
 	}
 }

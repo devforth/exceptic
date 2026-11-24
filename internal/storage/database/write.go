@@ -345,6 +345,20 @@ type batchWriter struct {
 
 // update runs change in one batch; its changes reach memory before the next batch.
 func (database *Store) update(change func(writer *batchWriter) error) error {
+	return database.updateSynced(true, change)
+}
+
+// cleanupUpdate is update without waiting for the disk, for the cleanup's
+// batches: each holds its deletes with the run's position, so a crash that
+// loses the last ones takes the run back with them, and it goes on from
+// there; the next synced write (ingest's, the run's end) brings them to
+// disk. A sync per batch under ingest took as long as the steps themselves
+// (TestCleanupTimesUnderIngest).
+func (database *Store) cleanupUpdate(change func(writer *batchWriter) error) error {
+	return database.updateSynced(false, change)
+}
+
+func (database *Store) updateSynced(sync bool, change func(writer *batchWriter) error) error {
 	writer := &batchWriter{
 		database: database, issues: map[string]*issueRecord{}, stored: map[string]*issueRecord{}, deleted: map[string]*issueRecord{},
 		created:  map[string]*issueRecord{},
@@ -352,7 +366,7 @@ func (database *Store) update(change func(writer *batchWriter) error) error {
 		messageStart: map[string]uint64{},
 	}
 
-	err := database.db.Update(true, func(batch *kv.Batch) error {
+	err := database.db.Update(sync, func(batch *kv.Batch) error {
 		writer.batch = batch
 		first := database.db.Peek()
 
@@ -464,6 +478,21 @@ func (writer *batchWriter) issue(id string) (*issueRecord, bool) {
 	writer.stored[id] = stored
 
 	return issue, true
+}
+
+// peekIssue is an issue as this batch sees it, without taking it into the batch.
+func (writer *batchWriter) peekIssue(id string) (*issueRecord, bool) {
+	if issue, ok := writer.issues[id]; ok {
+		return issue, true
+	}
+
+	writer.database.issuesMutex.RLock()
+
+	defer writer.database.issuesMutex.RUnlock()
+
+	stored, ok := writer.database.table.byID[id]
+
+	return stored, ok
 }
 
 func (writer *batchWriter) statusChange(issue *issueRecord, to string, actor store.Actor, eventID string, at time.Time) error {

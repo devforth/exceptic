@@ -228,9 +228,14 @@ func (database *Store) staleBytes() int64 {
 // of them on its own without telling, and each project is then measured
 // low by up to that part. It says whether it compacted.
 func (database *Store) compactStale() (bool, error) {
-	if database.backups.Load() > 0 || database.staleBytes()*100 <= config.StalePercent*database.logicalSize() {
+	if !database.staleOver() {
 		return false, nil
 	}
 
 	return true, database.compact(database.staleData()...)
+}
+
+// staleOver says the stale records are over config.StalePercent of the bytes counted, with no backup running.
+func (database *Store) staleOver() bool {
+	return database.backups.Load() == 0 && database.staleBytes()*100 > config.StalePercent*database.logicalSize()
 }

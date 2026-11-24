@@ -15,13 +15,14 @@ type DB struct {
 	counterPrefix Key
 	groupPrefix   Key
 	stalePrefix   Key
+	staledPrefix  Key
 	meta          Key
 	sequenceKey   Key
 	// fresh: the engine held no key when opened.
 	fresh bool
 
 	writeMutex   sync.Mutex // one DB.Update at a time
-	compactMutex sync.Mutex // one Collection.Compact at a time, so none takes off what another did
+	compactMutex sync.Mutex // one Collection.Compact at a time
 
 	countersMutex sync.RWMutex
 	counters      map[string]int64
@@ -29,6 +30,10 @@ type DB struct {
 	// stale is per collection what its deletes and rewrites left in the
 	// files since Collection.Compact last compacted it, in bytes counted.
 	stale map[string]int64
+	// staled is per collection all its deletes and rewrites ever added to
+	// stale: a compaction's mark (Collection.StaleMark), so it takes off
+	// only what no other compaction took (Collection.TakeStale).
+	staled map[string]int64
 
 	written atomic.Int64
 
@@ -45,7 +50,8 @@ func OpenDB(engine Engine, schema *Schema) (*DB, error) {
 	meta := schema.Reserve("meta")
 	db := &DB{
 		Engine: engine, counterPrefix: schema.Reserve("count"), groupPrefix: schema.Reserve("group"), stalePrefix: schema.Reserve("stale"),
-		meta: meta, sequenceKey: meta.With(Text("sequence")), counters: map[string]int64{}, groups: map[string]int64{}, stale: map[string]int64{},
+		staledPrefix: schema.Reserve("staled"),
+		meta:         meta, sequenceKey: meta.With(Text("sequence")), counters: map[string]int64{}, groups: map[string]int64{}, stale: map[string]int64{}, staled: map[string]int64{},
 	}
 
 	iterator := engine.Iterate(nil, nil)
@@ -69,7 +75,7 @@ func OpenDB(engine Engine, schema *Schema) (*DB, error) {
 	db.reserved = db.next
 
 	for prefix, values := range map[string]map[string]int64{
-		string(db.counterPrefix): db.counters, string(db.groupPrefix): db.groups, string(db.stalePrefix): db.stale,
+		string(db.counterPrefix): db.counters, string(db.groupPrefix): db.groups, string(db.stalePrefix): db.stale, string(db.staledPrefix): db.staled,
 	} {
 		iterator := engine.Iterate([]byte(prefix), prefixEnd([]byte(prefix)))
 
@@ -78,6 +84,22 @@ func OpenDB(engine Engine, schema *Schema) (*DB, error) {
 		}
 
 		if err := iterator.Close(); err != nil {
+			return nil, err
+		}
+	}
+
+	// Stored before staled was: all that is stale counts as added since.
+	batch := NewBatch(engine)
+
+	for collection, stale := range db.stale {
+		if db.staled[collection] < stale {
+			db.staled[collection] = stale
+			batch.Put(append(db.staledPrefix.With(), collection...), binary.BigEndian.AppendUint64(nil, uint64(stale)))
+		}
+	}
+
+	if batch.Len() > 0 {
+		if err := db.Write(batch, true); err != nil {
 			return nil, err
 		}
 	}
@@ -139,6 +161,7 @@ func (db *DB) Update(sync bool, change func(batch *Batch) error) error {
 	totals := db.totals(batch, db.counterPrefix, db.counters, batch.counts)
 	groupTotals := db.totals(batch, db.groupPrefix, db.groups, batch.groups)
 	staleTotals := db.totals(batch, db.stalePrefix, db.stale, batch.stale)
+	staledTotals := db.totals(batch, db.staledPrefix, db.staled, batch.staled)
 	db.countersMutex.RUnlock()
 
 	if err := db.Write(batch, sync); err != nil {
@@ -153,6 +176,7 @@ func (db *DB) Update(sync bool, change func(batch *Batch) error) error {
 	keep(db.counters, totals)
 	keep(db.groups, groupTotals)
 	keep(db.stale, staleTotals)
+	keep(db.staled, staledTotals)
 	db.countersMutex.Unlock()
 
 	for _, apply := range batch.after {

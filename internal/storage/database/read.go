@@ -29,12 +29,25 @@ func oldestFirst[T any](reader kv.Reader, queries []kv.Query[T], visit func(entr
 	return err
 }
 
+// oldestKeysFirst is oldestFirst that also visits, in their turn, the keys
+// the walks skip (kept false: the entry has only its key).
+func oldestKeysFirst[T any](reader kv.Reader, queries []kv.Query[T], visit func(entry kv.Entry[T], kept bool) bool) error {
+	_, err := mergedKeys(reader, queries, false, visit)
+
+	return err
+}
+
 // merged walks the queries in sequence order, key by key: the keys a walk
 // skips (Raw) take their turn too, so the walks advance together. When a
 // context stops them, rest is where the merge can go on newest first: every
 // record visited has a sequence at or above it, every one not visited yet is
 // below it (math.MaxUint64 when a walk stopped before its first key).
 func merged[T any](reader kv.Reader, queries []kv.Query[T], newest bool, visit func(entry kv.Entry[T]) bool) (rest uint64, err error) {
+	return mergedKeys(reader, queries, newest, func(entry kv.Entry[T], kept bool) bool { return !kept || visit(entry) })
+}
+
+// mergedKeys is merged visiting the skipped keys too.
+func mergedKeys[T any](reader kv.Reader, queries []kv.Query[T], newest bool, visit func(entry kv.Entry[T], kept bool) bool) (rest uint64, err error) {
 	type head struct {
 		cursor   *kv.Cursor[T]
 		entry    kv.Entry[T]
@@ -76,7 +89,7 @@ func merged[T any](reader kv.Reader, queries []kv.Query[T], newest bool, visit f
 			}
 		}
 
-		if next == nil || next.kept && !visit(next.entry) {
+		if next == nil || !visit(next.entry, next.kept) {
 			break
 		}
 

@@ -20,7 +20,13 @@ import (
 func liveStore(t *testing.T) *Store {
 	t.Helper()
 
-	database := openOnDisk(t, t.TempDir())
+	return liveData(t, openOnDisk(t, t.TempDir()))
+}
+
+// liveData stores liveStore's data in database.
+func liveData(t *testing.T, database *Store) *Store {
+	t.Helper()
+
 	seedShares(t, database, 100)
 	clockAt(database, scenarioNow)
 

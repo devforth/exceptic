@@ -963,3 +963,92 @@ func TestCleanupStepCounts(t *testing.T) {
 		t.Fatalf("%d steps, %d always; the store says %d and %d", len(steps), always, store.CleanupSteps, store.CleanupAlwaysSteps)
 	}
 }
+
+// The steps deleting events oldest first but the latest of each issue pass
+// over the events of issues with one stored event by their keys: a flood of
+// distinct errors (each its own issue) is not read event by event to delete
+// the few that can go.
+func TestOldestEventsPassOverSingleEventIssues(t *testing.T) {
+	database := openTest(t)
+	clockAt(database, scenarioNow)
+
+	const singles, several, each = 20_000, 20, 5
+
+	at := scenarioNow.Add(-48 * time.Hour)
+	event := func(fingerprint string, index int) store.NewEvent {
+		received := at.Add(time.Duration(index) * time.Millisecond)
+
+		return store.NewEvent{ProjectID: 1, EventID: fmt.Sprintf("%s-%d", fingerprint, index), Fingerprint: fingerprint, Title: fingerprint,
+			Level: "info", Timestamp: received, ReceivedAt: received, Payload: []byte(`{}`)}
+	}
+
+	for start := 0; start < singles; start += 5000 {
+		events := make([]store.NewEvent, 0, 5000)
+
+		for index := start; index < start+5000; index++ {
+			events = append(events, event(fmt.Sprintf("single-%d", index), index))
+
+			if index%(singles/several) == 0 {
+				for copy := range each {
+					events = append(events, event(fmt.Sprintf("several-%d", index), singles+index*each+copy))
+				}
+			}
+		}
+
+		if _, err := database.Write([]Envelope{{Events: events}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	step := database.cleanupSteps(AllProjects)[5]
+
+	if step.name != "events below error but the latest of their issue" {
+		t.Fatalf("step 6 is %q", step.name)
+	}
+
+	var position []byte
+
+	read, deleted, batches := 0, 0, 0
+	started := time.Now()
+
+	for finished := false; !finished; batches++ {
+		err := database.update(func(writer *batchWriter) error {
+			writer.counted = map[int]*CleanupCounts{}
+			cursor := &cleanupCursor{batch: writer.batch, position: position, always: true}
+
+			var err error
+
+			finished, err = step.batch(writer, cursor)
+			position, read = cursor.position, read+cursor.records
+			deleted += writer.count(1).Events
+
+			return err
+		})
+
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Logf("%d batches, %d events read, %d deleted in %s", batches, read, deleted, time.Since(started))
+
+	if deleted != several*(each-1) {
+		t.Errorf("deleted %d events, want %d", deleted, several*(each-1))
+	}
+
+	if read > several*each {
+		t.Errorf("read %d events to delete %d: the single-event issues were read", read, deleted)
+	}
+
+	for _, issue := range database.issueIDs(func(issue *issueRecord) bool { return issue.Stored != 1 }) {
+		t.Errorf("issue %s keeps %d events", issue, storedIssueByID(database, issue).Stored)
+	}
+}
+
+func storedIssueByID(database *Store, id string) *issueRecord {
+	database.issuesMutex.RLock()
+
+	defer database.issuesMutex.RUnlock()
+
+	return database.table.byID[id]
+}
