@@ -36,6 +36,11 @@ func (database *Store) Write(envelopes []Envelope) ([][]store.SaveResult, error)
 		}
 	}
 
+	// A compaction part running holds the batch until it ends.
+	database.ingestWrites.RLock()
+
+	defer database.ingestWrites.RUnlock()
+
 	err := database.update(func(writer *batchWriter) error {
 		for index, envelope := range envelopes {
 			// Of a project deleted while it was on its way: only its inbox entry goes.

@@ -7,8 +7,18 @@ import (
 	"github.com/devforth/exceptic/internal/storage/kv"
 )
 
+// ErrCompacting: a compaction part runs, during which ingest writes nothing; ingest answers 429.
+var ErrCompacting = errors.New("the database is compacting its files")
+
 // Append writes without a sync: the writer's next synced batch takes it to disk.
+// While a compaction part runs it refuses at once (ErrCompacting).
 func (database *Store) Append(projectID int, received time.Time, body []byte) (InboxEntry, error) {
+	if !database.ingestWrites.TryRLock() {
+		return InboxEntry{}, ErrCompacting
+	}
+
+	defer database.ingestWrites.RUnlock()
+
 	sequence, err := database.db.Next()
 
 	if err != nil {

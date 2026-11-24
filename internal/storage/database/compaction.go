@@ -48,10 +48,12 @@ func (database *Store) compactables() []compactable {
 }
 
 // compact compacts collections in parts, then takes off what they held of
-// deleted records when it started and no other compaction took off.
-func (database *Store) compact(collections ...compactable) error {
+// deleted records when it started and no other compaction took off. Unless
+// forced it compacts only while ingest is quiet and says whether it
+// finished; forced, each part refuses ingest for its time (compactRange).
+func (database *Store) compact(forced bool, collections ...compactable) (bool, error) {
 	if err := database.compactFaults(); err != nil {
-		return err
+		return false, err
 	}
 
 	marks := make([]int64, len(collections))
@@ -63,9 +65,15 @@ func (database *Store) compact(collections ...compactable) error {
 	parts, err := database.compactParts(collections, database.db.Peek(), nil)
 
 	for _, part := range parts {
-		if err == nil {
-			err = database.db.CompactRange(part.lower, part.upper)
+		if err != nil {
+			return false, err
 		}
+
+		if !forced && !database.quiet() {
+			return false, nil
+		}
+
+		err = database.compactRange(part)
 	}
 
 	for index, collection := range collections {
@@ -74,7 +82,24 @@ func (database *Store) compact(collections ...compactable) error {
 		}
 	}
 
-	return err
+	return err == nil, err
+}
+
+// compactRange compacts a part with ingest's writes held: goleveldb's range
+// compaction goes on for as long as new files overlap its range, and under
+// ingest every file written holds keys of the whole database, so under
+// writes it would hold the lane for as long as they come while goleveldb's
+// own compactions wait (measured: parts of minutes, level 1 past a GB).
+// Envelopes arriving meanwhile get 429 (ErrCompacting), the writer waits.
+func (database *Store) compactRange(part compactRange) error {
+	database.ingestWrites.Lock()
+	defer database.ingestWrites.Unlock()
+
+	if database.whileCompacting != nil {
+		database.whileCompacting()
+	}
+
+	return database.db.CompactRange(part.lower, part.upper)
 }
 
 func (database *Store) compactFaults() error {
@@ -396,10 +421,10 @@ func (database *Store) startCompaction(scope cleanupScope, run CleanupRun) (*sto
 }
 
 // compactParted compacts the parts of the run's compaction left, saving the
-// progress after each, and says whether it finished; between them it stops
-// at ctx's end or a backup, or yields to a job of the lane that is due
-// (background.ErrYielded). Each pass compacts at least one part, so it always
-// gets on.
+// progress after each, and says whether it finished. Each part waits for
+// ingest to be quiet (it refuses ingest while it runs, compactRange); between
+// them it stops at ctx's end or a backup, or yields to a job of the lane that
+// is due (background.ErrYielded).
 func (database *Store) compactParted(ctx context.Context, run *CleanupRun) (bool, error) {
 	progress := run.Compaction.Progress
 	started := time.Now()
@@ -425,16 +450,18 @@ func (database *Store) compactParted(ctx context.Context, run *CleanupRun) (bool
 			return false, err
 		}
 
-		if index > 0 {
-			switch {
-			case ctx.Err() != nil || database.backups.Load() > 0:
-				return false, nil
-			case background.Waiting(ctx):
-				return false, background.ErrYielded
-			}
+		switch {
+		// Each part refuses ingest while it runs, so it waits for ingest to be quiet.
+		case !database.quiet():
+			return false, nil
+		case index == 0:
+		case ctx.Err() != nil || database.backups.Load() > 0:
+			return false, nil
+		case background.Waiting(ctx):
+			return false, background.ErrYielded
 		}
 
-		if err = database.db.CompactRange(part.lower, part.upper); err == nil {
+		if err = database.compactRange(part); err == nil {
 			progress.Reached = part.upper
 			err = database.saveRun(*run)
 		}

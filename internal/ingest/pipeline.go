@@ -126,6 +126,10 @@ func (pipeline *Pipeline) accept(project config.Project, envelope *sentry.Envelo
 
 	entry, err := pipeline.store.Append(project.ID, pipeline.handler.now(), body)
 
+	if errors.Is(err, database.ErrCompacting) {
+		return nil, errCompacting
+	}
+
 	if err != nil {
 		return nil, err
 	}

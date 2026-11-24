@@ -61,7 +61,9 @@ func (database *Store) CompactInbox(context.Context) error {
 		return nil
 	}
 
-	return database.compact(database.inbox)
+	_, err := database.compact(false, database.inbox)
+
+	return err
 }
 
 // CleanupWake ticks after every config.CleanupWritten bytes written.
@@ -633,7 +635,8 @@ func (scope cleanupScope) compactBefore() (bool, error) {
 
 	collections := append(database.staleData(), database.inbox, database.issues, database.status)
 
-	return true, database.compact(collections...)
+	// Forced: the files are over the limit, so it compacts under ingest too, each part refusing it for its time.
+	return database.compact(true, collections...)
 }
 
 // logs walks the logs of a level by arrival.

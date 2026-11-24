@@ -260,7 +260,7 @@ func TestCompactionWithNothingLeftIsSkipped(t *testing.T) {
 		t.Fatalf("run %+v, %v", run, err)
 	}
 
-	if err := database.compact(database.staleData()...); err != nil {
+	if _, err := database.compact(true, database.staleData()...); err != nil {
 		t.Fatal(err)
 	}
 
@@ -397,7 +397,7 @@ func TestCompactingBeforeAtScale(t *testing.T) {
 		stale := 100 * float64(database.staleBytes()) / float64(database.logicalSize())
 		started := time.Now()
 
-		if err := database.compact(append(database.staleData(), database.inbox, database.issues, database.status)...); err != nil {
+		if _, err := database.compact(true, append(database.staleData(), database.inbox, database.issues, database.status)...); err != nil {
 			t.Fatal(err)
 		}
 

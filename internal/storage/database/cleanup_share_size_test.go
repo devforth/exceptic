@@ -228,7 +228,7 @@ func TestDiskShareMeasuresProjectsHonestly(t *testing.T) {
 	// SizeOf reads the tables only: a backlog still in the journal counts as the projects' (an estimate, docs).
 	compareMeasured(t, database, fmt.Sprintf("%s of inbox in the journal", config.FormatSize(inbox)), truth)
 
-	if err := database.compact(database.inbox); err != nil {
+	if _, err := database.compact(true, database.inbox); err != nil {
 		t.Fatal(err)
 	}
 
@@ -290,7 +290,7 @@ func TestDiskShareMeasuresProjectsHonestly(t *testing.T) {
 	}
 
 	// As the run over all projects compacts at its start.
-	if err := database.compact(database.logs, database.events); err != nil {
+	if _, err := database.compact(true, database.logs, database.events); err != nil {
 		t.Fatal(err)
 	}
 
@@ -338,7 +338,7 @@ func TestDiskShareLeavesOutTheInbox(t *testing.T) {
 	}
 
 	// Into the tables, as a busy server's inbox gets before its envelopes are stored.
-	if err := database.compact(database.inbox); err != nil {
+	if _, err := database.compact(true, database.inbox); err != nil {
 		t.Fatal(err)
 	}
 

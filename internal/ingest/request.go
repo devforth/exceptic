@@ -224,6 +224,9 @@ func (body *requestBody) hold(budget *readBudget, projectID, size int) bool {
 	return true
 }
 
+// errCompacting: a compaction part of the database runs (seconds), during which nothing is written.
+var errCompacting = &requestError{status: http.StatusTooManyRequests, message: "server is compacting its database", retryAfter: "5"}
+
 // errBusy asks the SDK to retry in a second.
 var errBusy = &requestError{status: http.StatusTooManyRequests, message: "server is busy reading other envelopes", retryAfter: "1"}
 

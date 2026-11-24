@@ -232,7 +232,7 @@ func (database *Store) compactStale() (bool, error) {
 		return false, nil
 	}
 
-	return true, database.compact(database.staleData()...)
+	return database.compact(false, database.staleData()...)
 }
 
 // staleOver says the stale records are over config.StalePercent of the bytes counted, with no backup running.

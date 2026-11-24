@@ -270,7 +270,10 @@ func (database *Store) PurgeProjects(ctx context.Context) error {
 		return nil
 	}
 
-	return database.compact(database.logs, database.events)
+	// Not under ingest: compactStale takes what is left once it is over its share.
+	_, err = database.compact(false, database.logs, database.events)
+
+	return err
 }
 
 func (database *Store) purgeProject(ctx context.Context, id int) error {

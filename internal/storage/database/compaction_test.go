@@ -514,7 +514,7 @@ func TestCompactionsTakeStaleOffOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := database.compact(database.staleData()...); err != nil || database.staleBytes() != 0 {
+	if _, err := database.compact(true, database.staleData()...); err != nil || database.staleBytes() != 0 {
 		t.Fatalf("stale %d after compacting, %v", database.staleBytes(), err)
 	}
 
@@ -540,5 +540,84 @@ func TestCompactionsTakeStaleOffOnce(t *testing.T) {
 
 	if done := storedRun(t, database, run.Sequence).Compaction; done.Status != store.CompactionDone || database.staleBytes() != deleted || deleted == 0 {
 		t.Errorf("stale %d after the compaction %+v, %d deleted after the other", database.staleBytes(), done, deleted)
+	}
+}
+
+// A compaction part holds ingest's writes for its time: goleveldb's range
+// compaction goes on for as long as new files overlap its range, so none may
+// come. An envelope is refused at once (ErrCompacting, ingest answers 429),
+// a batch of the writer waits for the part to end and is written then.
+func TestCompactionPartHoldsIngest(t *testing.T) {
+	database := liveStore(t)
+	written := make(chan error, 1)
+
+	var appendErr error
+
+	database.whileCompacting = func() {
+		database.whileCompacting = nil
+		_, appendErr = database.Append(1, scenarioNow, []byte(`{}`))
+
+		go func() {
+			_, err := database.Write([]Envelope{{}})
+
+			written <- err
+		}()
+
+		select {
+		case err := <-written:
+			t.Errorf("a batch was written during a compaction part (%v)", err)
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+
+	if finished, err := database.compact(true, database.logs); err != nil || !finished {
+		t.Fatal(finished, err)
+	}
+
+	if !errors.Is(appendErr, ErrCompacting) {
+		t.Errorf("an envelope during a part: %v, want ErrCompacting", appendErr)
+	}
+
+	select {
+	case err := <-written:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the batch held by the part was never written")
+	}
+}
+
+// The compaction after a run, and the stale compaction of the size check,
+// wait until ingest is quiet, since each part refuses ingest while it runs:
+// under a flood they stay pending and compact nothing, the run not counting
+// an attempt; once it is quiet the compaction is done.
+func TestCompactionWaitsForQuietIngest(t *testing.T) {
+	database, engine := openRecording(t, t.TempDir())
+	liveData(t, database)
+	run := pendingRun(t, database)
+
+	quietFor = time.Hour
+
+	t.Cleanup(func() { quietFor = 0 })
+	database.lastAppend.Store(time.Now().UnixNano())
+	engine.taken()
+	compactCleanups(t, database)
+
+	if compacted, err := database.compact(false, database.staleData()...); err != nil || compacted {
+		t.Errorf("the stale compaction under ingest: compacted %v, %v", compacted, err)
+	}
+
+	if compaction := storedRun(t, database, run.Sequence).Compaction; compaction.Status != store.CompactionPending || compaction.Attempts != 0 ||
+		compaction.Running || len(engine.taken()) != 0 {
+		t.Fatalf("under ingest: %+v", compaction)
+	}
+
+	quietFor = 0
+
+	compactCleanups(t, database)
+
+	if compaction := storedRun(t, database, run.Sequence).Compaction; compaction.Status != store.CompactionDone || len(engine.taken()) == 0 {
+		t.Fatalf("once quiet: %+v", compaction)
 	}
 }

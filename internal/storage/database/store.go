@@ -51,10 +51,16 @@ type Store struct {
 	lastAppend atomic.Int64
 	// backups counts running backups: their snapshot keeps deleted records on disk.
 	backups atomic.Int32
+	// ingestWrites is held for reading by every write of ingest (Append, Write)
+	// and for writing by a compaction part (compactRange): goleveldb repeats a
+	// range compaction as long as new files come, so none may come meanwhile.
+	ingestWrites sync.RWMutex
 
 	now func() time.Time
 	// compactFault, for tests, fails compactions with its error.
 	compactFault func() error
+	// whileCompacting, for tests, runs inside every compaction part.
+	whileCompacting func()
 
 	closeOnce sync.Once
 	closeErr  error

@@ -12,7 +12,7 @@ type Dropped struct {
 // The reasons of Dropped.
 const (
 	DropRateLimit    = "rate_limit"     // over RATE_LIMIT_EVENTS_PER_MINUTE or RATE_LIMIT_LOGS_PER_MINUTE
-	DropBusy         = "busy"           // the inbox full, the reading budget used up, or the store failing
+	DropBusy         = "busy"           // the inbox full, the reading budget used up, a compaction part running, or the store failing
 	DropTooLarge     = "too_large"      // over 20 MB (413)
 	DropInvalid      = "invalid"        // not an envelope, or a body that cannot be decoded (400, 415)
 	DropIncomplete   = "incomplete"     // not within 10 s (408), or the client hung up mid-body
