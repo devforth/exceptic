@@ -329,3 +329,49 @@ func TestMergeStopsWithItsContext(t *testing.T) {
 		t.Errorf("visited %d, err %v: the merge went on past its context", visited, err)
 	}
 }
+
+// A walk goes on from the entry it stopped at, either way.
+func TestRestBounds(t *testing.T) {
+	store := openTickets(t, newMemoryEngine())
+
+	store.update(t, func(batch *Batch) error {
+		for id := uint64(1); id <= 5; id++ {
+			if err := store.tickets.Insert(batch, ticket{ID: id, Seen: id * 10}); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+
+	third, err := store.tickets.By("seen", U8(0)).Limit(3).All(store.db)
+
+	if err != nil || len(third) != 3 {
+		t.Fatal(third, err)
+	}
+
+	var rest Key
+
+	_ = store.tickets.By("seen", U8(0)).Limit(3).Each(store.db, func(entry Entry[ticket]) (bool, error) {
+		rest = entry.Rest
+
+		return true, nil
+	})
+
+	var up, down []uint64
+
+	_ = store.tickets.By("seen", U8(0)).FromRest(rest).Each(store.db, func(entry Entry[ticket]) (bool, error) {
+		up = append(up, entry.Record.ID)
+
+		return true, nil
+	})
+	_ = store.tickets.By("seen", U8(0)).UpToRest(rest).Newest().Each(store.db, func(entry Entry[ticket]) (bool, error) {
+		down = append(down, entry.Record.ID)
+
+		return true, nil
+	})
+
+	if !slices.Equal(up, []uint64{3, 4, 5}) || !slices.Equal(down, []uint64{3, 2, 1}) {
+		t.Errorf("from the third on: %v; down from it: %v", up, down)
+	}
+}

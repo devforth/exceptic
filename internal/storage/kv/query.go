@@ -49,6 +49,22 @@ func (query Query[T]) Before(parts ...Part) Query[T] {
 	return query
 }
 
+// FromRest keeps the keys at or after the prefix followed by rest (an
+// Entry.Rest), so a walk goes on from the entry it stopped at.
+func (query Query[T]) FromRest(rest Key) Query[T] {
+	query.lower = append(bytes.Clone(query.prefix), rest...)
+
+	return query
+}
+
+// UpToRest keeps the keys at or before the prefix followed by rest, for a
+// walk newest first that goes on from the entry it stopped at.
+func (query Query[T]) UpToRest(rest Key) Query[T] {
+	query.upper = append(append(bytes.Clone(query.prefix), rest...), 0)
+
+	return query
+}
+
 // Newest walks from the last key to the first.
 func (query Query[T]) Newest() Query[T] {
 	query.newest = true

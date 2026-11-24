@@ -218,6 +218,11 @@ func (database *Store) CountIssues(ctx context.Context, filter store.IssueFilter
 	if filter.Query == "" && filter.SeenSince.IsZero() && filter.SeenUntil.IsZero() {
 		count, err := database.tallied(filter)
 
+		// A list pages no deeper than the limit, so its count stops there too.
+		if count > store.LogCountLimit {
+			return store.LogCountLimit, true, err
+		}
+
 		return count, false, err
 	}
 

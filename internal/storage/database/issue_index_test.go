@@ -336,3 +336,30 @@ func (database *Store) issueIDs(wants func(*issueRecord) bool) []string {
 
 	return ids
 }
+
+// A list's count stops at the depth a list pages to, as a list of logs does.
+func TestIssueCountStopsAtTheLimit(t *testing.T) {
+	ctx := context.Background()
+	database := openTest(t)
+	limit := store.LogCountLimit
+	store.LogCountLimit = 5
+
+	t.Cleanup(func() { store.LogCountLimit = limit })
+
+	for index := range 7 {
+		received := time.Date(2026, 11, 10, 8, index, 0, 0, time.UTC)
+
+		if _, err := database.SaveEvent(ctx, store.NewEvent{ProjectID: 1, EventID: fmt.Sprintf("%032x", index), Fingerprint: fmt.Sprint(index),
+			Title: "error", Level: "error", Timestamp: received, ReceivedAt: received, Payload: []byte(`{}`)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if count, more, err := database.CountIssues(ctx, store.IssueFilter{}); err != nil || count != 5 || !more {
+		t.Errorf("count %d, more %v, %v: want 5 and more", count, more, err)
+	}
+
+	if counts, err := database.UnresolvedCounts(ctx); err != nil || counts[1] != 7 {
+		t.Errorf("unresolved %v %v: the menu's count stays exact", counts, err)
+	}
+}

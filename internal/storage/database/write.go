@@ -344,6 +344,8 @@ type batchWriter struct {
 	messageStart map[string]uint64
 	// counted is what this batch deletes per project, inside the cleanup.
 	counted map[int]*CleanupCounts
+	// peeked are issues read as stored by this batch (nil: none), not changed by it.
+	peeked map[string]*issueRecord
 	// failed is a read of an issue that failed; the batch is not written.
 	failed error
 	// capped counts the events this batch stores per issue, for the minute's cap.
@@ -503,9 +505,13 @@ func (writer *batchWriter) issue(id string) (*issueRecord, bool) {
 		return nil, false
 	}
 
-	stored, ok := writer.readIssue(id)
+	stored, ok := writer.peeked[id]
 
 	if !ok {
+		stored, ok = writer.readIssue(id)
+	}
+
+	if !ok || stored == nil {
 		return nil, false
 	}
 
@@ -515,7 +521,9 @@ func (writer *batchWriter) issue(id string) (*issueRecord, bool) {
 	return writer.issues[id], true
 }
 
-// peekIssue is an issue as this batch sees it, without taking it into the batch.
+// peekIssue is an issue as this batch sees it, without taking it into the
+// batch; each is read once a batch (a walk over events asks for its issue at
+// every event).
 func (writer *batchWriter) peekIssue(id string) (*issueRecord, bool) {
 	if issue, ok := writer.issues[id]; ok {
 		return issue, true
@@ -525,7 +533,19 @@ func (writer *batchWriter) peekIssue(id string) (*issueRecord, bool) {
 		return nil, false
 	}
 
-	return writer.readIssue(id)
+	if issue, ok := writer.peeked[id]; ok {
+		return issue, issue != nil
+	}
+
+	issue, ok := writer.readIssue(id)
+
+	if writer.peeked == nil {
+		writer.peeked = map[string]*issueRecord{}
+	}
+
+	writer.peeked[id] = issue
+
+	return issue, ok
 }
 
 // readIssue reads an issue as stored, with its stored size; a read that

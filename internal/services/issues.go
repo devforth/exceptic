@@ -52,10 +52,18 @@ func (issues *Issues) Levels(ctx context.Context, access store.Access) ([]string
 }
 
 // Unresolved counts the unresolved issues: the counter next to Issues in the menu.
+// Exact whatever the number, from the counts per project (not a list's count, which stops at its limit).
 func (issues *Issues) Unresolved(ctx context.Context, access store.Access) (int, error) {
-	count, _, err := issues.Count(ctx, access, store.IssueFilter{Status: store.StatusUnresolved})
+	counts, err := issues.store.UnresolvedCounts(ctx)
+	total := 0
 
-	return count, err
+	for project, count := range counts {
+		if access.Sees(project) {
+			total += count
+		}
+	}
+
+	return total, err
 }
 
 // List returns one page of the issues that match filter.

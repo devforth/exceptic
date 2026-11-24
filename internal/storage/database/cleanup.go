@@ -1,6 +1,7 @@
 package database
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"errors"
@@ -501,15 +502,19 @@ func (database *Store) cleanupSteps(project int) []cleanupStep {
 	return []cleanupStep{
 		{"events and status changes of missing issues", true, scope.deleteOrphans()},
 		{"logs older than a month", true, scope.deleteLogs(allRanks, func() uint64 { return database.sequenceFrom(month) })},
+		// By first seen: an issue first seen within the month has no older event, so the walk stops at the first one.
 		{"events older than a month beyond the newest of their issue", true, scope.trimIssues(config.OldEventsPerIssue, month, func(issue *issueRecord) bool {
 			return len(issue.EventDays) > 0 && issue.EventDays[0].Day <= dayOf(month)
-		})},
+		}, issueWalk{index: "first", beyond: func(issue *issueRecord) bool { return dayOf(issue.FirstSeen) > dayOf(month) }})},
+		// Only the resolved and ignored issues (an ignore whose time passed reads unresolved).
 		{"events of resolved and ignored issues but the latest", true, scope.trimIssues(1, time.Time{}, func(issue *issueRecord) bool {
 			return issue.At(now).Status != store.StatusUnresolved
-		})},
+		}, issueWalk{index: "seen", statuses: []string{store.StatusResolved, store.StatusIgnored}})},
 		{"logs below error, oldest first", false, scope.deleteOldestLogs(minorRanks)},
 		{"events below error but the latest of their issue", false, scope.deleteOldestEvents(time.Time{}, minorRanks)},
-		{"events beyond the newest of their issue", false, scope.trimIssues(config.OldEventsPerIssue, time.Time{}, nil)},
+		// Most events first: an issue counts at least the events it stores, so the walk stops at the first with few.
+		{"events beyond the newest of their issue", false, scope.trimIssues(config.OldEventsPerIssue, time.Time{}, nil,
+			issueWalk{index: "count", newest: true, beyond: func(issue *issueRecord) bool { return issue.EventCount <= config.OldEventsPerIssue }})},
 		{"error and fatal logs", false, scope.deleteOldestLogs(majorRanks)},
 		{"events older than a week", false, scope.deleteOldestEvents(week, allRanks)},
 		{"events of the last week", false, scope.deleteOldestEvents(time.Time{}, allRanks)},
@@ -891,27 +896,56 @@ func (scope cleanupScope) deleteOldestLogs(ranks []byte) cleanupBatch {
 	}
 }
 
-// eachIssue visits, by ID from the cursor on, the issues of the scope
-// accepts takes as they are now; visit says whether it is done with one. Position: issue ID.
-func (scope cleanupScope) eachIssue(accepts func(*issueRecord) bool,
+// eachIndexed visits the issues of the scope in the order of an index of
+// issues (schema.go), from where the cursor stopped: the prefixes of the
+// statuses given (nil: all), oldest or newest first, until beyond says no
+// later one can be wanted; accepts takes them as they are now (this batch
+// holds the write lock); visit says whether it is done with one. Position:
+// the index key after its prefix (value, ID) of the issue to go on with.
+func (scope cleanupScope) eachIndexed(index string, statuses []string, newest bool, beyond, accepts func(*issueRecord) bool,
 	visit func(writer *batchWriter, cursor *cleanupCursor, issue *issueRecord) (bool, error),
 ) cleanupBatch {
 	database := scope.database
 	wants := func(issue *issueRecord) bool { return scope.has(issue) && accepts(issue) }
 
 	return func(writer *batchWriter, cursor *cleanupCursor) (bool, error) {
-		query := database.issues.Primary()
+		var filter store.IssueFilter
 
-		if from := kv.Decode(cursor.position, 0).Text(); from != "" {
-			query = query.From(kv.Text(from))
+		if !scope.all() {
+			filter.ProjectIDs = []int{scope.project}
+		}
+
+		var queries []kv.Query[issueRecord]
+
+		for _, prefix := range database.issuePrefixes(filter) {
+			if statuses != nil && !slices.Contains(statuses, prefix.status) {
+				continue
+			}
+
+			query := database.issues.By(index, kv.U8(statusRank(prefix.status)), kv.U32(uint32(prefix.project)), kv.U8(levelRank(prefix.level)))
+
+			switch {
+			case len(cursor.position) == 0:
+			case newest:
+				query = query.UpToRest(cursor.position)
+			default:
+				query = query.FromRest(cursor.position)
+			}
+
+			queries = append(queries, query)
 		}
 
 		finished := true
+		stop := func(entry kv.Entry[issueRecord]) {
+			cursor.position, finished = bytes.Clone(entry.Rest), false
+		}
 
-		// The stored issues as this batch, holding the write lock, sees them.
-		err := query.Each(writer.batch, func(entry kv.Entry[issueRecord]) (bool, error) {
-			id := entry.Record.ID
-			stored, ok := writer.peekIssue(id)
+		err := kv.Merge(writer.batch, queries, newest, func(entry kv.Entry[issueRecord]) (bool, error) {
+			if beyond != nil && beyond(&entry.Record) {
+				return false, nil
+			}
+
+			stored, ok := writer.peekIssue(entry.Record.ID)
 			wanted := ok && wants(stored)
 
 			if !wanted {
@@ -919,7 +953,7 @@ func (scope cleanupScope) eachIssue(accepts func(*issueRecord) bool,
 			}
 
 			if cursor.full() {
-				cursor.position, finished = kv.K(kv.Text(id)), false
+				stop(entry)
 
 				return false, nil
 			}
@@ -928,11 +962,11 @@ func (scope cleanupScope) eachIssue(accepts func(*issueRecord) bool,
 				return true, nil
 			}
 
-			issue, _ := writer.issue(id)
+			issue, _ := writer.issue(entry.Record.ID)
 			done, err := visit(writer, cursor, issue)
 
 			if err != nil || !done {
-				cursor.position, finished = kv.K(kv.Text(id)), false
+				stop(entry)
 
 				return false, err
 			}
@@ -944,13 +978,23 @@ func (scope cleanupScope) eachIssue(accepts func(*issueRecord) bool,
 	}
 }
 
+// issueWalk is how a step walks the issues (eachIndexed).
+type issueWalk struct {
+	index    string
+	statuses []string
+	newest   bool
+	beyond   func(*issueRecord) bool
+}
+
 // trimIssues deletes the oldest events received before cutoff (zero: any)
 // beyond keep, of the issues match accepts (nil: all).
-func (scope cleanupScope) trimIssues(keep int, cutoff time.Time, match func(*issueRecord) bool) cleanupBatch {
+// The walk of issues it takes: the index, the statuses, the direction and
+// when no later issue can be wanted (eachIndexed).
+func (scope cleanupScope) trimIssues(keep int, cutoff time.Time, match func(*issueRecord) bool, walk issueWalk) cleanupBatch {
 	database := scope.database
 	wants := func(issue *issueRecord) bool { return issue.Stored > keep && (match == nil || match(issue)) }
 
-	return scope.eachIssue(wants, func(writer *batchWriter, cursor *cleanupCursor, issue *issueRecord) (bool, error) {
+	return scope.eachIndexed(walk.index, walk.statuses, walk.newest, walk.beyond, wants, func(writer *batchWriter, cursor *cleanupCursor, issue *issueRecord) (bool, error) {
 		done := true
 
 		err := database.events.Primary(kv.Text(issue.ID)).Head().Each(database.db, func(entry kv.Entry[eventRecord]) (bool, error) {
