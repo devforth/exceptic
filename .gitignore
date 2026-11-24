@@ -23,6 +23,9 @@
 *.out
 coverage.*
 
+# Load tools for development only (tools/flood: flood runs against a local server)
+/tools/flood/
+
 # Node (tools)
 node_modules/
 
