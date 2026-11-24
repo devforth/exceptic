@@ -28,6 +28,11 @@ type Definition[T any] struct {
 	Group func(T) Key
 	// Backfill names what the collection gained after records were stored.
 	Backfill *Backfill
+	// Tally, when set, counts each record once under each of its keys (how
+	// many records of a project have a status, say), kept exact in the same
+	// batch as the record (DB.Tally). Not with Backfill: a record the
+	// backfill has not reached would be counted wrong.
+	Tally func(T) []Key
 }
 
 // Index declares an index; its keys hold the record's primary key as their value.
@@ -75,6 +80,11 @@ func Define[T any](schema *Schema, definition Definition[T]) *Collection[T] {
 	collection := &Collection[T]{
 		name: definition.Name, prefix: Key(definition.Name + "/"), definition: definition, indexes: map[string]*index[T]{},
 	}
+
+	if definition.Tally != nil && definition.Backfill != nil {
+		panic(fmt.Sprintf("kv: collection %s cannot have both Tally and Backfill", definition.Name))
+	}
+
 	schema.register(string(collection.prefix), "collection "+definition.Name)
 	schema.addCollection(collection)
 
@@ -354,17 +364,28 @@ func (collection *Collection[T]) Write(batch *Batch, record T, old *Entry[T]) (E
 		}
 	}
 
+	// Index keys the old record had too stay as they are: neither deleted nor put again.
+	unchanged := map[string]bool{}
+
 	if old != nil {
 		collection.tally(batch, old.Record, key, old.Size, -1)
+		collection.countRecord(batch, old.Record, -1)
 
-		kept := map[string]bool{}
+		current := map[string]bool{}
 
 		for _, entry := range keys {
-			kept[string(entry.key)] = true
+			current[string(entry.key)] = true
 		}
 
 		for _, entry := range collection.indexKeys(old.Record) {
-			if !kept[string(entry.key)] {
+			if current[string(entry.key)] {
+				unchanged[string(entry.key)] = true
+
+				// A key not written again leaves nothing stale in the files.
+				if collection.counted() && (!entry.backfilled || collection.reached(key)) {
+					batch.addStale(collection.name, -int64(len(entry.key)+len(key)))
+				}
+			} else {
 				batch.Delete(entry.key)
 			}
 		}
@@ -373,10 +394,13 @@ func (collection *Collection[T]) Write(batch *Batch, record T, old *Entry[T]) (E
 	batch.Put(key, value)
 
 	for _, entry := range keys {
-		batch.Put(entry.key, key)
+		if !unchanged[string(entry.key)] {
+			batch.Put(entry.key, key)
+		}
 	}
 
 	collection.tally(batch, record, key, len(value), 1)
+	collection.countRecord(batch, record, 1)
 
 	return Entry[T]{Key: key[len(collection.prefix):], Record: record, Size: len(value)}, nil
 }
@@ -386,6 +410,9 @@ type Entry[T any] struct {
 	Key    Key
 	Record T
 	Size   int
+	// Rest is, for an entry of a walk, the walked key after the walk's
+	// prefix (an index key's too): what Merge orders several walks by.
+	Rest Key
 }
 
 // Delete deletes record with its index keys; DeleteEntry avoids re-encoding it.
@@ -421,6 +448,38 @@ func (collection *Collection[T]) remove(batch *Batch, record T, valueSize int) {
 	}
 
 	collection.tally(batch, record, key, valueSize, -1)
+	collection.countRecord(batch, record, -1)
+}
+
+// countRecord adds (sign 1) or takes away (-1) the record from its tallies.
+func (collection *Collection[T]) countRecord(batch *Batch, record T, sign int64) {
+	if collection.definition.Tally == nil {
+		return
+	}
+
+	for _, tally := range collection.definition.Tally(record) {
+		batch.Tally(tally, sign)
+	}
+}
+
+// Tallied counts the stored records per tally, as Write counts them;
+// DB.Tallies should hold the same.
+func (collection *Collection[T]) Tallied(reader Reader) (map[string]int64, error) {
+	tallies := map[string]int64{}
+
+	if collection.definition.Tally == nil {
+		return tallies, nil
+	}
+
+	err := collection.Primary().Each(reader, func(entry Entry[T]) (bool, error) {
+		for _, tally := range collection.definition.Tally(entry.Record) {
+			tallies[string(tally)]++
+		}
+
+		return true, nil
+	})
+
+	return tallies, err
 }
 
 // DeleteKey deletes the record under key; false when there is none.

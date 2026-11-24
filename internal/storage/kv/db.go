@@ -3,6 +3,7 @@ package kv
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"maps"
 	"sync"
 	"sync/atomic"
@@ -16,6 +17,7 @@ type DB struct {
 	groupPrefix   Key
 	stalePrefix   Key
 	staledPrefix  Key
+	tallyPrefix   Key
 	meta          Key
 	sequenceKey   Key
 	// fresh: the engine held no key when opened.
@@ -34,6 +36,9 @@ type DB struct {
 	// stale: a compaction's mark (Collection.StaleMark), so it takes off
 	// only what no other compaction took (Collection.TakeStale).
 	staled map[string]int64
+	// tallies count records per key (Definition.Tally).
+	tallies map[string]int64
+	schema  *Schema
 
 	written atomic.Int64
 
@@ -50,8 +55,9 @@ func OpenDB(engine Engine, schema *Schema) (*DB, error) {
 	meta := schema.Reserve("meta")
 	db := &DB{
 		Engine: engine, counterPrefix: schema.Reserve("count"), groupPrefix: schema.Reserve("group"), stalePrefix: schema.Reserve("stale"),
-		staledPrefix: schema.Reserve("staled"),
-		meta:         meta, sequenceKey: meta.With(Text("sequence")), counters: map[string]int64{}, groups: map[string]int64{}, stale: map[string]int64{}, staled: map[string]int64{},
+		staledPrefix: schema.Reserve("staled"), tallyPrefix: schema.Reserve("tally"), schema: schema,
+		meta: meta, sequenceKey: meta.With(Text("sequence")), counters: map[string]int64{}, groups: map[string]int64{}, stale: map[string]int64{}, staled: map[string]int64{},
+		tallies: map[string]int64{},
 	}
 
 	iterator := engine.Iterate(nil, nil)
@@ -76,6 +82,7 @@ func OpenDB(engine Engine, schema *Schema) (*DB, error) {
 
 	for prefix, values := range map[string]map[string]int64{
 		string(db.counterPrefix): db.counters, string(db.groupPrefix): db.groups, string(db.stalePrefix): db.stale, string(db.staledPrefix): db.staled,
+		string(db.tallyPrefix): db.tallies,
 	} {
 		iterator := engine.Iterate([]byte(prefix), prefixEnd([]byte(prefix)))
 
@@ -162,6 +169,7 @@ func (db *DB) Update(sync bool, change func(batch *Batch) error) error {
 	groupTotals := db.totals(batch, db.groupPrefix, db.groups, batch.groups)
 	staleTotals := db.totals(batch, db.stalePrefix, db.stale, batch.stale)
 	staledTotals := db.totals(batch, db.staledPrefix, db.staled, batch.staled)
+	tallyTotals := db.totals(batch, db.tallyPrefix, db.tallies, batch.tallies)
 	db.countersMutex.RUnlock()
 
 	if err := db.Write(batch, sync); err != nil {
@@ -177,6 +185,7 @@ func (db *DB) Update(sync bool, change func(batch *Batch) error) error {
 	keep(db.groups, groupTotals)
 	keep(db.stale, staleTotals)
 	keep(db.staled, staledTotals)
+	keep(db.tallies, tallyTotals)
 	db.countersMutex.Unlock()
 
 	for _, apply := range batch.after {
@@ -253,4 +262,56 @@ func (db *DB) Groups() map[string]int64 {
 	defer db.countersMutex.RUnlock()
 
 	return maps.Clone(db.groups)
+}
+
+// Tally returns how many records a tally (Definition.Tally) counts.
+func (db *DB) Tally(tally Key) int64 {
+	db.countersMutex.RLock()
+
+	defer db.countersMutex.RUnlock()
+
+	return db.tallies[string(tally)]
+}
+
+// Tallies returns a copy of every tally.
+func (db *DB) Tallies() map[string]int64 {
+	db.countersMutex.RLock()
+
+	defer db.countersMutex.RUnlock()
+
+	return maps.Clone(db.tallies)
+}
+
+// CheckTallies counts the records of every collection again and reports
+// each tally that does not match.
+func (db *DB) CheckTallies() ([]string, error) {
+	counted := map[string]int64{}
+
+	for _, collection := range db.schema.collections {
+		tallies, err := collection.Tallied(db)
+
+		if err != nil {
+			return nil, err
+		}
+
+		for tally, count := range tallies {
+			counted[tally] += count
+		}
+	}
+
+	var problems []string
+
+	for tally, stored := range db.Tallies() {
+		if counted[tally] != stored {
+			problems = append(problems, fmt.Sprintf("tally %x: %d stored, %d counted", tally, stored, counted[tally]))
+		}
+	}
+
+	for tally, count := range counted {
+		if _, ok := db.Tallies()[tally]; !ok && count != 0 {
+			problems = append(problems, fmt.Sprintf("tally %x: none stored, %d counted", tally, count))
+		}
+	}
+
+	return problems, nil
 }

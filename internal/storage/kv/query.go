@@ -286,7 +286,7 @@ func (cursor *Cursor[T]) Step() (entry Entry[T], kept, ok bool) {
 		return entry, true, true
 	}
 
-	return Entry[T]{Key: iterator.Key()}, false, true
+	return Entry[T]{Key: iterator.Key(), Rest: iterator.Key()[len(query.prefix):]}, false, true
 }
 
 // Stopped reports whether the walk's context ended it.
@@ -341,7 +341,9 @@ func (query Query[T]) read(reader Reader, iterator Iterator) (Entry[T], bool, er
 		return Entry[T]{}, false, fmt.Errorf("kv: %s %x: %w", query.collection.name, key, err)
 	}
 
-	return Entry[T]{Key: bytes.Clone(key[len(query.collection.prefix):]), Record: record, Size: len(value)}, true, nil
+	rest := bytes.Clone(iterator.Key()[len(query.prefix):])
+
+	return Entry[T]{Key: bytes.Clone(key[len(query.collection.prefix):]), Record: record, Size: len(value), Rest: rest}, true, nil
 }
 
 // All returns the records of the walk.

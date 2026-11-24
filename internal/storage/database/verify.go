@@ -30,6 +30,14 @@ func (database *Store) Verify() ([]string, error) {
 		problems = append(problems, fmt.Sprintf("project byte counters %v, records take %v", stored, groups))
 	}
 
+	tallies, err := database.db.CheckTallies()
+
+	if err != nil {
+		return problems, err
+	}
+
+	problems = append(problems, tallies...)
+
 	database.issuesMutex.RLock()
 
 	issues := make(map[string]issueRecord, len(database.table.byID))

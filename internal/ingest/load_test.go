@@ -214,8 +214,16 @@ func TestCleanupUnderIngestLoad(t *testing.T) {
 		t.Fatalf("the seed is %s, %.0f%% of the default limit: change cleanupSeedScale", config.FormatSize(size), share*100)
 	}
 
-	// At the first check, as when a server at the limit gets a peak.
-	limit := size * 99 / 100
+	// At the first check, as when a server at the limit gets a peak: the
+	// data held (not the files, which also hold deleted records) just at the
+	// start percent.
+	usage, err := db.ProjectUsage(ctx)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	limit := usage.Live * 100 / config.CleanupStartPercent
 
 	shape := targetLoad()
 	projects := benchProjects(shape.projects)

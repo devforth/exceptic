@@ -18,6 +18,7 @@ type Schema struct {
 type checkable interface {
 	Check(reader Reader) ([]string, error)
 	Counted(reader Reader) (counters, groups map[string]int64, err error)
+	Tallied(reader Reader) (map[string]int64, error)
 	markBackfilled(db *DB, batch *Batch)
 	openBackfill(db *DB) error
 }

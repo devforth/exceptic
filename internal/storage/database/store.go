@@ -96,8 +96,9 @@ func OpenMemory() (*Store, error) { return open(openMemoryEngine()) }
 
 // storeFormat is the version of what this package writes. A database of
 // another format is refused at start rather than misread; there are no
-// migrations yet, so a change of format means starting over.
-const storeFormat = "1"
+// migrations yet, so a change of format means starting over. 2: issues
+// have indexes and record counts (they no longer need to be held in memory).
+const storeFormat = "2"
 
 func open(engine kv.Engine) (*Store, error) {
 	schema := kv.NewSchema()

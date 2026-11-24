@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -68,13 +69,31 @@ func defineCollections(schema *kv.Schema) collections {
 			Decode:     decodeInbox,
 			DecodeHead: decodeInboxHead,
 		}),
-		// issue/<id>; also kept in memory.
+		// issue/<id>; also kept in memory. Its indexes list issues by status,
+		// project and level, each in the order of one sort, and the tallies
+		// count them so (issueTally).
 		issues: kv.Define(schema, kv.Definition[issueRecord]{
-			Name:     "issue",
-			Key:      func(issue issueRecord) kv.Key { return kv.K(kv.Text(issue.ID)) },
-			Counter:  func(issueRecord) kv.Key { return sizeCounter(kindIssue, 0, 0) },
-			Group:    func(issue issueRecord) kv.Key { return projectCounter(issue.ProjectID) },
-			Backfill: &kv.Backfill{Name: projectSizes, Group: true},
+			Name: "issue",
+			Key:  func(issue issueRecord) kv.Key { return kv.K(kv.Text(issue.ID)) },
+			Indexes: []kv.Index[issueRecord]{
+				// issue.fingerprint/<project>/<fingerprint>: one issue per fingerprint of a project.
+				{Name: "fingerprint", Key: func(issue issueRecord) kv.Key {
+					return kv.K(kv.U32(uint32(issue.ProjectID)), kv.Text(issue.Fingerprint))
+				}, Unique: true},
+				{Name: "seen", Key: func(issue issueRecord) kv.Key { return issueSortKey(issue, issue.LastSeen.UnixNano()) }},
+				{Name: "first", Key: func(issue issueRecord) kv.Key { return issueSortKey(issue, issue.FirstSeen.UnixNano()) }},
+				{Name: "count", Key: func(issue issueRecord) kv.Key { return issueSortKey(issue, int64(issue.EventCount)) }},
+				// issue.expiry/<project>/<until>/<id>: the ignores that end at a time.
+				{Name: "expiry", Key: func(issue issueRecord) kv.Key {
+					return kv.KIf(issue.Status == store.StatusIgnored && issue.IgnoredUntil != nil,
+						kv.U32(uint32(issue.ProjectID)), kv.U64(uint64(timeValue(issue.IgnoredUntil))), kv.Text(issue.ID))
+				}},
+			},
+			Counter: func(issueRecord) kv.Key { return sizeCounter(kindIssue, 0, 0) },
+			Group:   func(issue issueRecord) kv.Key { return projectCounter(issue.ProjectID) },
+			Tally: func(issue issueRecord) []kv.Key {
+				return []kv.Key{issueTally(issue.ProjectID, issue.Status, issue.Level)}
+			},
 		}),
 		// status/<issue>/<seq>: the status changes of an issue, oldest first.
 		status: kv.Define(schema, kv.Definition[statusRecord]{
@@ -489,4 +508,29 @@ func splitTail(value []byte, head any) ([]byte, error) {
 	}
 
 	return bytes.Clone(value[end:]), nil
+}
+
+// issueSortKey is an issue's key in a sort index: its stored status,
+// project and level, the value it sorts by, then its ID for ties.
+func issueSortKey(issue issueRecord, value int64) kv.Key {
+	return kv.K(kv.U8(statusRank(issue.Status)), kv.U32(uint32(issue.ProjectID)), kv.U8(levelRank(issue.Level)),
+		kv.U64(uint64(max(value, 0))), kv.Text(issue.ID))
+}
+
+// issueTally counts the issues of a project with a status and level.
+func issueTally(projectID int, status, level string) kv.Key {
+	return kv.K(kv.Text("issue"), kv.U32(uint32(projectID)), kv.U8(statusRank(status)), kv.U8(levelRank(level)))
+}
+
+// statusRank is a status's place in store.IssueStatuses.
+func statusRank(status string) byte {
+	return byte(max(slices.Index(store.IssueStatuses, status), 0))
+}
+
+func timeValue(at *time.Time) int64 {
+	if at == nil {
+		return 0
+	}
+
+	return at.UnixNano()
 }

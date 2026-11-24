@@ -447,13 +447,19 @@ func TestStale(t *testing.T) {
 		return err
 	})
 
-	// Items 2 and 3 take the same bytes; a rewrite leaves the whole old version.
+	// A delete leaves the whole record; a rewrite leaves the old value and
+	// the key, while index keys that stay the same are not written again.
 	size := counted - store.db.Counter(K(Text("item"), U8(1)))
+	old, err := store.items.GetEntry(store.db, K(U64(1)))
+
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	update(func(batch *Batch) error { return store.items.Save(batch, item{ID: 1, Level: 1, Name: "one"}) })
 
-	if want := counted - size; store.items.Stale(store.db) != want {
-		t.Fatalf("stale %d, want %d: item 2 and the old version of item 1", store.items.Stale(store.db), want)
+	if want := size + int64(len(store.items.primaryKey(K(U64(1))))+old.Size); store.items.Stale(store.db) != want {
+		t.Fatalf("stale %d, want %d: item 2 and the old value of item 1", store.items.Stale(store.db), want)
 	}
 
 	before := store.items.Stale(store.db)

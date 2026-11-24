@@ -6,13 +6,14 @@ type Batch struct {
 	reader Reader
 	native WriteBatch
 	// latest is the last write of each key; it refers to the slices given, not copies.
-	latest map[string]write
-	counts map[string]int64 // counter -> change; written by DB.Update
-	groups map[string]int64 // group counter -> change
-	stale  map[string]int64 // collection -> bytes its deletes and rewrites leave in the files
-	staled map[string]int64 // collection -> what it adds to stale, never taken off
-	total  int64            // sum of counts
-	after  []func()
+	latest  map[string]write
+	counts  map[string]int64 // counter -> change; written by DB.Update
+	groups  map[string]int64 // group counter -> change
+	stale   map[string]int64 // collection -> bytes its deletes and rewrites leave in the files
+	staled  map[string]int64 // collection -> what it adds to stale, never taken off
+	tallies map[string]int64 // tally -> change in records (Definition.Tally)
+	total   int64            // sum of counts
+	after   []func()
 }
 
 type write struct {
@@ -22,7 +23,7 @@ type write struct {
 
 // NewBatch starts a batch of engine.
 func NewBatch(engine Engine) *Batch {
-	return &Batch{reader: engine, native: engine.NewWriteBatch(), latest: map[string]write{}, counts: map[string]int64{}, groups: map[string]int64{}, stale: map[string]int64{}, staled: map[string]int64{}}
+	return &Batch{reader: engine, native: engine.NewWriteBatch(), latest: map[string]write{}, counts: map[string]int64{}, groups: map[string]int64{}, stale: map[string]int64{}, staled: map[string]int64{}, tallies: map[string]int64{}}
 }
 
 // Put writes key. The batch keeps key and value without copying them: the
@@ -50,6 +51,14 @@ func (batch *Batch) Count(counter Key, delta int64) {
 func (batch *Batch) Group(counter Key, delta int64) {
 	if delta != 0 {
 		batch.groups[string(counter)] += delta
+	}
+}
+
+// Tally adds delta records to a tally (Definition.Tally) when the batch is
+// written; tallies are no bytes and count toward no total.
+func (batch *Batch) Tally(tally Key, delta int64) {
+	if delta != 0 {
+		batch.tallies[string(tally)] += delta
 	}
 }
 
