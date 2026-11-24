@@ -3,7 +3,7 @@ import { projectPalette } from '#lib/api/catalog.gen.ts';
 import {
 	deleteConfirmation,
 	deleteProject,
-	droppedText,
+	droppedSummary,
 	freeColor,
 	keptFacts,
 	errorsKept,
@@ -169,17 +169,23 @@ describe('errorsKept', () => {
 });
 
 describe('what a project dropped', () => {
-	it('counts each kind with its reason, largest first as the server sends them', () => {
+	it('sums each kind over its reasons', () => {
 		expect(
-			droppedText([
+			droppedSummary([
 				{ kind: 'logs', count: 50000, reason: 'rate_limit', reason_text: 'rate limit' },
+				{
+					kind: 'logs',
+					count: 22100,
+					reason: 'sdk_rate_limit',
+					reason_text: 'held back by the SDK during a rate limit'
+				},
 				{ kind: 'envelopes', count: 1, reason: 'too_large', reason_text: 'too large' }
 			])
-		).toBe('Dropped in 24 h: 50,000 logs (rate limit), 1 envelope (too large)');
+		).toBe('Dropped in 24 h: 72,100 logs, 1 envelope');
 	});
 
 	it('says nothing when nothing was dropped', () => {
-		expect(droppedText([])).toBeUndefined();
-		expect(droppedText(null)).toBeUndefined();
+		expect(droppedSummary([])).toBeUndefined();
+		expect(droppedSummary(null)).toBeUndefined();
 	});
 });

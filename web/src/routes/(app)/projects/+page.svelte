@@ -6,6 +6,7 @@
 	import Badge from '#lib/components/Badge.svelte';
 	import Button from '#lib/components/Button.svelte';
 	import Card from '#lib/components/Card.svelte';
+	import Dialog from '#lib/components/Dialog.svelte';
 	import FormDialog from '#lib/components/FormDialog.svelte';
 	import Hint from '#lib/components/Hint.svelte';
 	import LevelSummary from '#lib/components/LevelSummary.svelte';
@@ -20,7 +21,7 @@
 	import {
 		deleteConfirmation,
 		deleteProject,
-		droppedText,
+		droppedSummary,
 		fromEnvDeleteReason,
 		errorsKept,
 		usageSegments
@@ -62,6 +63,19 @@
 
 	// Rename and recolor in one dialog; the server checks both (a refused value stays in the
 	// dialog with its problem).
+	type DroppedRow = { kind: string; count: number; reason: string; reason_text: string };
+	type DroppedColumn = TableColumn<'what' | 'why' | 'count'>;
+
+	// The project whose dropped data the dialog shows.
+	let droppedOf: { name: string; rows: DroppedRow[] } | undefined = $state();
+	let droppedOpen = $state(false);
+
+	const droppedColumns: DroppedColumn[] = [
+		{ key: 'what', label: 'What' },
+		{ key: 'why', label: 'Why' },
+		{ key: 'count', label: 'Count', number: true }
+	];
+
 	let editing: Project | undefined = $state();
 	let editOpen = $state(false);
 	let newName = $state('');
@@ -206,7 +220,7 @@
 <Table {columns} rows={data.projects} rowKey={(project: Project) => project.id} label="Projects">
 	{#snippet cell(project: Project, column: ProjectColumn)}
 		{@const part = usage.get(project.id)}
-		{@const dropped = droppedText(part?.dropped)}
+		{@const dropped = droppedSummary(part?.dropped)}
 		{#if column.key === 'project'}
 			<!-- Admins open its settings; the others, who cannot, its issues. -->
 			<Badge
@@ -221,9 +235,17 @@
 				#{project.id}{project.from_env ? ' · from PROJECTS' : ''}
 			</div>
 			{#if dropped}
-				<div class="flex items-center gap-1 text-xs text-warning">
-					{dropped}
-					<Hint text={help.fields.Projects.Dropped} />
+				<div class="text-xs">
+					<Button
+						variant="link"
+						popup="dialog"
+						onclick={() => {
+							droppedOf = { name: project.name, rows: part?.dropped ?? [] };
+							droppedOpen = true;
+						}}
+					>
+						{dropped}
+					</Button>
 				</div>
 			{/if}
 		{:else if column.key === 'unresolved'}
@@ -257,3 +279,24 @@
 	<ProjectNameField bind:value={newName} error={editForm.fields.name} />
 	<ColorField bind:value={newColor} name={newName.trim()} error={editForm.fields.color} />
 </FormDialog>
+
+<Dialog title="Dropped by {droppedOf?.name ?? ''} in the last 24 hours" bind:open={droppedOpen}>
+	<p class="mb-3 text-sm text-muted">{help.fields.Projects.Dropped}</p>
+	<Table
+		columns={droppedColumns}
+		rows={droppedOf?.rows ?? []}
+		rowKey={(row: DroppedRow) => `${row.kind}/${row.reason}`}
+		label="Dropped data"
+		compact
+	>
+		{#snippet cell(row: DroppedRow, column: DroppedColumn)}
+			{#if column.key === 'what'}
+				{row.kind}
+			{:else if column.key === 'why'}
+				{row.reason_text}
+			{:else}
+				{row.count.toLocaleString('en-US')}
+			{/if}
+		{/snippet}
+	</Table>
+</Dialog>

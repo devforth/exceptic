@@ -136,17 +136,20 @@ export function usageSegments(
 
 type Dropped = NonNullable<NonNullable<Out<'get_storage'>['projects']>[number]['dropped']>;
 
-/** What a project dropped in the last day: "Dropped in 24 h: 50,000 logs (rate limit)". */
-export function droppedText(dropped: Dropped | null | undefined): string | undefined {
+/** A count of a kind, "50,000 logs" or "1 envelope". */
+export function countOf(count: number, kind: string): string {
+	return `${count.toLocaleString('en-US')} ${count === 1 ? kind.replace(/s$/, '') : kind}`;
+}
+
+/** What a project dropped in the last day, each kind in all: "Dropped in 24 h: 220,400 logs, 2,404 events". */
+export function droppedSummary(dropped: Dropped | null | undefined): string | undefined {
 	if (!dropped?.length) return undefined;
 
-	const counts = dropped.map(({ kind, count, reason_text }) => {
-		const unit = count === 1 ? kind.replace(/s$/, '') : kind;
+	const totals = new Map<string, number>();
 
-		return `${count.toLocaleString('en-US')} ${unit} (${reason_text})`;
-	});
+	for (const { kind, count } of dropped) totals.set(kind, (totals.get(kind) ?? 0) + count);
 
-	return `Dropped in 24 h: ${counts.join(', ')}`;
+	return `Dropped in 24 h: ${[...totals].map(([kind, count]) => countOf(count, kind)).join(', ')}`;
 }
 
 /** The name of a palette color, or undefined for any other color. */
