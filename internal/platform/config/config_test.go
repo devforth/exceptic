@@ -21,7 +21,7 @@ func TestLoadDefaults(t *testing.T) {
 
 	if config.Port != DefaultPort || config.DataDir != DefaultDataDir || config.LogLevel != DefaultLogLevel || config.Projects != nil || config.APIToken != "" || config.AllowedIPs != nil ||
 		len(config.AllowedOrigins) != 1 || config.AllowedOrigins[0] != DefaultAllowedOrigins || config.RateLimitEventsPerMinute != 10000 || config.RateLimitLogsPerMinute != 10000 ||
-		config.AdminUsername != DefaultAdminUsername || config.AdminPassword != "" || config.SessionLifetime != 24*time.Hour {
+		config.AdminEmail != DefaultAdminEmail || config.AdminPassword != "" || config.SessionLifetime != 24*time.Hour {
 		t.Fatalf("unexpected defaults: %+v", config)
 	}
 }
@@ -39,7 +39,7 @@ func TestLoadValues(t *testing.T) {
 		"API_TOKEN":             "0123456789abcdef0123456789abcdef",
 		"ALLOWED_IPS":           "10.0.0.0/8, 203.0.113.7,::1",
 		"TRUSTED_PROXIES":       "172.17.0.1",
-		"ADMIN_USERNAME":        " root ", // logins are trimmed, so the stored name is too
+		"ADMIN_EMAIL":           " root ", // logins are trimmed, so the stored one is too
 		"ADMIN_PASSWORD":        "root-password",
 		"SESSION_LIFETIME":      "12h",
 		// IDs are explicit, so they don't have to follow list order or be contiguous.
@@ -66,8 +66,8 @@ func TestLoadValues(t *testing.T) {
 		t.Fatalf("api token = %q", config.APIToken)
 	}
 
-	if config.AdminUsername != "root" || config.AdminPassword != "root-password" {
-		t.Fatalf("admin = %q / %q", config.AdminUsername, config.AdminPassword)
+	if config.AdminEmail != "root" || config.AdminPassword != "root-password" {
+		t.Fatalf("admin = %q / %q", config.AdminEmail, config.AdminPassword)
 	}
 
 	if fmt.Sprint(config.AllowedIPs) != "[10.0.0.0/8 203.0.113.7/32 ::1/128]" || fmt.Sprint(config.TrustedProxies) != "[172.17.0.1/32]" {
@@ -116,8 +116,9 @@ func TestLoadErrors(t *testing.T) {
 		{"short api token", "API_TOKEN", "secret", "at least"},
 		{"short admin password", "ADMIN_PASSWORD", "short-pass", "12 to 256"},
 		{"long admin password", "ADMIN_PASSWORD", strings.Repeat("p", MaxPasswordLength+1), "12 to 256"},
-		{"admin username with a space", "ADMIN_USERNAME", "john doe", "ADMIN_USERNAME"},
-		{"long admin username", "ADMIN_USERNAME", strings.Repeat("a", MaxUsername+1), "ADMIN_USERNAME"},
+		{"admin email with a space", "ADMIN_EMAIL", "john doe", "ADMIN_EMAIL"},
+		{"long admin email", "ADMIN_EMAIL", strings.Repeat("a", MaxEmail+1), "ADMIN_EMAIL"},
+		{"former admin variable with a space", "ADMIN_USERNAME", "john doe", "ADMIN_USERNAME"},
 		{"bad session lifetime", "SESSION_LIFETIME", "forever", "SESSION_LIFETIME"},
 		{"zero session lifetime", "SESSION_LIFETIME", "0", "SESSION_LIFETIME"},
 		{"session lifetime past the largest duration", "SESSION_LIFETIME", "213504d", "SESSION_LIFETIME"},
@@ -182,5 +183,30 @@ func TestMappedNetworks(t *testing.T) {
 
 	if got := fmt.Sprint(networks); got != "[10.0.0.0/8 203.0.113.7/32 198.51.100.9/32]" {
 		t.Errorf("got %s", got)
+	}
+}
+
+// ADMIN_EMAIL takes an email; ADMIN_USERNAME, its former name, is read while it is not set.
+func TestAdminEmail(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{"email", map[string]string{"ADMIN_EMAIL": "ops+exceptic@example.com"}, "ops+exceptic@example.com"},
+		{"former name", map[string]string{"ADMIN_USERNAME": "root"}, "root"},
+		{"both", map[string]string{"ADMIN_USERNAME": "root", "ADMIN_EMAIL": "admin@example.com"}, "admin@example.com"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			config, err := loadFrom(func(name string) string { return test.env[name] })
+
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if config.AdminEmail != test.want {
+				t.Fatalf("AdminEmail = %q, want %q", config.AdminEmail, test.want)
+			}
+		})
 	}
 }

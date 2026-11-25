@@ -28,7 +28,7 @@ The id is part of the DSN (`https://<public_key>@errors.example.com/<id>`) and o
 
 | Variable | Default | |
 |---|---|---|
-| `ADMIN_USERNAME` | `admin` | The superadmin, created at the first start only: up to 64 letters, digits and `. _ @ -`. |
+| `ADMIN_EMAIL` | `admin` | The superadmin's login, created at the first start only: an email, or up to 254 letters, digits and `. _ @ -` (changed later on the Account page, then to an email only). `ADMIN_USERNAME`, its former name, is read while it is not set, with a warning. |
 | `ADMIN_PASSWORD` | | 12 to 256 characters. Needed for the first start; later changes are ignored (change the password in the UI, or see [forgotten password](deployment.md#forgotten-password)). Until it is set, nobody can log in. |
 | `SESSION_LIFETIME` | `1d` | How long a login to the UI lasts (`12h`, `7d`); not extended by use. |
 | `API_TOKEN` | | Token of the [REST API](api.md), at least 32 characters (`openssl rand -hex 32`). Without it the REST API is closed. MCP does not use it. |

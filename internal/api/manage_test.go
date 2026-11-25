@@ -21,7 +21,7 @@ func (server *testServer) as(role string) (*testServer, string) {
 	server.t.Helper()
 
 	ctx := context.Background()
-	id, err := server.database.CreateUser(ctx, store.User{Username: role + "-user", Role: role, CreatedAt: time.Now()}, "x")
+	id, err := server.database.CreateUser(ctx, store.User{Email: role + "-user", Role: role, CreatedAt: time.Now()}, "x")
 
 	if err != nil {
 		server.t.Fatal(err)
@@ -91,7 +91,7 @@ func TestToolsFollowTheRole(t *testing.T) {
 	}
 
 	// Calling an admin tool anyway does not run it.
-	if result, err := user.connect().CallTool(context.Background(), &mcp.CallToolParams{Name: "create_user", Arguments: map[string]any{"username": "x", "role": "admin"}}); err == nil && !result.IsError {
+	if result, err := user.connect().CallTool(context.Background(), &mcp.CallToolParams{Name: "create_user", Arguments: map[string]any{"email": "x@example.com", "role": "admin"}}); err == nil && !result.IsError {
 		t.Fatal("a user's agent created a user")
 	}
 
@@ -212,7 +212,7 @@ func TestManageProjects(t *testing.T) {
 
 type userOutput struct {
 	ID                 string `json:"id"`
-	Username           string `json:"username"`
+	Email              string `json:"email"`
 	Name               string `json:"name"`
 	Role               string `json:"role"`
 	MustChangePassword bool   `json:"must_change_password"`
@@ -224,7 +224,7 @@ func TestManageUsers(t *testing.T) {
 	var me userOutput
 	server.decode("get_account", nil, &me)
 
-	if me.Username != "admin" || me.Role != store.RoleSuperadmin {
+	if me.Email != "admin" || me.Role != store.RoleSuperadmin {
 		t.Fatalf("account = %+v", me)
 	}
 
@@ -232,7 +232,7 @@ func TestManageUsers(t *testing.T) {
 		User              userOutput `json:"user"`
 		TemporaryPassword string     `json:"temporary_password"`
 	}
-	server.decode("create_user", map[string]any{"username": "dev", "name": "Developer", "role": "user"}, &created)
+	server.decode("create_user", map[string]any{"email": "dev@example.com", "name": "Developer", "role": "user"}, &created)
 
 	if created.TemporaryPassword == "" || !created.User.MustChangePassword || created.User.Role != store.RoleUser {
 		t.Fatalf("created = %+v", created)
@@ -241,8 +241,25 @@ func TestManageUsers(t *testing.T) {
 	var updated userOutput
 	server.decode("update_user", map[string]any{"user_id": created.User.ID, "role": "admin"}, &updated)
 
-	if updated.Role != store.RoleAdmin || updated.Name != "Developer" {
+	if updated.Role != store.RoleAdmin || updated.Name != "Developer" || updated.Email != "dev@example.com" {
 		t.Fatalf("updated = %+v", updated)
+	}
+
+	server.decode("update_user", map[string]any{"user_id": created.User.ID, "email": "developer@example.com"}, &updated)
+
+	if updated.Email != "developer@example.com" || updated.Role != store.RoleAdmin {
+		t.Fatalf("after the email change = %+v", updated)
+	}
+
+	if text, isError := server.try("update_user", map[string]any{"user_id": created.User.ID, "email": "developer"}); !isError || !strings.HasPrefix(text, "invalid: email") {
+		t.Fatalf("a login that is no email: %s", text)
+	}
+
+	var other struct{}
+	server.decode("create_user", map[string]any{"email": "ops@example.com", "role": "user"}, &other)
+
+	if text, isError := server.try("update_user", map[string]any{"user_id": created.User.ID, "email": "OPS@example.com"}); !isError || !strings.HasPrefix(text, "conflict: email") {
+		t.Fatalf("a taken login: %s", text)
 	}
 
 	// Nobody changes the superadmin or themselves here.
@@ -250,7 +267,7 @@ func TestManageUsers(t *testing.T) {
 		t.Fatalf("update self: %s", text)
 	}
 
-	if text, isError := server.try("create_user", map[string]any{"username": "boss", "role": "superadmin"}); !isError {
+	if text, isError := server.try("create_user", map[string]any{"email": "boss@example.com", "role": "superadmin"}); !isError {
 		t.Fatalf("second superadmin: %s", text)
 	}
 
@@ -265,7 +282,7 @@ func TestManageUsers(t *testing.T) {
 
 	server.call("delete_user", map[string]any{"user_id": created.User.ID})
 
-	if text := server.call("list_users", nil); strings.Contains(text, `"dev"`) {
+	if text := server.call("list_users", nil); strings.Contains(text, "developer@example.com") {
 		t.Fatalf("deleted user listed: %s", text)
 	}
 

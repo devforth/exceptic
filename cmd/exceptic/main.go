@@ -32,7 +32,7 @@ const usage = `usage: exceptic [command]
 
 Without a command it runs the server. Commands:
   healthcheck               exit 0 when the server answers /health (Docker HEALTHCHECK)
-  reset-password [username] print a temporary password (the superadmin by default); the server must be stopped
+  reset-password [email]    print a temporary password (the superadmin by default); the server must be stopped
   backup [dir]              copy the database (default DATA_DIR/backups/<time>)
   version                   print the version`
 
@@ -112,6 +112,10 @@ func run() error {
 
 	if len(settings.AllowedIPs) == 0 {
 		logger.Warn("ALLOWED_IPS is not set, the API and UI are reachable from any address")
+	}
+
+	if os.Getenv("ADMIN_USERNAME") != "" {
+		logger.Warn("ADMIN_USERNAME is renamed: set ADMIN_EMAIL (read instead while ADMIN_EMAIL is not set)")
 	}
 
 	if os.Getenv("RATE_LIMIT_PER_MINUTE") != "" {
@@ -267,12 +271,12 @@ func healthcheck() int {
 	return 0
 }
 
-// resetPassword gives a user (the superadmin when no username is given) a
+// resetPassword gives a user (the superadmin when no email is given) a
 // temporary password and prints it: they choose their own at the next
 // login. Their sessions end; connected agents keep working.
 func resetPassword(args []string) error {
 	if len(args) > 1 {
-		return errors.New("usage: exceptic reset-password [username]")
+		return errors.New("usage: exceptic reset-password [email]")
 	}
 
 	settings, err := config.Load()
@@ -301,10 +305,10 @@ func resetPassword(args []string) error {
 
 	defer func() { _ = db.Close() }()
 
-	username := ""
+	email := ""
 
 	if len(args) == 1 {
-		username = args[0]
+		email = args[0]
 	} else {
 		superadmin, err := db.Superadmin(ctx)
 
@@ -312,21 +316,21 @@ func resetPassword(args []string) error {
 			return fmt.Errorf("no superadmin yet: set ADMIN_PASSWORD and start the server: %w", err)
 		}
 
-		username = superadmin.Username
+		email = superadmin.Email
 	}
 
 	users := services.NewUsers(logger, db)
-	password, err := users.SetPasswordByOperator(ctx, username)
+	password, err := users.SetPasswordByOperator(ctx, email)
 
 	if errors.Is(err, store.ErrNotFound) {
-		return fmt.Errorf("no user %q", username)
+		return fmt.Errorf("no user %q", email)
 	}
 
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Temporary password of %s: %s\nLog in with it and choose a new password.\n", username, password)
+	fmt.Printf("Temporary password of %s: %s\nLog in with it and choose a new password.\n", email, password)
 
 	return nil
 }

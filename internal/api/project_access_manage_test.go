@@ -216,21 +216,21 @@ func TestProjectAccessUsers(t *testing.T) {
 		} `json:"user"`
 	}
 
-	admin.request(http.MethodPost, "create_user", `{"username":"limited-new","role":"user"}`, &created)
+	admin.request(http.MethodPost, "create_user", `{"email":"limited-new@example.com","role":"user"}`, &created)
 
 	if access := server.storedAccess(created.User.ID); !sameAccess(access, store.OnlyProjects(1)) {
 		t.Errorf("a user created by the backend admin: %+v", access)
 	}
 
-	if code := admin.call(http.MethodPost, "create_user", `{"username":"limited-all","role":"user","all_projects":true}`).Code; code != http.StatusForbidden {
+	if code := admin.call(http.MethodPost, "create_user", `{"email":"limited-all@example.com","role":"user","all_projects":true}`).Code; code != http.StatusForbidden {
 		t.Errorf("the backend admin giving every project: %d", code)
 	}
 
 	hiddenOrMissing(t, "create_user with a hidden project",
-		admin.answer(http.MethodPost, "create_user", `{"username":"limited-hidden","role":"user","projects":["2"]}`),
-		admin.answer(http.MethodPost, "create_user", `{"username":"limited-hidden","role":"user","projects":["999"]}`), http.StatusBadRequest)
+		admin.answer(http.MethodPost, "create_user", `{"email":"limited-hidden@example.com","role":"user","projects":["2"]}`),
+		admin.answer(http.MethodPost, "create_user", `{"email":"limited-hidden@example.com","role":"user","projects":["999"]}`), http.StatusBadRequest)
 
-	fullAdmin.request(http.MethodPost, "create_user", `{"username":"full-new","role":"user"}`, &created)
+	fullAdmin.request(http.MethodPost, "create_user", `{"email":"full-new@example.com","role":"user"}`, &created)
 
 	if access := server.storedAccess(created.User.ID); !access.All() {
 		t.Errorf("a user created by an admin with every project: %+v", access)
@@ -425,7 +425,7 @@ func TestProjectAccessManageMCP(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	id, err := server.database.CreateUser(ctx, store.User{Username: "frontend-dev", Role: store.RoleUser, Access: store.OnlyProjects(2), CreatedAt: time.Now()}, "x")
+	id, err := server.database.CreateUser(ctx, store.User{Email: "frontend-dev", Role: store.RoleUser, Access: store.OnlyProjects(2), CreatedAt: time.Now()}, "x")
 
 	if err != nil {
 		t.Fatal(err)
@@ -443,8 +443,8 @@ func TestProjectAccessManageMCP(t *testing.T) {
 		t.Error("update_user with a hidden project was accepted")
 	}
 
-	hidden, _ := admin.try("create_user", map[string]any{"username": "agent-new", "role": "user", "projects": []string{"frontend"}})
-	missing, _ := admin.try("create_user", map[string]any{"username": "agent-new", "role": "user", "projects": []string{"nosuch"}})
+	hidden, _ := admin.try("create_user", map[string]any{"email": "agent-new@example.com", "role": "user", "projects": []string{"frontend"}})
+	missing, _ := admin.try("create_user", map[string]any{"email": "agent-new@example.com", "role": "user", "projects": []string{"nosuch"}})
 
 	if !strings.HasPrefix(hidden, "forbidden: ") || !strings.Contains(hidden, "not in your projects") || !strings.HasPrefix(missing, "invalid: ") || !strings.Contains(missing, `unknown project "nosuch"`) {
 		t.Errorf("MCP create_user with a hidden project: %q, with a missing one: %q", hidden, missing)
@@ -456,7 +456,7 @@ func TestProjectAccessManageMCP(t *testing.T) {
 		} `json:"user"`
 	}
 
-	admin.decode("create_user", map[string]any{"username": "agent-new", "role": "user"}, &created)
+	admin.decode("create_user", map[string]any{"email": "agent-new@example.com", "role": "user"}, &created)
 
 	if user, err := server.database.GetUser(ctx, created.User.ID); err != nil || !sameAccess(user.Access, store.OnlyProjects(1, project.ID)) {
 		t.Errorf("a user created by the agent: %+v %v", user.Access, err)
@@ -530,8 +530,9 @@ func TestProjectAccessTakeOver(t *testing.T) {
 		}
 
 		for field, body := range map[string]string{
-			"role": fmt.Sprintf(`{"user_id":%q,"role":%q}`, target.id, store.RoleAdmin),
-			"name": fmt.Sprintf(`{"user_id":%q,"name":"Renamed"}`, target.id),
+			"role":  fmt.Sprintf(`{"user_id":%q,"role":%q}`, target.id, store.RoleAdmin),
+			"name":  fmt.Sprintf(`{"user_id":%q,"name":"Renamed"}`, target.id),
+			"email": fmt.Sprintf(`{"user_id":%q,"email":"renamed@example.com"}`, target.id),
 		} {
 			response := admin.call(http.MethodPost, "update_user", body)
 
@@ -542,7 +543,7 @@ func TestProjectAccessTakeOver(t *testing.T) {
 
 		user, err := server.database.GetUser(context.Background(), target.id)
 
-		if err != nil || user.Role != before.Role || user.Name != before.Name {
+		if err != nil || user.Role != before.Role || user.Name != before.Name || user.Email != before.Email {
 			t.Errorf("%s after the refusals: %+v %v", name, user, err)
 		}
 
@@ -551,10 +552,16 @@ func TestProjectAccessTakeOver(t *testing.T) {
 		}
 	}
 
-	// The part of the access he sees still changes, name and role sent back as they are.
+	// The part of the access he sees still changes, email, name and role sent
+	// back as they are (the email a login from before emails, in another case).
 	both := targets["both"]
+	stored, err := server.database.GetUser(context.Background(), both.id)
 
-	if code := admin.call(http.MethodPost, "update_user", fmt.Sprintf(`{"user_id":%q,"name":"Web user","role":"user","projects":[]}`, both.id)).Code; code != http.StatusOK {
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if code := admin.call(http.MethodPost, "update_user", fmt.Sprintf(`{"user_id":%q,"email":%q,"name":"Web user","role":"user","projects":[]}`, both.id, strings.ToUpper(stored.Email))).Code; code != http.StatusOK {
 		t.Errorf("taking backend from a user with both: %d", code)
 	}
 
@@ -568,8 +575,12 @@ func TestProjectAccessTakeOver(t *testing.T) {
 
 	covered := targets["backend, for a role"]
 
-	if code := admin.call(http.MethodPost, "update_user", fmt.Sprintf(`{"user_id":%q,"role":"user","name":"Renamed"}`, covered.id)).Code; code != http.StatusOK {
+	if code := admin.call(http.MethodPost, "update_user", fmt.Sprintf(`{"user_id":%q,"role":"user","name":"Renamed","email":"renamed@example.com"}`, covered.id)).Code; code != http.StatusOK {
 		t.Errorf("renaming a backend user: %d", code)
+	}
+
+	if user, err := server.database.GetUser(context.Background(), covered.id); err != nil || user.Email != "renamed@example.com" || user.Name != "Renamed" {
+		t.Errorf("a backend user after the change: %+v %v", user, err)
 	}
 
 	if code := admin.call(http.MethodPost, "delete_user", fmt.Sprintf(`{"user_id":%q}`, backend.id)).Code; code != http.StatusOK {

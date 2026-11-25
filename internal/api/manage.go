@@ -22,7 +22,7 @@ func (handler *handlers) management() []Endpoint {
 	return append([]Endpoint{
 		Define(Endpoint{
 			Name:        "get_account",
-			Description: "Who the agent acts for: username, name, role (superadmin, admin or user), which decides the tools offered, and the projects they see.",
+			Description: "Who the agent acts for: email, name, role (superadmin, admin or user), which decides the tools offered, and the projects they see.",
 			ReadOnly:    true, Transports: TransportMCP,
 		}, handler.getAccount),
 		Define(Endpoint{
@@ -93,7 +93,7 @@ func (handler *handlers) management() []Endpoint {
 		}, handler.createUser),
 		Define(Endpoint{
 			Name:        "update_user",
-			Description: "Change another user's name, role (admin or user) or projects; fields not given keep their values. projects replaces only the user's projects you see; the others stay. Name and role change only when you have all the user's projects (can_take_over). Not the superadmin, not yourself (update_account_name).",
+			Description: "Change another user's email, name, role (admin or user) or projects; fields not given keep their values. projects replaces only the user's projects you see; the others stay. Email, name and role change only when you have all the user's projects (can_take_over). Not the superadmin, not yourself (update_account_name).",
 			Idempotent:  true, Admin: true, Transports: ActsAsUser, Confirm: true,
 			Choices: map[string][]string{"role": store.AssignableRoles},
 		}, handler.updateUser),
@@ -114,10 +114,10 @@ func (handler *handlers) management() []Endpoint {
 
 type userOutput struct {
 	userAccess
-	ID       string `json:"id"`
-	Username string `json:"username"`
-	Name     string `json:"name,omitempty"`
-	// DisplayName is the name, or the username without one.
+	ID    string `json:"id"`
+	Email string `json:"email"`
+	Name  string `json:"name,omitempty"`
+	// DisplayName is the name, or the email without one.
 	DisplayName        string     `json:"display_name"`
 	Role               string     `json:"role"`
 	MustChangePassword bool       `json:"must_change_password,omitempty"`
@@ -145,7 +145,7 @@ func (handler *handlers) userView(viewer, user store.User) userOutput {
 
 	return userOutput{
 		userAccess: access,
-		ID:         user.ID, Username: user.Username, Name: user.Name, DisplayName: user.DisplayName(), Role: user.Role,
+		ID:         user.ID, Email: user.Email, Name: user.Name, DisplayName: user.DisplayName(), Role: user.Role,
 		MustChangePassword: user.MustChangePassword, CreatedAt: user.CreatedAt, LastLoginAt: user.LastLoginAt,
 	}
 }
@@ -185,7 +185,7 @@ func (handler *handlers) getAccount(_ context.Context, call Call, _ noInput) (us
 }
 
 type accountNameInput struct {
-	Name string `json:"name" jsonschema:"The new display name; empty shows the username."`
+	Name string `json:"name" jsonschema:"The new display name; empty shows the email."`
 }
 
 func (handler *handlers) updateAccountName(ctx context.Context, call Call, input accountNameInput) (userOutput, error) {
@@ -250,7 +250,7 @@ func (handler *handlers) listAgents(ctx context.Context, call Call, input listAg
 		return agentsOutput{}, err
 	}
 
-	output := agentsOutput{User: page.Owner.Username, UserID: page.Owner.ID, Agents: []agentOutput{}}
+	output := agentsOutput{User: page.Owner.Email, UserID: page.Owner.ID, Agents: []agentOutput{}}
 
 	if len(page.Owners) > 1 {
 		for _, owner := range page.Owners {
@@ -407,7 +407,7 @@ func (handler *handlers) getProject(ctx context.Context, call Call, input projec
 type projectFields struct {
 	Color     *string   `json:"color,omitempty" jsonschema:"#rrggbb, or empty for the palette color."`
 	LogLevels *[]string `json:"log_levels,omitempty" jsonschema:"Log levels to store; an empty list stores none. Events of every level are stored."`
-	DiskShare *int      `json:"disk_share,omitempty" jsonschema:"Percent of MAX_DATABASE_SIZE the project may hold, in steps of 5; above it the cleanup deletes its own data first. 100: no limit of its own. Only someone with every project changes it."`
+	DiskShare *int      `json:"disk_share,omitempty" jsonschema:"Percent of MAX_DATABASE_SIZE the project may hold, in steps of 5; above it the cleanup deletes its own data first. 100: no limit of its own."`
 }
 
 var projectChoices = map[string][]string{"log_levels": config.LogLevels}
@@ -521,9 +521,9 @@ func (handler *handlers) getUser(ctx context.Context, call Call, input userInput
 }
 
 type createUserInput struct {
-	Username string `json:"username" jsonschema:"Login name: letters, digits and . _ @ -."`
-	Name     string `json:"name,omitempty" jsonschema:"Display name."`
-	Role     string `json:"role" jsonschema:"The role."`
+	Email string `json:"email" jsonschema:"Email address, the login."`
+	Name  string `json:"name,omitempty" jsonschema:"Display name."`
+	Role  string `json:"role" jsonschema:"The role."`
 	accessFields
 }
 
@@ -575,7 +575,7 @@ func (handler *handlers) createUser(ctx context.Context, call Call, input create
 		return passwordOutput{}, err
 	}
 
-	id, password, problems, err := handler.services.Users.Create(ctx, call.Viewer, services.UserInput{Username: input.Username, Name: input.Name, Role: input.Role, Access: access})
+	id, password, problems, err := handler.services.Users.Create(ctx, call.Viewer, services.UserInput{Email: input.Email, Name: input.Name, Role: input.Role, Access: access})
 
 	if err != nil {
 		return passwordOutput{}, err
@@ -600,6 +600,7 @@ type userInput struct {
 
 type updateUserInput struct {
 	UserID string  `json:"user_id" jsonschema:"id from list_users."`
+	Email  *string `json:"email,omitempty" jsonschema:"Email address, the login."`
 	Name   *string `json:"name,omitempty" jsonschema:"Display name."`
 	Role   *string `json:"role,omitempty" jsonschema:"The role."`
 	accessFields
@@ -618,7 +619,11 @@ func (handler *handlers) updateUser(ctx context.Context, call Call, input update
 		return userOutput{}, err
 	}
 
-	change := services.UserInput{Username: user.Username, Name: user.Name, Role: user.Role, Access: access}
+	change := services.UserInput{Email: user.Email, Name: user.Name, Role: user.Role, Access: access}
+
+	if input.Email != nil {
+		change.Email = *input.Email
+	}
 
 	if input.Name != nil {
 		change.Name = *input.Name

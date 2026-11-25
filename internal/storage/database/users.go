@@ -45,7 +45,7 @@ func (database *Store) user(reader kv.Reader, id string) (userRecord, error) {
 	return user, notFound(err)
 }
 
-// CreateUser stores a new user; ErrUsernameTaken when the username is taken in any case.
+// CreateUser stores a new user; ErrEmailTaken when the email is taken in any case.
 func (database *Store) CreateUser(_ context.Context, user store.User, passwordHash string) (string, error) {
 	err := database.db.Update(true, func(batch *kv.Batch) error {
 		var err error
@@ -61,11 +61,7 @@ func (database *Store) CreateUser(_ context.Context, user store.User, passwordHa
 		return database.users.Insert(batch, userRecord{User: user, PasswordHash: passwordHash})
 	})
 
-	if conflict := (kv.ErrConflict{}); errors.As(err, &conflict) && conflict.Index == "name" {
-		return "", store.ErrUsernameTaken
-	}
-
-	return user.ID, err
+	return user.ID, emailTaken(err)
 }
 
 func (database *Store) GetUser(_ context.Context, id string) (store.User, error) {
@@ -74,16 +70,16 @@ func (database *Store) GetUser(_ context.Context, id string) (store.User, error)
 	return user.User, err
 }
 
-// FindUser finds a user by username, in any case.
-func (database *Store) FindUser(_ context.Context, username string) (store.User, error) {
-	user, err := database.users.GetBy(database.db, "name", usernameKey(username))
+// FindUser finds a user by email, in any case.
+func (database *Store) FindUser(_ context.Context, email string) (store.User, error) {
+	user, err := database.users.GetBy(database.db, "name", emailKey(email))
 
 	return user.User, notFound(err)
 }
 
-// FindLogin finds a user by username with their password hash, for a login.
-func (database *Store) FindLogin(_ context.Context, username string) (store.User, string, error) {
-	user, err := database.users.GetBy(database.db, "name", usernameKey(username))
+// FindLogin finds a user by email with their password hash, for a login.
+func (database *Store) FindLogin(_ context.Context, email string) (store.User, string, error) {
+	user, err := database.users.GetBy(database.db, "name", emailKey(email))
 
 	return user.User, user.PasswordHash, notFound(err)
 }
@@ -102,7 +98,7 @@ func (database *Store) Superadmin(context.Context) (store.User, error) {
 	return user.User, notFound(err)
 }
 
-// ListUsers lists the users by role (superadmin first), then username.
+// ListUsers lists the users by role (superadmin first), then email.
 func (database *Store) ListUsers(context.Context) ([]store.User, error) {
 	records, err := database.users.Primary().All(database.db)
 
@@ -120,7 +116,7 @@ func (database *Store) ListUsers(context.Context) ([]store.User, error) {
 	}
 
 	slices.SortFunc(users, func(first, second store.User) int {
-		return cmp.Or(cmp.Compare(rankOf(first), rankOf(second)), strings.Compare(strings.ToLower(first.Username), strings.ToLower(second.Username)))
+		return cmp.Or(cmp.Compare(rankOf(first), rankOf(second)), strings.Compare(strings.ToLower(first.Email), strings.ToLower(second.Email)))
 	})
 
 	return users, nil
@@ -143,15 +139,24 @@ func (database *Store) changeUser(id string, change func(batch *kv.Batch, user *
 	})
 }
 
-// UpdateUser changes a user's name and role, and their access when given,
-// merged with the stored one (store.Access.Replace).
+// emailTaken is ErrEmailTaken for a conflict of the email index.
+func emailTaken(err error) error {
+	if conflict := (kv.ErrConflict{}); errors.As(err, &conflict) && conflict.Index == "name" {
+		return store.ErrEmailTaken
+	}
+
+	return err
+}
+
+// UpdateUser changes a user's email, name and role, and their access when
+// given, merged with the stored one (store.Access.Replace).
 func (database *Store) UpdateUser(_ context.Context, id string, change store.UserChange) error {
-	return database.changeUser(id, func(_ *kv.Batch, user *userRecord) error {
-		if (user.Role != change.Role || user.DisplayName() != change.Name) && !user.CoveredBy(change.By) {
+	return emailTaken(database.changeUser(id, func(_ *kv.Batch, user *userRecord) error {
+		if (user.Role != change.Role || user.DisplayName() != change.Name || user.Email != change.Email) && !user.CoveredBy(change.By) {
 			return store.ErrTakeOverLocked
 		}
 
-		user.Name, user.Role = change.Name, change.Role
+		user.Email, user.Name, user.Role = change.Email, change.Name, change.Role
 
 		if change.Access == nil {
 			return nil
@@ -161,7 +166,7 @@ func (database *Store) UpdateUser(_ context.Context, id string, change store.Use
 		user.Access = access
 
 		return err
-	})
+	}))
 }
 
 // dropProjectFromUsers removes a deleted project from the users who have
@@ -190,6 +195,17 @@ func (database *Store) addProjectToUser(batch *kv.Batch, userID string, projectI
 	user.Access = store.OnlyProjects(append(slices.Clone(user.Access.ProjectIDs), projectID)...)
 
 	return database.users.Save(batch, user)
+}
+
+// UpdateUserEmail changes only the email (the viewer's own, on the account
+// page); a name that was the email follows it.
+func (database *Store) UpdateUserEmail(_ context.Context, id string, email string) error {
+	return emailTaken(database.changeUser(id, func(_ *kv.Batch, user *userRecord) error {
+		user.Name = store.NameAfterEmail(user.Name, user.Email, email)
+		user.Email = email
+
+		return nil
+	}))
 }
 
 // UpdateUserName changes only the name, so a role changed meanwhile stays.

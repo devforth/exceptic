@@ -37,11 +37,11 @@ func newLoginServer(t *testing.T, configure ...func(settings *config.Config)) *r
 	return startLoginServer(t, storetest.Open(t), "admin", adminPassword, configure...)
 }
 
-func startLoginServer(t *testing.T, database *database.Store, username, password string, configure ...func(settings *config.Config)) *restServer {
+func startLoginServer(t *testing.T, database *database.Store, email, password string, configure ...func(settings *config.Config)) *restServer {
 	t.Helper()
 
 	withAdmin := func(settings *config.Config) {
-		settings.AdminUsername, settings.AdminPassword = username, password
+		settings.AdminEmail, settings.AdminPassword = email, password
 		settings.SessionLifetime = config.DefaultSessionLifetime
 	}
 
@@ -116,16 +116,16 @@ func (client *browser) call(method, target string, input any, headers ...string)
 	return response
 }
 
-func (client *browser) login(username, password string, headers ...string) *httptest.ResponseRecorder {
-	return client.call(http.MethodPost, "login", map[string]string{"username": username, "password": password}, headers...)
+func (client *browser) login(email, password string, headers ...string) *httptest.ResponseRecorder {
+	return client.call(http.MethodPost, "login", map[string]string{"email": email, "password": password}, headers...)
 }
 
 // loggedIn logs in and fails unless it worked.
-func (client *browser) loggedIn(username, password string) *browser {
+func (client *browser) loggedIn(email, password string) *browser {
 	client.server.t.Helper()
 
-	if response := client.login(username, password); response.Code != http.StatusOK {
-		client.server.t.Fatalf("login as %s: %d %s", username, response.Code, response.Body)
+	if response := client.login(email, password); response.Code != http.StatusOK {
+		client.server.t.Fatalf("login as %s: %d %s", email, response.Code, response.Body)
 	}
 
 	return client
@@ -139,6 +139,10 @@ func (client *browser) open() bool {
 func (client *browser) changePassword(current, password string, headers ...string) *httptest.ResponseRecorder {
 	return client.call(http.MethodPost, "change_password",
 		map[string]string{"current_password": current, "password": password, "confirm_password": password}, headers...)
+}
+
+func (client *browser) changeEmail(current, email string) *httptest.ResponseRecorder {
+	return client.call(http.MethodPost, "change_email", map[string]string{"current_password": current, "email": email})
 }
 
 // errorOf is the body of a refused request.
@@ -158,11 +162,11 @@ func TestUILogin(t *testing.T) {
 	server := newLoginServer(t)
 	client := server.browser()
 
-	// A wrong password and an unknown username get the same answer.
+	// A wrong password and an unknown email get the same answer.
 	wrong, unknown := client.login("admin", "wrong password!"), client.login("nobody", "wrong password!")
 
 	if wrong.Code != http.StatusUnauthorized || wrong.Body.String() != unknown.Body.String() || unknown.Code != wrong.Code ||
-		errorOf(t, wrong).Error != "Wrong username or password." {
+		errorOf(t, wrong).Error != "Wrong email or password." {
 		t.Fatalf("wrong password: %d %s, unknown user: %d %s", wrong.Code, wrong.Body, unknown.Code, unknown.Body)
 	}
 
@@ -212,7 +216,7 @@ func TestUILogin(t *testing.T) {
 	}
 
 	// The login is the web app's: not a request of the REST API.
-	if response := server.do(http.MethodPost, "/api/v1/login", `{"username":"admin","password":"x"}`); response.Code != http.StatusNotFound {
+	if response := server.do(http.MethodPost, "/api/v1/login", `{"email":"admin","password":"x"}`); response.Code != http.StatusNotFound {
 		t.Errorf("REST login: %d", response.Code)
 	}
 }
@@ -222,21 +226,21 @@ func TestUILogin(t *testing.T) {
 func TestUILoginWithoutPasswordHash(t *testing.T) {
 	database := storetest.Open(t)
 
-	if _, err := database.CreateUser(context.Background(), store.User{Username: "sso", Name: "sso", Role: store.RoleUser, CreatedAt: time.Now()}, ""); err != nil {
+	if _, err := database.CreateUser(context.Background(), store.User{Email: "sso", Name: "sso", Role: store.RoleUser, CreatedAt: time.Now()}, ""); err != nil {
 		t.Fatal(err)
 	}
 
 	server := startLoginServer(t, database, "admin", adminPassword)
 
 	for _, password := range []string{"unknown user", ""} {
-		if response := server.browser().login("sso", password); response.Code != http.StatusUnauthorized || errorOf(t, response).Error != "Wrong username or password." {
+		if response := server.browser().login("sso", password); response.Code != http.StatusUnauthorized || errorOf(t, response).Error != "Wrong email or password." {
 			t.Errorf("password %q: %d %s, want 401", password, response.Code, response.Body)
 		}
 	}
 }
 
 // An insider's own logins and password checks do not clear the guesses
-// their network made at other usernames: one network gets
+// their network made at other emails: one network gets
 // MaxLoginFailures wrong passwords per window, however often it succeeds
 // in between.
 func TestUILoginLimitNotResetByInsider(t *testing.T) {
@@ -276,7 +280,7 @@ func TestUILoginLimitNotResetByInsider(t *testing.T) {
 				return response.Code
 			}
 
-			// Spread over victims, so no username reaches its own limit.
+			// Spread over victims, so no email reaches its own limit.
 			for cycle := range 5 {
 				for index := range session.MaxLoginFailures - 1 {
 					guess(cycle + index)
@@ -305,7 +309,7 @@ func TestUILoginRedirectStaysOnSite(t *testing.T) {
 		"/a b":              "/issues",
 	} {
 		client := server.browser()
-		response := client.call(http.MethodPost, "login", map[string]string{"username": "admin", "password": adminPassword, "next": next})
+		response := client.call(http.MethodPost, "login", map[string]string{"email": "admin", "password": adminPassword, "next": next})
 
 		var output api.LoginOutput
 
@@ -366,8 +370,8 @@ func TestUILoginRateLimit(t *testing.T) {
 
 // Guessing one account's password from many addresses is limited too, but
 // those guesses cannot lock its owner out: a browser that logged in as the
-// username before still may, typos included.
-func TestUILoginRateLimitPerUsername(t *testing.T) {
+// email before still may, typos included.
+func TestUILoginRateLimitPerEmail(t *testing.T) {
 	server := newLoginServer(t, behindProxy)
 	owner := server.browser(from(0)...)
 
@@ -377,7 +381,7 @@ func TestUILoginRateLimitPerUsername(t *testing.T) {
 		t.Fatal("login did not mark the browser")
 	}
 
-	// The guesses use up the limits of the username and of the owner's network (a shared NAT).
+	// The guesses use up the limits of the email and of the owner's network (a shared NAT).
 	for range session.MaxLoginFailures {
 		server.browser(from(0)...).login("Admin", "guess guess guess")
 	}
@@ -395,7 +399,7 @@ func TestUILoginRateLimitPerUsername(t *testing.T) {
 	}
 
 	if response := server.browser(from(51)...).login("dev", "guess guess guess"); response.Code == http.StatusTooManyRequests {
-		t.Fatal("another username is blocked")
+		t.Fatal("another email is blocked")
 	}
 }
 
@@ -501,7 +505,7 @@ func TestUISuperadminFromEnvOnce(t *testing.T) {
 
 	users, err := first.server.app.Services.Users.List(context.Background())
 
-	if err != nil || len(users) != 1 || users[0].Username != "admin" {
+	if err != nil || len(users) != 1 || users[0].Email != "admin" {
 		t.Errorf("a restart created a user: %+v %v", users, err)
 	}
 }
@@ -563,6 +567,70 @@ func TestUIChangePassword(t *testing.T) {
 	}
 }
 
+// The own email, as the login from then on: the current password is checked
+// against the login limit; sessions stay; a name that was the login follows.
+func TestUIChangeEmail(t *testing.T) {
+	server := newLoginServer(t)
+
+	if response := server.browser().changeEmail(adminPassword, "root@example.com"); response.Code != http.StatusUnauthorized {
+		t.Fatalf("without a session: %d", response.Code)
+	}
+
+	client := server.browser().loggedIn("admin", adminPassword)
+	other := server.browser().loggedIn("admin", adminPassword)
+
+	createWebUser(t, client, "ops@example.com", store.RoleUser)
+
+	for label, test := range map[string]struct {
+		current, email, field string
+	}{
+		"wrong current": {"wrong password", "root@example.com", "current_password"},
+		"not an email":  {adminPassword, "root", "email"},
+		"taken":         {adminPassword, "OPS@example.com", "email"},
+	} {
+		response := client.changeEmail(test.current, test.email)
+
+		if body := errorOf(t, response); response.Code != http.StatusBadRequest || body.Fields[test.field] == "" {
+			t.Errorf("%s: %d %s", label, response.Code, response.Body)
+		}
+	}
+
+	// The login from before emails, sent back in another case, changes nothing.
+	if response := client.changeEmail(adminPassword, "ADMIN"); response.Code != http.StatusNoContent {
+		t.Fatalf("unchanged: %d %s", response.Code, response.Body)
+	}
+
+	if response := client.changeEmail(adminPassword, " Root@Example.com "); response.Code != http.StatusNoContent {
+		t.Fatalf("change: %d %s", response.Code, response.Body)
+	}
+
+	if !client.open() || !other.open() {
+		t.Errorf("after the change: this session %v, the other %v", client.open(), other.open())
+	}
+
+	if response := server.browser().login("admin", adminPassword); response.Code != http.StatusUnauthorized {
+		t.Errorf("the old login: %d", response.Code)
+	}
+
+	server.browser().loggedIn("root@example.com", adminPassword)
+
+	var answer sessionAnswer
+
+	if err := json.Unmarshal(client.call(http.MethodGet, "get_session", nil).Body.Bytes(), &answer); err != nil || answer.User.DisplayName != "root@example.com" {
+		t.Errorf("the name that was the login: %+v %v", answer.User, err)
+	}
+
+	// A stolen session must not become a way to guess the password.
+	for range session.MaxLoginFailures {
+		client.changeEmail("guess guess guess", "guess@example.com")
+	}
+
+	if response := client.changeEmail(adminPassword, "another@example.com"); response.Code != http.StatusTooManyRequests ||
+		errorOf(t, response).Fields["current_password"] != session.TooManyAttempts {
+		t.Errorf("after the guesses: %d %s", response.Code, response.Body)
+	}
+}
+
 // A temporary password opens only get_session, change_password and logout;
 // choosing a password opens the rest.
 func TestUITemporaryPassword(t *testing.T) {
@@ -574,11 +642,11 @@ func TestUITemporaryPassword(t *testing.T) {
 		TemporaryPassword string              `json:"temporary_password"`
 	}
 
-	if err := json.Unmarshal(admin.call(http.MethodPost, "create_user", map[string]string{"username": "dev", "role": "user"}).Body.Bytes(), &created); err != nil || created.TemporaryPassword == "" {
+	if err := json.Unmarshal(admin.call(http.MethodPost, "create_user", map[string]string{"email": "dev@example.com", "role": "user"}).Body.Bytes(), &created); err != nil || created.TemporaryPassword == "" {
 		t.Fatalf("create_user: %+v %v", created, err)
 	}
 
-	user := server.browser().loggedIn("dev", created.TemporaryPassword)
+	user := server.browser().loggedIn("dev@example.com", created.TemporaryPassword)
 
 	var session sessionAnswer
 
@@ -588,6 +656,10 @@ func TestUITemporaryPassword(t *testing.T) {
 
 	if response := user.call(http.MethodPost, "update_account_name", map[string]string{"name": "Dev"}); response.Code != http.StatusForbidden {
 		t.Errorf("update_account_name with a temporary password: %d", response.Code)
+	}
+
+	if response := user.changeEmail(created.TemporaryPassword, "developer@example.com"); response.Code != http.StatusForbidden {
+		t.Errorf("change_email with a temporary password: %d %s", response.Code, response.Body)
 	}
 
 	if response := user.changePassword(created.TemporaryPassword, "user password 123"); response.Code != http.StatusNoContent {

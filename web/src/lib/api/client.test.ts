@@ -262,14 +262,14 @@ describe('an ended session', () => {
 
 	it('is not a wrong password at the login, which the form shows', async () => {
 		fetchMock.mockImplementation(() =>
-			Promise.resolve(answer(401, { error: 'Wrong username or password.' }))
+			Promise.resolve(answer(401, { error: 'Wrong email or password.' }))
 		);
 
 		const page = await loadPage();
 
-		await expect(
-			page.send('login', { username: 'root', password: 'wrong-password' })
-		).rejects.toEqual(new page.ApiError(401, 'Wrong username or password.'));
+		await expect(page.send('login', { email: 'root', password: 'wrong-password' })).rejects.toEqual(
+			new page.ApiError(401, 'Wrong email or password.')
+		);
 		expect(assign).not.toHaveBeenCalled();
 
 		// Any other plain request: the session ended.

@@ -191,8 +191,8 @@ func defineCollections(schema *kv.Schema) collections {
 			Name: "user",
 			Key:  func(user userRecord) kv.Key { return textKey(user.ID) },
 			Indexes: []kv.Index[userRecord]{
-				// Usernames are unique in any case.
-				{Name: "name", Unique: true, Key: func(user userRecord) kv.Key { return usernameKey(user.Username) }},
+				// Emails are unique in any case ("name": the stored keys keep the index's former name).
+				{Name: "name", Unique: true, Key: func(user userRecord) kv.Key { return emailKey(user.Email) }},
 				// There is one superadmin.
 				{Name: "superadmin", Unique: true, Key: func(user userRecord) kv.Key {
 					return kv.KIf(user.Role == store.RoleSuperadmin, kv.U8(0))
@@ -324,8 +324,8 @@ func sequenceKey(sequence uint64) kv.Key { return kv.K(kv.U64(sequence)) }
 
 func projectKey(id int) kv.Key { return kv.K(kv.U32(uint32(id))) }
 
-// usernameKey is the key of the "name" index of users: usernames are unique in any case.
-func usernameKey(username string) kv.Key { return textKey(strings.ToLower(username)) }
+// emailKey is the key of the "name" index of users: emails are unique in any case.
+func emailKey(email string) kv.Key { return textKey(strings.ToLower(email)) }
 
 // eventIDKey and messageParts lead the "id" and "message" index keys.
 func eventIDKey(projectID int, eventID string) kv.Key {

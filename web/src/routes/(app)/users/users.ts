@@ -8,21 +8,21 @@ import type { Role } from '#lib/components/role.ts';
 import { toast } from '#lib/toast.svelte.ts';
 
 /** The fields of UserForm; no access when the viewer may not change it. */
-export type UserInput = { username: string; name: string; role: Role; access?: ProjectsInput };
+export type UserInput = { email: string; name: string; role: Role; access?: ProjectsInput };
 
-export function resetConfirmation(username: string): Confirmation {
+export function resetConfirmation(email: string): Confirmation {
 	return {
 		title: 'Reset password',
-		message: `Give ${username} a temporary password? They are logged out and their coding agents are disconnected.`,
+		message: `Give ${email} a temporary password? They are logged out and their coding agents are disconnected.`,
 		confirmLabel: 'Reset password',
 		tone: 'primary'
 	};
 }
 
-export function deleteConfirmation(username: string): Confirmation {
+export function deleteConfirmation(email: string): Confirmation {
 	return {
 		title: 'Delete user',
-		message: `Delete the user ${username}? They are logged out and their coding agents are disconnected; their name stays in issue histories.`,
+		message: `Delete the user ${email}? They are logged out and their coding agents are disconnected; their name stays in issue histories.`,
 		confirmLabel: 'Delete'
 	};
 }

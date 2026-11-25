@@ -159,7 +159,7 @@ export interface Endpoints {
 			color?: string | null;
 			/** Log levels to store; an empty list stores none. Events of every level are stored. */
 			log_levels?: ('trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal')[] | null;
-			/** Percent of MAX_DATABASE_SIZE the project may hold, in steps of 5; above it the cleanup deletes its own data first. 100: no limit of its own. Only someone with every project changes it. */
+			/** Percent of MAX_DATABASE_SIZE the project may hold, in steps of 5; above it the cleanup deletes its own data first. 100: no limit of its own. */
 			disk_share?: number | null;
 		};
 		out: {
@@ -175,8 +175,8 @@ export interface Endpoints {
 	};
 	create_user: {
 		in: {
-			/** Login name: letters, digits and . _ @ -. */
-			username: string;
+			/** Email address, the login. */
+			email: string;
 			/** Display name. */
 			name?: string;
 			/** The role. */
@@ -192,7 +192,7 @@ export interface Endpoints {
 				project_ids: number[] | null;
 				projects: string[] | null;
 				id: string;
-				username: string;
+				email: string;
 				name?: string;
 				display_name: string;
 				role: string;
@@ -480,7 +480,7 @@ export interface Endpoints {
 				project_ids: number[] | null;
 				projects: string[] | null;
 				id: string;
-				username: string;
+				email: string;
 				name?: string;
 				display_name: string;
 				role: string;
@@ -544,7 +544,7 @@ export interface Endpoints {
 				project_ids: number[] | null;
 				projects: string[] | null;
 				id: string;
-				username: string;
+				email: string;
 				name?: string;
 				display_name: string;
 				role: string;
@@ -847,7 +847,7 @@ export interface Endpoints {
 					project_ids: number[] | null;
 					projects: string[] | null;
 					id: string;
-					username: string;
+					email: string;
 					name?: string;
 					display_name: string;
 					role: string;
@@ -875,7 +875,7 @@ export interface Endpoints {
 				project_ids: number[] | null;
 				projects: string[] | null;
 				id: string;
-				username: string;
+				email: string;
 				name?: string;
 				display_name: string;
 				role: string;
@@ -985,7 +985,7 @@ export interface Endpoints {
 	};
 	update_account_name: {
 		in: {
-			/** The new display name; empty shows the username. */
+			/** The new display name; empty shows the email. */
 			name: string;
 		};
 		out: {
@@ -993,7 +993,7 @@ export interface Endpoints {
 			project_ids: number[] | null;
 			projects: string[] | null;
 			id: string;
-			username: string;
+			email: string;
 			name?: string;
 			display_name: string;
 			role: string;
@@ -1061,7 +1061,7 @@ export interface Endpoints {
 			color?: string | null;
 			/** Log levels to store; an empty list stores none. Events of every level are stored. */
 			log_levels?: ('trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal')[] | null;
-			/** Percent of MAX_DATABASE_SIZE the project may hold, in steps of 5; above it the cleanup deletes its own data first. 100: no limit of its own. Only someone with every project changes it. */
+			/** Percent of MAX_DATABASE_SIZE the project may hold, in steps of 5; above it the cleanup deletes its own data first. 100: no limit of its own. */
 			disk_share?: number | null;
 		};
 		out: {
@@ -1079,6 +1079,8 @@ export interface Endpoints {
 		in: {
 			/** id from list_users. */
 			user_id: string;
+			/** Email address, the login. */
+			email?: string | null;
 			/** Display name. */
 			name?: string | null;
 			/** The role. */
@@ -1093,7 +1095,7 @@ export interface Endpoints {
 			project_ids: number[] | null;
 			projects: string[] | null;
 			id: string;
-			username: string;
+			email: string;
 			name?: string;
 			display_name: string;
 			role: string;
@@ -1167,7 +1169,7 @@ export interface PlainRequests {
 	};
 	login: {
 		in: {
-			username: string;
+			email: string;
 			password: string;
 			next?: string;
 		};
@@ -1184,6 +1186,13 @@ export interface PlainRequests {
 			current_password: string;
 			password: string;
 			confirm_password: string;
+		};
+		out: void;
+	};
+	change_email: {
+		in: {
+			current_password: string;
+			email: string;
 		};
 		out: void;
 	};
@@ -1223,6 +1232,7 @@ export const plainRequests = {
 	login: { method: 'POST' },
 	logout: { method: 'POST' },
 	change_password: { method: 'POST' },
+	change_email: { method: 'POST' },
 	personal_token: { method: 'POST' },
 	authorization_request: { method: 'GET' },
 	authorization_decision: { method: 'POST' },
@@ -1312,8 +1322,7 @@ export const shownLevel = {
 /** The limits of form fields, as the server checks them; a pattern must match the whole value. */
 export const limits = {
 	connectionName: 100,
-	username: 64,
-	usernamePattern: '[A-Za-z0-9._@\\-]+',
+	email: 254,
 	displayName: 100,
 	minPassword: 12,
 	maxPassword: 256,
@@ -1414,11 +1423,12 @@ export const help = {
 			'Color': 'Marks the project\'s badge in lists and the header of its emails.',
 			'DSN': 'The address the app\'s Sentry SDK sends errors and logs to. The key in it only allows sending to this project, so it can be in browser code.',
 			'Disk share': 'The part of MAX_DATABASE_SIZE the project may take. When it reaches 99% of it, even with the database under its limit, the cleanup deletes the project\'s own data in the usual order, down to 80% of its share, so a flood in one project does not push out the others. A ceiling, not a reservation: shares may add up to more than 100%. At 100% the project has no limit of its own.',
-			'Dropped': 'What the project sent in the last 24 hours that was not stored: over its rate limit, refused while the server was busy, too large or broken, and what its SDK reports it held back. Resets on restart.',
-			'History kept': 'The oldest record of each kind still stored. When the database nears its limit, the cleanup deletes the oldest first: logs below error, then error logs, then errors.',
+			'Dropped': 'What the project sent in the last 24 hours that was not stored: over its rate limit, refused while the server was busy, too large, unreadable or not received whole, and what its SDK reports it held back. Resets on restart.',
+			'History kept': 'The oldest record of each kind still stored; Errors counts events of every level. When the database nears its limit, the cleanup deletes logs older than a month and old event copies first, then logs below error, events below error and copies beyond an issue\'s newest 20, then error logs, then the remaining events, oldest first.',
 			'Logs': 'Log levels to store; others are dropped when they arrive. Unchanged, the project follows RECORD_LOG_LEVELS. Errors and messages of every level are stored.',
 		},
 		'Users': {
+			'Email': 'The login, unique. Users from before emails keep their username until it is changed, then only to an email. No confirmation is sent.',
 			'Projects': 'Projects whose issues, logs and settings the user sees, here and through their coding agents. All projects includes the ones added later; the superadmin always has all. An admin changes only his own projects in this field; the user\'s other projects stay. Only someone with all projects gives all projects or changes a user who has them. A user without projects sees none.',
 			'Role': 'What the user may do. The superadmin gives admin or user; an admin gives user only.',
 		},

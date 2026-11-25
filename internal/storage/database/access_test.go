@@ -32,7 +32,7 @@ func TestUserWithoutAccessSeesAll(t *testing.T) {
 func (database *Store) testUser(t *testing.T, name string, access store.Access) string {
 	t.Helper()
 
-	id, err := database.CreateUser(context.Background(), store.User{Username: name, Role: store.RoleAdmin, Access: access}, "x")
+	id, err := database.CreateUser(context.Background(), store.User{Email: name, Role: store.RoleAdmin, Access: access}, "x")
 
 	if err != nil {
 		t.Fatal(err)
@@ -104,7 +104,7 @@ func TestUpdateUserMergesAccess(t *testing.T) {
 
 	for _, project := range []int{1, 2} {
 		wait.Go(func() {
-			change := store.UserChange{Name: "target", Role: store.RoleAdmin, By: store.OnlyProjects(project), Access: new(store.OnlyProjects(project))}
+			change := store.UserChange{Email: "target", Name: "target", Role: store.RoleAdmin, By: store.OnlyProjects(project), Access: new(store.OnlyProjects(project))}
 
 			if err := database.UpdateUser(ctx, target, change); err != nil {
 				t.Error(err)
@@ -118,14 +118,18 @@ func TestUpdateUserMergesAccess(t *testing.T) {
 		t.Errorf("access: %+v", access)
 	}
 
-	locked := store.UserChange{Name: "target", Role: store.RoleAdmin, By: store.OnlyProjects(1), Access: &store.Access{}}
+	locked := store.UserChange{Email: "target", Name: "target", Role: store.RoleAdmin, By: store.OnlyProjects(1), Access: &store.Access{}}
 
 	if err := database.UpdateUser(ctx, target, locked); !errors.Is(err, store.ErrAccessLocked) {
 		t.Errorf("a limited administrator gave every project: %v", err)
 	}
 
 	// Name and role change only by someone who has all the user's projects.
-	for _, change := range []store.UserChange{{Name: "target", Role: store.RoleUser}, {Name: "renamed", Role: store.RoleAdmin}} {
+	for _, change := range []store.UserChange{
+		{Email: "target", Name: "target", Role: store.RoleUser},
+		{Email: "target", Name: "renamed", Role: store.RoleAdmin},
+		{Email: "target@example.com", Name: "target", Role: store.RoleAdmin},
+	} {
 		change.By = store.OnlyProjects(1, 2)
 
 		if err := database.UpdateUser(ctx, target, change); !errors.Is(err, store.ErrTakeOverLocked) {
@@ -133,7 +137,7 @@ func TestUpdateUserMergesAccess(t *testing.T) {
 		}
 	}
 
-	if err := database.UpdateUser(ctx, target, store.UserChange{Name: "renamed", Role: store.RoleUser, By: store.OnlyProjects(1, 2, 3)}); err != nil {
+	if err := database.UpdateUser(ctx, target, store.UserChange{Email: "target", Name: "renamed", Role: store.RoleUser, By: store.OnlyProjects(1, 2, 3)}); err != nil {
 		t.Errorf("a role change by an administrator with all of them: %v", err)
 	}
 }

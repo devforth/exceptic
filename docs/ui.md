@@ -43,9 +43,9 @@ Who may change whom:
 
 - The superadmin changes every other user.
 - An admin changes users of the role user (never other admins or the superadmin), and only those whose projects he all has: he could otherwise reset their password, log in as them and see projects he does not have.
-- A user changes no one. Everyone changes their own name and password only on the Account page.
+- A user changes no one. Everyone changes their own name, email and password only on the Account page; the email and the password ask for the current password.
 
-Changing means the name and role, resetting the password, deleting the user and disconnecting their coding agents. The Projects field is apart: an admin edits it for any user of the role user (see the table).
+Changing means the email, name and role, resetting the password, deleting the user and disconnecting their coding agents. The Projects field is apart: an admin edits it for any user of the role user (see the table).
 
 For an admin with the projects backend and frontend, a user of the role user with:
 
@@ -55,5 +55,6 @@ For an admin with the projects backend and frontend, a user of the role user wit
 
 | Field | |
 |---|---|
+| Email | The login, unique. Users from before emails keep their username until it is changed, then only to an email. No confirmation is sent. |
 | Role | What the user may do. The superadmin gives admin or user; an admin gives user only. |
 | Projects | Projects whose issues, logs and settings the user sees, here and through their coding agents. All projects includes the ones added later; the superadmin always has all. An admin changes only his own projects in this field; the user's other projects stay. Only someone with all projects gives all projects or changes a user who has them. A user without projects sees none. |

@@ -39,7 +39,7 @@ func (server *restServer) addWebUser(user store.User) uiUser {
 	server.t.Helper()
 
 	ctx := context.Background()
-	user.Username, user.Name, user.CreatedAt = user.Role+"-"+store.NewID(), "Web "+user.Role, time.Now()
+	user.Email, user.Name, user.CreatedAt = user.Role+"-"+store.NewID(), "Web "+user.Role, time.Now()
 	id, err := server.database.CreateUser(ctx, user, "x")
 
 	if err != nil {

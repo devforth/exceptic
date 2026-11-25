@@ -22,10 +22,12 @@ text field is selected when it opens.
 		form: FormState;
 		/** Sends the form; the dialog closes when it resolves. */
 		save: () => Promise<unknown>;
+		/** The submit button's label: Save by default. */
+		submitLabel?: string;
 		children: Snippet;
 	};
 
-	let { title, open = $bindable(), form, save, children }: Props = $props();
+	let { title, open = $bindable(), form, save, submitLabel, children }: Props = $props();
 
 	const id = $props.id();
 	let element: HTMLFormElement | undefined = $state();
@@ -48,6 +50,6 @@ text field is selected when it opens.
 	</form>
 	{#snippet actions()}
 		<Button disabled={form.busy} onclick={() => (open = false)}>Cancel</Button>
-		<SubmitButton {form} formId="{id}-form" />
+		<SubmitButton {form} formId="{id}-form">{submitLabel ?? 'Save'}</SubmitButton>
 	{/snippet}
 </Dialog>

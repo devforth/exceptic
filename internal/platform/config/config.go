@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"net/mail"
 	"net/netip"
 	"net/url"
 	"os"
@@ -94,9 +95,24 @@ func ValidProjectName(name string) bool {
 	return len(name) <= MaxProjectName && projectNameRe.MatchString(name)
 }
 
-// ValidUsername: letters, digits and . _ @ - (UsernamePattern), up to MaxUsername.
-func ValidUsername(username string) bool {
-	return utf8.RuneCountInString(username) <= MaxUsername && usernameRe.MatchString(username)
+// ParseEmail is an entered email address as stored: lowercase, without a
+// display name; ok false when it is none or longer than MaxEmail.
+func ParseEmail(entered string) (string, bool) {
+	parsed, err := mail.ParseAddress(strings.TrimSpace(entered))
+
+	if err != nil || len(parsed.Address) > MaxEmail {
+		return "", false
+	}
+
+	return strings.ToLower(parsed.Address), true
+}
+
+// validAdminEmail: ADMIN_EMAIL is an email or, as usernames were, letters,
+// digits and . _ @ - (adminLoginRe), up to MaxEmail.
+func validAdminEmail(value string) bool {
+	_, isEmail := ParseEmail(value)
+
+	return isEmail || (len(value) <= MaxEmail && adminLoginRe.MatchString(value))
 }
 
 // ValidPasswordLength is the length rule of every password, ADMIN_PASSWORD
@@ -161,10 +177,11 @@ type Config struct {
 	// TrustedProxies are reverse proxies whose X-Forwarded-For header is used
 	// to find the client address. Empty means the header is ignored.
 	TrustedProxies []netip.Prefix
-	// AdminUsername and AdminPassword create the superadmin at the first
-	// start (while there is none); later they are not used.
+	// AdminEmail and AdminPassword create the superadmin at the first
+	// start (while there is none); later they are not used. AdminEmail is
+	// the login as given, an email or not.
 	// An empty password means the UI is closed.
-	AdminUsername string
+	AdminEmail    string
 	AdminPassword string
 	// SessionLifetime (SESSION_LIFETIME) is how long a UI login lasts; it
 	// is not extended by use.
@@ -190,7 +207,7 @@ const (
 	SDKLogBatch        = 100
 	DefaultMemoryLimit = 200 << 20 // GOMEMLIMIT, the Go runtime's soft limit
 
-	DefaultAdminUsername = "admin"
+	DefaultAdminEmail = "admin"
 
 	DefaultSessionLifetime = 24 * time.Hour
 
@@ -199,14 +216,11 @@ const (
 	// MinPasswordLength applies to every user's password: logins are rate
 	// limited, but the UI is often public.
 	MinPasswordLength = 12
-	// Users: the username (letters, digits and . _ @ -, UsernamePattern) and
-	// the display name; passwords up to MaxPasswordLength.
-	MaxUsername       = 64
+	// Users: the email (the login) and the display name; passwords up to
+	// MaxPasswordLength.
+	MaxEmail          = 254
 	MaxDisplayName    = 100
 	MaxPasswordLength = 256
-	// UsernamePattern is also the pattern attribute of the form, hence the
-	// escaped '-'; Go's regexp accepts it too.
-	UsernamePattern = `[A-Za-z0-9._@\-]+`
 	// MaxConnectionName is the longest name of a notification connection;
 	// VerificationCodeDigits the length of an email confirmation code.
 	MaxConnectionName      = 100
@@ -223,7 +237,7 @@ const (
 
 var (
 	projectNameRe = regexp.MustCompile(`^(?:` + ProjectNamePattern + `)$`)
-	usernameRe    = regexp.MustCompile(`^` + UsernamePattern + `$`)
+	adminLoginRe  = regexp.MustCompile(`^[A-Za-z0-9._@-]+$`)
 	publicKeyRe   = regexp.MustCompile(`^[A-Za-z0-9]{16,64}$`)
 	originRe      = regexp.MustCompile(`^https?://([a-z0-9.-]+|\[[0-9a-f:]+\])(:[0-9]{1,5})?$`)
 )
@@ -248,7 +262,7 @@ func loadFrom(getenv func(string) string) (*Config, error) {
 		AllowedOrigins:           []string{DefaultAllowedOrigins},
 		RateLimitEventsPerMinute: DefaultRateLimitEventsPerMinute,
 		RateLimitLogsPerMinute:   DefaultRateLimitLogsPerMinute,
-		AdminUsername:            DefaultAdminUsername,
+		AdminEmail:               DefaultAdminEmail,
 		SessionLifetime:          DefaultSessionLifetime,
 	}
 
@@ -317,12 +331,15 @@ func loadFrom(getenv func(string) string) (*Config, error) {
 		config.APIToken = value
 	}
 
-	if value := strings.TrimSpace(getenv("ADMIN_USERNAME")); value != "" {
-		if !ValidUsername(value) {
-			return nil, fmt.Errorf("ADMIN_USERNAME: invalid username %q (up to %d letters, digits and . _ @ -)", value, MaxUsername)
-		}
+	// ADMIN_USERNAME is its former name, read while ADMIN_EMAIL is not set (main warns).
+	for _, name := range []string{"ADMIN_USERNAME", "ADMIN_EMAIL"} {
+		if value := strings.TrimSpace(getenv(name)); value != "" {
+			if !validAdminEmail(value) {
+				return nil, fmt.Errorf("%s: invalid value %q (an email, or up to %d letters, digits and . _ @ -)", name, value, MaxEmail)
+			}
 
-		config.AdminUsername = value
+			config.AdminEmail = value
+		}
 	}
 
 	if value := getenv("ADMIN_PASSWORD"); value != "" {

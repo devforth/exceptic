@@ -48,7 +48,7 @@ func TestOAuthClientCapacityAndCleanup(t *testing.T) {
 
 	addClients("", func(index int) time.Time { return now.Add(time.Duration(index) * time.Second) })
 
-	user, err := database.CreateUser(ctx, store.User{Username: "admin", Role: store.RoleSuperadmin, CreatedAt: now}, "x")
+	user, err := database.CreateUser(ctx, store.User{Email: "admin", Role: store.RoleSuperadmin, CreatedAt: now}, "x")
 
 	if err != nil {
 		t.Fatal(err)
@@ -99,28 +99,69 @@ func TestOAuthClientCapacityAndCleanup(t *testing.T) {
 	}
 }
 
-// Usernames are unique in any case, there is one superadmin, and deleting a
+// A changed email is the login from then on, unique in any case; a name
+// that was the email follows it, and the old one finds nobody.
+func TestUpdateUserEmail(t *testing.T) {
+	ctx := context.Background()
+	database := openTest(t)
+
+	taken, err := database.CreateUser(ctx, store.User{Email: "ops@example.com", Name: "Ops", Role: store.RoleUser}, "hash")
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	user, err := database.CreateUser(ctx, store.User{Email: "dev", Name: "dev", Role: store.RoleUser}, "hash")
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := database.UpdateUserEmail(ctx, user, "OPS@example.com"); !errors.Is(err, store.ErrEmailTaken) {
+		t.Fatalf("an email taken in another case: %v", err)
+	}
+
+	if err := database.UpdateUserEmail(ctx, user, "dev@example.com"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := database.FindLogin(ctx, "dev"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("the old login still finds the user: %v", err)
+	}
+
+	found, hash, err := database.FindLogin(ctx, "DEV@example.com")
+
+	if err != nil || found.ID != user || hash != "hash" || found.Name != "dev@example.com" {
+		t.Fatalf("the new email: %+v, %q, %v", found, hash, err)
+	}
+
+	if other, err := database.GetUser(ctx, taken); err != nil || other.Email != "ops@example.com" || other.Name != "Ops" {
+		t.Fatalf("the other user changed: %+v, %v", other, err)
+	}
+}
+
+// Emails are unique in any case, there is one superadmin, and deleting a
 // user ends their sessions and disconnects their agents.
 func TestUserRules(t *testing.T) {
 	ctx := context.Background()
 	database := openTest(t)
 	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
 
-	root, err := database.CreateUser(ctx, store.User{Username: "Root", Role: store.RoleSuperadmin, CreatedAt: now}, "hash")
+	root, err := database.CreateUser(ctx, store.User{Email: "Root", Role: store.RoleSuperadmin, CreatedAt: now}, "hash")
 
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := database.CreateUser(ctx, store.User{Username: "root", Role: store.RoleUser, CreatedAt: now}, "hash"); !errors.Is(err, store.ErrUsernameTaken) {
-		t.Fatalf("same username in another case: %v", err)
+	if _, err := database.CreateUser(ctx, store.User{Email: "root", Role: store.RoleUser, CreatedAt: now}, "hash"); !errors.Is(err, store.ErrEmailTaken) {
+		t.Fatalf("same email in another case: %v", err)
 	}
 
-	if _, err := database.CreateUser(ctx, store.User{Username: "second", Role: store.RoleSuperadmin, CreatedAt: now}, "hash"); err == nil {
+	if _, err := database.CreateUser(ctx, store.User{Email: "second", Role: store.RoleSuperadmin, CreatedAt: now}, "hash"); err == nil {
 		t.Fatal("a second superadmin was created")
 	}
 
-	user, err := database.CreateUser(ctx, store.User{Username: "dev", Role: store.RoleUser, CreatedAt: now}, "hash")
+	user, err := database.CreateUser(ctx, store.User{Email: "dev", Role: store.RoleUser, CreatedAt: now}, "hash")
 
 	if err != nil {
 		t.Fatal(err)
@@ -177,7 +218,7 @@ func TestListUsersByRole(t *testing.T) {
 	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
 
 	for username, role := range map[string]string{"root": store.RoleSuperadmin, "bob": store.RoleAdmin, "admin": store.RoleAdmin, "alice": store.RoleUser} {
-		if _, err := database.CreateUser(ctx, store.User{Username: username, Role: role, CreatedAt: now}, "hash"); err != nil {
+		if _, err := database.CreateUser(ctx, store.User{Email: username, Role: role, CreatedAt: now}, "hash"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -191,7 +232,7 @@ func TestListUsersByRole(t *testing.T) {
 	var order []string
 
 	for _, user := range users {
-		order = append(order, user.Username)
+		order = append(order, user.Email)
 	}
 
 	if want := []string{"root", "admin", "bob", "alice"}; !slices.Equal(order, want) {
@@ -206,8 +247,8 @@ func TestGrantsOfASharedClient(t *testing.T) {
 	database := openTest(t)
 	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
 	client := "https://client.example/metadata.json"
-	alice, _ := database.CreateUser(ctx, store.User{Username: "alice", Role: store.RoleUser, CreatedAt: now}, "hash")
-	bob, _ := database.CreateUser(ctx, store.User{Username: "bob", Role: store.RoleUser, CreatedAt: now}, "hash")
+	alice, _ := database.CreateUser(ctx, store.User{Email: "alice", Role: store.RoleUser, CreatedAt: now}, "hash")
+	bob, _ := database.CreateUser(ctx, store.User{Email: "bob", Role: store.RoleUser, CreatedAt: now}, "hash")
 
 	var created []string
 
@@ -262,7 +303,7 @@ func TestRefreshTokenReplayRevokesTheGrant(t *testing.T) {
 	ctx := context.Background()
 	database := openTest(t)
 	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
-	user, _ := database.CreateUser(ctx, store.User{Username: "admin", Role: store.RoleSuperadmin, CreatedAt: now}, "x")
+	user, _ := database.CreateUser(ctx, store.User{Email: "admin", Role: store.RoleSuperadmin, CreatedAt: now}, "x")
 	tokens := store.GrantTokens{AccessHash: "access-1", AccessExpiresAt: now.Add(time.Hour), RefreshHash: "refresh-1", RefreshExpiresAt: now.Add(24 * time.Hour)}
 	grant, err := database.CreateGrant(ctx, store.Grant{UserID: user, Kind: store.GrantOAuth, ClientID: "client", CreatedAt: now}, tokens)
 

@@ -73,9 +73,9 @@ type ChatTest struct {
 
 // UserInput is what the user form sends.
 type UserInput struct {
-	Username string
-	Name     string
-	Role     string
+	Email string
+	Name  string
+	Role  string
 	// Access is the projects chosen of what the viewer was shown (nil: a new
 	// user gets the viewer's, a saved one keeps theirs).
 	Access *store.Access

@@ -33,30 +33,30 @@ describe('the login page', () => {
 		mocks.send.mockResolvedValue({ next: '/logs' });
 		renderLogin();
 
-		expect(document.activeElement).toBe(field('Username'));
+		expect(document.activeElement).toBe(field('Email'));
 
-		await userEvent.type(field('Username'), 'admin');
+		await userEvent.type(field('Email'), 'admin');
 		await userEvent.type(field('Password'), 'correct horse battery');
 		await userEvent.click(screen.getByRole('button', { name: 'Log in' }));
 
 		expect(mocks.send).toHaveBeenCalledWith('login', {
-			username: 'admin',
+			email: 'admin',
 			password: 'correct horse battery',
 			next: '/logs'
 		});
 		await waitFor(() => expect(mocks.assign).toHaveBeenCalledWith('/logs'));
 	});
 
-	it('shows a refusal, keeps the username and clears the password', async () => {
-		mocks.send.mockRejectedValue(new ApiError(401, 'Wrong username or password.'));
+	it('shows a refusal, keeps the email and clears the password', async () => {
+		mocks.send.mockRejectedValue(new ApiError(401, 'Wrong email or password.'));
 		renderLogin();
 
-		await userEvent.type(field('Username'), 'admin');
+		await userEvent.type(field('Email'), 'admin');
 		await userEvent.type(field('Password'), 'wrong password');
 		await userEvent.click(screen.getByRole('button', { name: 'Log in' }));
 
-		expect((await screen.findByRole('alert')).textContent).toContain('Wrong username or password.');
-		expect(field('Username').value).toBe('admin');
+		expect((await screen.findByRole('alert')).textContent).toContain('Wrong email or password.');
+		expect(field('Email').value).toBe('admin');
 		expect(field('Password').value).toBe('');
 		expect(document.activeElement).toBe(field('Password'));
 		expect(mocks.assign).not.toHaveBeenCalled();

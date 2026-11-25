@@ -49,6 +49,10 @@ func (passwords *slowPasswords) ChangeOwnPassword(context.Context, store.User, s
 	return services.Problems{"current_password": "wrong"}, true, nil
 }
 
+func (passwords *slowPasswords) ChangeOwnEmail(context.Context, store.User, string, string) (services.Problems, bool, string, error) {
+	return services.Problems{"current_password": "wrong"}, true, "", nil
+}
+
 // Attempts sent at the same time are counted before their passwords are
 // checked, so they cannot run more checks than the limit allows.
 func TestConcurrentAttemptsLimited(t *testing.T) {
@@ -66,7 +70,7 @@ func TestConcurrentAttemptsLimited(t *testing.T) {
 				request := httptest.NewRequest(http.MethodPost, "/login", nil)
 
 				if change {
-					_, _ = auth.ChangePassword(httptest.NewRecorder(), request, store.User{Username: "admin"}, "guess", "new password", "new password")
+					_, _ = auth.ChangePassword(httptest.NewRecorder(), request, store.User{Email: "admin"}, "guess", "new password", "new password")
 				} else {
 					_, _ = auth.Login(httptest.NewRecorder(), request, "admin", "guess")
 				}
@@ -105,15 +109,15 @@ func network(index int) netip.Addr {
 	return netip.MustParseAddr(fmt.Sprintf("203.0.113.%d", index))
 }
 
-// One /48 holds 65536 /64s: guesses from them count against the username
+// One /48 holds 65536 /64s: guesses from them count against the email
 // like any others.
 func subnet(index int) netip.Addr {
 	return netip.MustParseAddr(fmt.Sprintf("2001:db8:1:%x::1", index))
 }
 
-// A username guessed at from many networks is blocked for every browser
+// An email guessed at from many networks is blocked for every browser
 // that never logged in as it, and stays open to one that did.
-func TestUsernameLimit(t *testing.T) {
+func TestEmailLimit(t *testing.T) {
 	limiter := newLoginLimiter(slog.New(slog.DiscardHandler))
 	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
 
@@ -124,11 +128,11 @@ func TestUsernameLimit(t *testing.T) {
 	}
 
 	if _, allowed := limiter.begin(network(50), "admin", false, now); allowed {
-		t.Fatal("a new network may guess the blocked username")
+		t.Fatal("a new network may guess the blocked email")
 	}
 
 	if _, allowed := limiter.begin(network(50), "dev", false, now); !allowed {
-		t.Fatal("another username is blocked")
+		t.Fatal("another email is blocked")
 	}
 
 	// The owner's browser passes, its typos counted apart from others' guesses.
@@ -181,11 +185,11 @@ func TestKnownDeviceLimit(t *testing.T) {
 	}
 
 	if _, ok := limiter.begin(network(100), "dev", true, now); !ok {
-		t.Fatal("another username's known browser is blocked")
+		t.Fatal("another email's known browser is blocked")
 	}
 }
 
-// Past maxLimiterKeys new addresses and usernames are refused, with one
+// Past maxLimiterKeys new addresses and emails are refused, with one
 // warning per window; counted ones and known devices go on as before.
 func TestFullLimiter(t *testing.T) {
 	var logged strings.Builder
@@ -195,17 +199,17 @@ func TestFullLimiter(t *testing.T) {
 	limiter.swept = now
 
 	for index := range maxLimiterKeys {
-		limiter.byUsername[fmt.Sprintf("made-up-%d", index)] = &loginWindowState{start: now, count: 1}
+		limiter.byEmail[fmt.Sprintf("made-up-%d", index)] = &loginWindowState{start: now, count: 1}
 	}
 
 	for index := range 3 {
 		if _, allowed := limiter.begin(network(index), "admin", false, now); allowed {
-			t.Fatal("a new username is counted past the full counter")
+			t.Fatal("a new email is counted past the full counter")
 		}
 	}
 
 	if _, allowed := limiter.begin(network(10), "made-up-7", false, now); !allowed {
-		t.Fatal("a username already counted is refused")
+		t.Fatal("a email already counted is refused")
 	}
 
 	if _, allowed := limiter.begin(network(11), "admin", true, now); !allowed {
@@ -249,14 +253,18 @@ func (passwords *stampedPasswords) Authenticate(context.Context, string, string)
 	return store.User{}, false, nil
 }
 
-func (passwords *stampedPasswords) DeviceStamp(_ context.Context, username string) (string, error) {
+func (passwords *stampedPasswords) DeviceStamp(_ context.Context, email string) (string, error) {
 	passwords.reads++
 
-	return passwords.stamps[strings.ToLower(username)], nil
+	return passwords.stamps[strings.ToLower(email)], nil
 }
 
 func (passwords *stampedPasswords) ChangeOwnPassword(context.Context, store.User, string, string, string, string) (services.Problems, bool, error) {
 	return services.Problems{"current_password": "wrong"}, true, nil
+}
+
+func (passwords *stampedPasswords) ChangeOwnEmail(context.Context, store.User, string, string) (services.Problems, bool, string, error) {
+	return services.Problems{"current_password": "wrong"}, true, "", nil
 }
 
 // deviceRequest is a login from a browser with the device cookie value.
@@ -277,8 +285,8 @@ func TestKnownDevice(t *testing.T) {
 	auth.setDeviceCookie(login, httptest.NewRequest(http.MethodPost, "/login", nil), "Admin", now)
 
 	cookie := login.Result().Cookies()[0]
-	known := func(value, username string, at time.Time) bool {
-		return auth.knownDevice(deviceRequest(value), username, at)
+	known := func(value, email string, at time.Time) bool {
+		return auth.knownDevice(deviceRequest(value), email, at)
 	}
 
 	if !known(cookie.Value, "admin", now) {
@@ -340,7 +348,7 @@ func TestPasswordCheckWait(t *testing.T) {
 
 	change := httptest.NewRequest(http.MethodPost, "/account/password", nil)
 
-	if problems, err := auth.ChangePassword(httptest.NewRecorder(), change, store.User{Username: "admin"}, "guess", "new", "new"); !errors.Is(err, ErrTooManyAttempts) {
+	if problems, err := auth.ChangePassword(httptest.NewRecorder(), change, store.User{Email: "admin"}, "guess", "new", "new"); !errors.Is(err, ErrTooManyAttempts) {
 		t.Fatalf("a password change with no place: %v %v", problems, err)
 	}
 
@@ -378,6 +386,10 @@ func (passwords *busyPasswords) ChangeOwnPassword(context.Context, store.User, s
 	return nil, false, nil
 }
 
+func (passwords *busyPasswords) ChangeOwnEmail(context.Context, store.User, string, string) (services.Problems, bool, string, error) {
+	return services.Problems{"current_password": "wrong"}, true, "", nil
+}
+
 // Password checks from many networks at once take only their share of cores.
 func TestPasswordChecksCapped(t *testing.T) {
 	const places = 2
@@ -402,8 +414,8 @@ func TestPasswordChecksCapped(t *testing.T) {
 	}
 }
 
-// A cookie not signed for the typed username is refused before the user is
-// looked up, so its timing tells nothing about which usernames exist.
+// A cookie not signed for the typed email is refused before the user is
+// looked up, so its timing tells nothing about which emails exist.
 func TestForgedDeviceCookieReadsNothing(t *testing.T) {
 	passwords := &stampedPasswords{stamps: map[string]string{"admin": "stamp-1"}}
 	auth := testAuth(passwords, 1)
@@ -414,13 +426,13 @@ func TestForgedDeviceCookieReadsNothing(t *testing.T) {
 	cookie := login.Result().Cookies()[0]
 	passwords.reads = 0
 
-	for _, attempt := range []struct{ value, username string }{
+	for _, attempt := range []struct{ value, email string }{
 		{"99999999999.00.00", "admin"},
 		{"99999999999.00", "admin"},
 		{cookie.Value, "nobody"},
 	} {
-		if auth.knownDevice(deviceRequest(attempt.value), attempt.username, now) {
-			t.Fatalf("%q counts for %s", attempt.value, attempt.username)
+		if auth.knownDevice(deviceRequest(attempt.value), attempt.email, now) {
+			t.Fatalf("%q counts for %s", attempt.value, attempt.email)
 		}
 	}
 
@@ -430,18 +442,18 @@ func TestForgedDeviceCookieReadsNothing(t *testing.T) {
 }
 
 // The right password clears its network's (or device's) count and takes
-// itself off the username's, in the window it was counted in only.
+// itself off the email's, in the window it was counted in only.
 func TestSucceededClearsCounts(t *testing.T) {
 	limiter := newLoginLimiter(slog.New(slog.DiscardHandler))
 	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
 
 	for _, test := range []struct {
-		knownDevice        bool
-		network, usernames loginCounter
-		networkKey         string
+		knownDevice     bool
+		network, emails loginCounter
+		networkKey      string
 	}{
-		{false, limiter.byAddress, limiter.byUsername, network(1).String() + "/32"},
-		{true, limiter.byDevice, limiter.byKnownUsername, network(1).String() + "/32\x00admin"},
+		{false, limiter.byAddress, limiter.byEmail, network(1).String() + "/32"},
+		{true, limiter.byDevice, limiter.byKnownEmail, network(1).String() + "/32\x00admin"},
 	} {
 		var last loginAttempt
 
@@ -455,8 +467,8 @@ func TestSucceededClearsCounts(t *testing.T) {
 			t.Errorf("known device %v: the network keeps %d attempts", test.knownDevice, count)
 		}
 
-		if count := test.usernames.count("admin", now); count != MaxLoginFailures-2 {
-			t.Errorf("known device %v: the username has %d attempts, want %d", test.knownDevice, count, MaxLoginFailures-2)
+		if count := test.emails.count("admin", now); count != MaxLoginFailures-2 {
+			t.Errorf("known device %v: the email has %d attempts, want %d", test.knownDevice, count, MaxLoginFailures-2)
 		}
 	}
 
@@ -466,13 +478,13 @@ func TestSucceededClearsCounts(t *testing.T) {
 	limiter.begin(network(3), "dev", false, later)
 	limiter.succeeded(early)
 
-	if count := limiter.byUsername.count("dev", later); count != 1 {
+	if count := limiter.byEmail.count("dev", later); count != 1 {
 		t.Errorf("the next window's count is %d, want 1", count)
 	}
 }
 
 // The right password of one user takes only itself off a network's count
-// that holds guesses at other usernames: an insider cannot clear them.
+// that holds guesses at other emails: an insider cannot clear them.
 func TestSucceededKeepsOthersGuesses(t *testing.T) {
 	limiter := newLoginLimiter(slog.New(slog.DiscardHandler))
 	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)

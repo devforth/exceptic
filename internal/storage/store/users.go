@@ -23,13 +23,16 @@ var RoleSummaries = map[string]string{
 	RoleUser:       "issue statuses, logs, project DSNs and their own coding agents",
 }
 
-var ErrUsernameTaken = errors.New("username is taken")
+var ErrEmailTaken = errors.New("email is taken")
 
 // User is a user of the panel. The password hash is never read with it: only
 // UserPassword and FindLogin return it, where a password is checked.
 type User struct {
-	ID                 string
-	Username           string
+	ID string
+	// Email is the login, unique in any case: an email, or the username of a
+	// user stored before logins were emails (the superadmin's ADMIN_EMAIL as
+	// given too), until it is changed. Stored under its former name.
+	Email              string `json:"Username"`
 	Name               string
 	Role               string
 	MustChangePassword bool
@@ -78,9 +81,9 @@ func (user User) CanTakeOver(target User) bool {
 	return user.CanManage(target) && target.CoveredBy(user.ProjectAccess())
 }
 
-// DisplayName is the name, or the username when no name is set.
+// DisplayName is the name, or the email when no name is set.
 func (user User) DisplayName() string {
-	return displayName(user.Name, user.Username)
+	return displayName(user.Name, user.Email)
 }
 
 // CanAdminister: projects, notifications, users and deleting issues.
@@ -143,14 +146,14 @@ func (user User) Actor(source string) Actor {
 // UserChange is a change of a user by an administrator whose access is By.
 // Both are checked against the stored user under the write lock, so two
 // administrators saving one user keep each other's projects: a new name or
-// role only when By covers the user (User.CoveredBy, else
+// role or email only when By covers the user (User.CoveredBy, else
 // ErrTakeOverLocked), and
 // Access, when set (what By chose of what it was shown), merged with the
 // stored access (Access.Replace).
 type UserChange struct {
-	Name, Role string
-	By         Access
-	Access     *Access
+	Email, Name, Role string
+	By                Access
+	Access            *Access
 }
 
 // PasswordChange is a new password hash and what it ends.
@@ -165,11 +168,22 @@ type PasswordChange struct {
 	RevokeAgents bool
 }
 
-// displayName is the name to show: the name, or the username without one.
-func displayName(name, username string) string {
+// NameAfterEmail is the name to save when a user's email changes from
+// previous to email: a name that was the email (saved when none was given)
+// or none follows it.
+func NameAfterEmail(name, previous, email string) string {
+	if name == "" || name == previous {
+		return email
+	}
+
+	return name
+}
+
+// displayName is the name to show: the name, or the email without one.
+func displayName(name, email string) string {
 	if name != "" {
 		return name
 	}
 
-	return username
+	return email
 }

@@ -27,6 +27,8 @@ import History from '@lucide/svelte/icons/history';
 import InfinityIcon from '@lucide/svelte/icons/infinity';
 import Info from '@lucide/svelte/icons/info';
 import KeyRound from '@lucide/svelte/icons/key-round';
+import Lock from '@lucide/svelte/icons/lock';
+import Mail from '@lucide/svelte/icons/mail';
 import LogOut from '@lucide/svelte/icons/log-out';
 import LetterI from '@lucide/svelte/icons/letter-i';
 import Logs from '@lucide/svelte/icons/logs';
@@ -77,6 +79,9 @@ export const icons = {
 	settings: Settings,
 	hint: CircleQuestionMark,
 	token: KeyRound,
+	// The account's security: change the email, change the password.
+	email: Mail,
+	password: Lock,
 	code: CodeXml,
 	pause: Pause,
 	resume: Play,

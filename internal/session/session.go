@@ -34,12 +34,12 @@ const (
 	deviceCookie   = "exceptic_device"
 	deviceLifetime = 400 * 24 * time.Hour // the longest browsers keep a cookie
 
-	// MaxLoginFailures attempts are allowed per client network, per username
+	// MaxLoginFailures attempts are allowed per client network, per email
 	// and per known device within LoginWindow.
 	MaxLoginFailures = 10
 	LoginWindow      = 15 * time.Minute
 
-	// Known devices get this many attempts at one username from all networks
+	// Known devices get this many attempts at one email from all networks
 	// together, so a copied device cookie is no way around the limit.
 	maxKnownDeviceFailures = 3 * MaxLoginFailures
 )
@@ -55,47 +55,47 @@ func newToken() string {
 // loginLimiter counts login attempts in fixed windows. An attempt is counted
 // before its password is checked, under one lock, so concurrent attempts
 // cannot pass it. A browser the user logged in from (a known device) is
-// counted per network and username, and per username up to
+// counted per network and email, and per email up to
 // maxKnownDeviceFailures, so strangers' guesses cannot lock its owner out;
-// any other attempt counts per network and per username, so guessing from
+// any other attempt counts per network and per email, so guessing from
 // many networks stays at MaxLoginFailures.
 type loginLimiter struct {
-	mutex           sync.Mutex
-	logger          *slog.Logger
-	byAddress       loginCounter
-	byUsername      loginCounter
-	byDevice        loginCounter // a network and a username, for known devices
-	byKnownUsername loginCounter // known-device attempts at a username
-	swept           time.Time
-	fullWarned      time.Time
+	mutex        sync.Mutex
+	logger       *slog.Logger
+	byAddress    loginCounter
+	byEmail      loginCounter
+	byDevice     loginCounter // a network and an email, for known devices
+	byKnownEmail loginCounter // known-device attempts at an email
+	swept        time.Time
+	fullWarned   time.Time
 }
 
 type loginWindowState struct {
 	start time.Time
 	count int
-	// A network's attempts: at username alone, or also at others.
-	username string
-	others   bool
+	// A network's attempts: at email alone, or also at others.
+	email  string
+	others bool
 }
 
-// attemptAt notes the username of a network's attempt just counted.
-func (state *loginWindowState) attemptAt(username string) {
+// attemptAt notes the email of a network's attempt just counted.
+func (state *loginWindowState) attemptAt(email string) {
 	if state.count == 1 {
-		state.username = username
-	} else if state.username != username {
+		state.email = email
+	} else if state.email != email {
 		state.others = true
 	}
 }
 
 type loginCounter map[string]*loginWindowState
 
-// maxLimiterKeys bounds the memory a flood of made-up addresses or usernames
+// maxLimiterKeys bounds the memory a flood of made-up addresses or emails
 // can take: past it a new one is refused until its window ends. Known
 // devices are counted apart, so their owners still log in.
 const maxLimiterKeys = 10_000
 
 func newLoginLimiter(logger *slog.Logger) *loginLimiter {
-	return &loginLimiter{logger: logger, byAddress: loginCounter{}, byUsername: loginCounter{}, byDevice: loginCounter{}, byKnownUsername: loginCounter{}}
+	return &loginLimiter{logger: logger, byAddress: loginCounter{}, byEmail: loginCounter{}, byDevice: loginCounter{}, byKnownEmail: loginCounter{}}
 }
 
 // full reports a counter with no room for key.
@@ -148,22 +148,22 @@ func (counter loginCounter) sweep(now time.Time) {
 // loginAttempt is an attempt counted by begin, with the keys it counted
 // under and the counts it reached.
 type loginAttempt struct {
-	username                    string // usernameKey of the typed one
-	knownDevice                 bool
-	addressKey                  string
-	pairKey                     string // a network and the username, for a known device
-	addressCount, usernameCount int    // addressCount is the pair's for a known device
-	addressStart, usernameStart time.Time
+	email                    string // emailKey of the typed one
+	knownDevice              bool
+	addressKey               string
+	pairKey                  string // a network and the email, for a known device
+	addressCount, emailCount int    // addressCount is the pair's for a known device
+	addressStart, emailStart time.Time
 }
 
 // begin counts an attempt, or refuses it when its count is used up.
-func (limiter *loginLimiter) begin(client netip.Addr, username string, knownDevice bool, now time.Time) (loginAttempt, bool) {
+func (limiter *loginLimiter) begin(client netip.Addr, email string, knownDevice bool, now time.Time) (loginAttempt, bool) {
 	limiter.mutex.Lock()
 	defer limiter.mutex.Unlock()
 
 	// Drop finished windows so the maps do not grow with every key ever seen.
 	if now.Sub(limiter.swept) >= time.Minute {
-		for _, counter := range []loginCounter{limiter.byAddress, limiter.byUsername, limiter.byDevice, limiter.byKnownUsername} {
+		for _, counter := range []loginCounter{limiter.byAddress, limiter.byEmail, limiter.byDevice, limiter.byKnownEmail} {
 			counter.sweep(now)
 		}
 
@@ -171,51 +171,51 @@ func (limiter *loginLimiter) begin(client netip.Addr, username string, knownDevi
 	}
 
 	network := server.ClientNetwork(client).String()
-	attempt := loginAttempt{username: usernameKey(username), knownDevice: knownDevice}
+	attempt := loginAttempt{email: emailKey(email), knownDevice: knownDevice}
 
 	// Only users' current device cookies get here, so these keys are bounded by the users.
 	if knownDevice {
-		attempt.pairKey = network + "\x00" + attempt.username
+		attempt.pairKey = network + "\x00" + attempt.email
 
-		if limiter.byDevice.count(attempt.pairKey, now) >= MaxLoginFailures || limiter.byKnownUsername.count(attempt.username, now) >= maxKnownDeviceFailures {
+		if limiter.byDevice.count(attempt.pairKey, now) >= MaxLoginFailures || limiter.byKnownEmail.count(attempt.email, now) >= maxKnownDeviceFailures {
 			return attempt, false
 		}
 
 		attempt.addressCount = limiter.byDevice.add(attempt.pairKey, now)
-		attempt.usernameCount = limiter.byKnownUsername.add(attempt.username, now)
-		attempt.usernameStart = limiter.byKnownUsername[attempt.username].start
+		attempt.emailCount = limiter.byKnownEmail.add(attempt.email, now)
+		attempt.emailStart = limiter.byKnownEmail[attempt.email].start
 
 		return attempt, true
 	}
 
 	attempt.addressKey = network
 
-	if limiter.byAddress.full(attempt.addressKey) || limiter.byUsername.full(attempt.username) {
+	if limiter.byAddress.full(attempt.addressKey) || limiter.byEmail.full(attempt.email) {
 		if limiter.fullWarned.IsZero() || now.Sub(limiter.fullWarned) >= LoginWindow {
 			limiter.fullWarned = now
-			limiter.logger.Warn("login limit full: new addresses and usernames are refused, likely a distributed guessing attack; known devices still log in",
+			limiter.logger.Warn("login limit full: new addresses and emails are refused, likely a distributed guessing attack; known devices still log in",
 				"keys", maxLimiterKeys, "for", LoginWindow)
 		}
 
 		return attempt, false
 	}
 
-	if limiter.byAddress.count(attempt.addressKey, now) >= MaxLoginFailures || limiter.byUsername.count(attempt.username, now) >= MaxLoginFailures {
+	if limiter.byAddress.count(attempt.addressKey, now) >= MaxLoginFailures || limiter.byEmail.count(attempt.email, now) >= MaxLoginFailures {
 		return attempt, false
 	}
 
 	attempt.addressCount = limiter.byAddress.add(attempt.addressKey, now)
 	address := limiter.byAddress[attempt.addressKey]
-	address.attemptAt(attempt.username)
+	address.attemptAt(attempt.email)
 	attempt.addressStart = address.start
-	attempt.usernameCount = limiter.byUsername.add(attempt.username, now)
-	attempt.usernameStart = limiter.byUsername[attempt.username].start
+	attempt.emailCount = limiter.byEmail.add(attempt.email, now)
+	attempt.emailStart = limiter.byEmail[attempt.email].start
 
 	return attempt, true
 }
 
 // succeeded clears the attempts of the known device, or of the network when
-// they were all at this username (the user's own typos), and takes the right
+// they were all at this email (the user's own typos), and takes the right
 // password off the other counts, so a user cannot clear guesses at others.
 func (limiter *loginLimiter) succeeded(attempt loginAttempt) {
 	limiter.mutex.Lock()
@@ -223,7 +223,7 @@ func (limiter *loginLimiter) succeeded(attempt loginAttempt) {
 
 	if attempt.knownDevice {
 		delete(limiter.byDevice, attempt.pairKey)
-		limiter.byKnownUsername.forgive(attempt.username, attempt.usernameStart)
+		limiter.byKnownEmail.forgive(attempt.email, attempt.emailStart)
 
 		return
 	}
@@ -234,16 +234,16 @@ func (limiter *loginLimiter) succeeded(attempt loginAttempt) {
 		limiter.byAddress.forgive(attempt.addressKey, attempt.addressStart)
 	}
 
-	limiter.byUsername.forgive(attempt.username, attempt.usernameStart)
+	limiter.byEmail.forgive(attempt.email, attempt.emailStart)
 }
 
-// usernameKey is the username as the limit counts it: in any case (usernames
+// emailKey is the email as the limit counts it: in any case (emails
 // are unique in any case), capped so a long made-up one costs little memory.
-func usernameKey(username string) string {
-	key := strings.ToLower(strings.TrimSpace(username))
+func emailKey(email string) string {
+	key := strings.ToLower(strings.TrimSpace(email))
 
-	if len(key) > config.MaxUsername {
-		key = key[:config.MaxUsername]
+	if len(key) > config.MaxEmail {
+		key = key[:config.MaxEmail]
 	}
 
 	return key
@@ -287,9 +287,10 @@ type Auth struct {
 
 // passwordChecker checks passwords: services.Users.
 type passwordChecker interface {
-	Authenticate(ctx context.Context, username, password string) (store.User, bool, error)
-	DeviceStamp(ctx context.Context, username string) (string, error)
+	Authenticate(ctx context.Context, email, password string) (store.User, bool, error)
+	DeviceStamp(ctx context.Context, email string) (string, error)
 	ChangeOwnPassword(ctx context.Context, viewer store.User, current, password, confirm, keepSession string) (services.Problems, bool, error)
+	ChangeOwnEmail(ctx context.Context, viewer store.User, current, email string) (services.Problems, bool, string, error)
 }
 
 func NewAuth(logger *slog.Logger, settings *config.Config, users *services.Users, sessions *services.Sessions) *Auth {
@@ -368,12 +369,12 @@ const (
 
 // Login checks the typed credentials of a login form and starts a new
 // session when they match. Attempts are limited by loginLimiter (unknown
-// usernames too, so a block does not tell which exist). An error is a
+// emails too, so a block does not tell which exist). An error is a
 // failure of the database.
-func (auth *Auth) Login(w http.ResponseWriter, r *http.Request, username, password string) (LoginResult, error) {
+func (auth *Auth) Login(w http.ResponseWriter, r *http.Request, email, password string) (LoginResult, error) {
 	client := server.ClientIP(r, auth.trustedProxies)
 	now := auth.now()
-	attempt, allowed := auth.limiter.begin(client, username, auth.knownDevice(r, username, now), now)
+	attempt, allowed := auth.limiter.begin(client, email, auth.knownDevice(r, email, now), now)
 
 	if !allowed {
 		return LoginBlocked, nil
@@ -389,7 +390,7 @@ func (auth *Auth) Login(w http.ResponseWriter, r *http.Request, username, passwo
 		return LoginWrongCredentials, err
 	}
 
-	user, ok, err := auth.passwords.Authenticate(r.Context(), username, password)
+	user, ok, err := auth.passwords.Authenticate(r.Context(), email, password)
 
 	done()
 
@@ -404,7 +405,7 @@ func (auth *Auth) Login(w http.ResponseWriter, r *http.Request, username, passwo
 	}
 
 	auth.limiter.succeeded(attempt)
-	auth.setDeviceCookie(w, r, user.Username, now)
+	auth.setDeviceCookie(w, r, user.Email, now)
 
 	// A new session every login.
 	if err := auth.startSession(r.Context(), w, r, user.ID, now); err != nil {
@@ -421,11 +422,11 @@ func (auth *Auth) Login(w http.ResponseWriter, r *http.Request, username, passwo
 func (auth *Auth) failed(client netip.Addr, attempt loginAttempt) {
 	if attempt.knownDevice {
 		if attempt.addressCount == MaxLoginFailures {
-			auth.logger.Warn("too many wrong passwords from a known browser, blocked", "username", attempt.username, "client", client.String(), "attempts", MaxLoginFailures, "for", LoginWindow)
+			auth.logger.Warn("too many wrong passwords from a known browser, blocked", "email", attempt.email, "client", client.String(), "attempts", MaxLoginFailures, "for", LoginWindow)
 		}
 
-		if attempt.usernameCount == maxKnownDeviceFailures {
-			auth.logger.Warn("too many wrong passwords from known browsers, username blocked for them, its device cookie may be copied", "username", attempt.username, "client", client.String(), "attempts", maxKnownDeviceFailures, "for", LoginWindow)
+		if attempt.emailCount == maxKnownDeviceFailures {
+			auth.logger.Warn("too many wrong passwords from known browsers, email blocked for them, its device cookie may be copied", "email", attempt.email, "client", client.String(), "attempts", maxKnownDeviceFailures, "for", LoginWindow)
 		}
 
 		return
@@ -435,8 +436,8 @@ func (auth *Auth) failed(client netip.Addr, attempt loginAttempt) {
 		auth.logger.Warn("too many wrong passwords, address blocked", "client", client.String(), "attempts", MaxLoginFailures, "for", LoginWindow)
 	}
 
-	if attempt.usernameCount == MaxLoginFailures {
-		auth.logger.Warn("too many wrong passwords, username blocked for browsers that never logged in as it", "username", attempt.username, "client", client.String(), "attempts", MaxLoginFailures, "for", LoginWindow)
+	if attempt.emailCount == MaxLoginFailures {
+		auth.logger.Warn("too many wrong passwords, email blocked for browsers that never logged in as it", "email", attempt.email, "client", client.String(), "attempts", MaxLoginFailures, "for", LoginWindow)
 	}
 }
 
@@ -447,9 +448,30 @@ func (auth *Auth) failed(client netip.Addr, attempt loginAttempt) {
 // changes it. This browser stays the known device. ErrTooManyAttempts when
 // the login limit refuses the check.
 func (auth *Auth) ChangePassword(w http.ResponseWriter, r *http.Request, viewer store.User, current, password, confirm string) (services.Problems, error) {
+	return auth.withCurrentPassword(w, r, viewer, func() (services.Problems, bool, string, error) {
+		problems, wrongCurrent, err := auth.passwords.ChangeOwnPassword(r.Context(), viewer, current, password, confirm, SessionHash(r))
+
+		return problems, wrongCurrent, viewer.Email, err
+	})
+}
+
+// ChangeEmail replaces the viewer's own email after checking the current
+// password, under the same limit as ChangePassword; sessions and agents
+// stay, and this browser becomes the known device of the new email.
+func (auth *Auth) ChangeEmail(w http.ResponseWriter, r *http.Request, viewer store.User, current, email string) (services.Problems, error) {
+	return auth.withCurrentPassword(w, r, viewer, func() (services.Problems, bool, string, error) {
+		return auth.passwords.ChangeOwnEmail(r.Context(), viewer, current, email)
+	})
+}
+
+// withCurrentPassword runs change, which checks the viewer's current
+// password, as a login attempt of the viewer's email: counted by the login
+// limit, a wrong password a failure. After a change it makes this browser
+// the known device of the email change returns.
+func (auth *Auth) withCurrentPassword(w http.ResponseWriter, r *http.Request, viewer store.User, change func() (services.Problems, bool, string, error)) (services.Problems, error) {
 	client := server.ClientIP(r, auth.trustedProxies)
 	now := auth.now()
-	attempt, allowed := auth.limiter.begin(client, viewer.Username, auth.knownDevice(r, viewer.Username, now), now)
+	attempt, allowed := auth.limiter.begin(client, viewer.Email, auth.knownDevice(r, viewer.Email, now), now)
 
 	if !allowed {
 		return nil, ErrTooManyAttempts
@@ -465,7 +487,7 @@ func (auth *Auth) ChangePassword(w http.ResponseWriter, r *http.Request, viewer 
 		return nil, err
 	}
 
-	problems, wrongCurrent, err := auth.passwords.ChangeOwnPassword(r.Context(), viewer, current, password, confirm, SessionHash(r))
+	problems, wrongCurrent, email, err := change()
 
 	done()
 
@@ -476,21 +498,21 @@ func (auth *Auth) ChangePassword(w http.ResponseWriter, r *http.Request, viewer 
 		auth.limiter.succeeded(attempt)
 
 		if len(problems) == 0 {
-			auth.setDeviceCookie(w, r, viewer.Username, now)
+			auth.setDeviceCookie(w, r, email, now)
 		}
 	}
 
 	return problems, err
 }
 
-// deviceToken marks a browser that logged in as username's user with stamp
+// deviceToken marks a browser that logged in as email's user with stamp
 // (services.Users.DeviceStamp), until expires: "expires.user.stamp", where
-// user signs the username alone, so a made-up cookie is refused before the
-// database is read and its timing tells nothing about which usernames exist.
-func (auth *Auth) deviceToken(username, stamp string, expires time.Time) string {
+// user signs the email alone, so a made-up cookie is refused before the
+// database is read and its timing tells nothing about which emails exist.
+func (auth *Auth) deviceToken(email, stamp string, expires time.Time) string {
 	seconds := strconv.FormatInt(expires.Unix(), 10)
 
-	return seconds + "." + auth.deviceTag("user", seconds, usernameKey(username)) + "." + auth.deviceTag("stamp", seconds, stamp)
+	return seconds + "." + auth.deviceTag("user", seconds, emailKey(email)) + "." + auth.deviceTag("stamp", seconds, stamp)
 }
 
 func (auth *Auth) deviceTag(kind, seconds, value string) string {
@@ -501,8 +523,8 @@ func (auth *Auth) deviceTag(kind, seconds, value string) string {
 }
 
 // knownDevice reports whether the browser last logged in as the user behind
-// username, who has not changed password or role, nor been deleted, since.
-func (auth *Auth) knownDevice(r *http.Request, username string, now time.Time) bool {
+// email, who has not changed password or role, nor been deleted, since.
+func (auth *Auth) knownDevice(r *http.Request, email string, now time.Time) bool {
 	cookie, err := r.Cookie(deviceCookie)
 
 	if err != nil {
@@ -517,22 +539,22 @@ func (auth *Auth) knownDevice(r *http.Request, username string, now time.Time) b
 
 	expires, err := strconv.ParseInt(parts[0], 10, 64)
 
-	if err != nil || now.Unix() >= expires || !hmac.Equal([]byte(parts[1]), []byte(auth.deviceTag("user", parts[0], usernameKey(username)))) {
+	if err != nil || now.Unix() >= expires || !hmac.Equal([]byte(parts[1]), []byte(auth.deviceTag("user", parts[0], emailKey(email)))) {
 		return false
 	}
 
-	stamp, err := auth.passwords.DeviceStamp(r.Context(), username)
+	stamp, err := auth.passwords.DeviceStamp(r.Context(), email)
 
 	if err != nil {
 		auth.logger.Error("check login device", "err", err)
 	}
 
-	return stamp != "" && hmac.Equal([]byte(cookie.Value), []byte(auth.deviceToken(username, stamp, time.Unix(expires, 0))))
+	return stamp != "" && hmac.Equal([]byte(cookie.Value), []byte(auth.deviceToken(email, stamp, time.Unix(expires, 0))))
 }
 
-// setDeviceCookie makes the browser the known device of username's user.
-func (auth *Auth) setDeviceCookie(w http.ResponseWriter, r *http.Request, username string, now time.Time) {
-	stamp, err := auth.passwords.DeviceStamp(r.Context(), username)
+// setDeviceCookie makes the browser the known device of email's user.
+func (auth *Auth) setDeviceCookie(w http.ResponseWriter, r *http.Request, email string, now time.Time) {
+	stamp, err := auth.passwords.DeviceStamp(r.Context(), email)
 
 	if err != nil || stamp == "" {
 		auth.logger.Error("mark login device", "err", err)
@@ -543,7 +565,7 @@ func (auth *Auth) setDeviceCookie(w http.ResponseWriter, r *http.Request, userna
 	expires := now.Add(deviceLifetime)
 
 	http.SetCookie(w, &http.Cookie{
-		Name: deviceCookie, Value: auth.deviceToken(username, stamp, expires), Path: "/", Expires: expires,
+		Name: deviceCookie, Value: auth.deviceToken(email, stamp, expires), Path: "/", Expires: expires,
 		HttpOnly: true, Secure: server.IsHTTPS(r, auth.trustedProxies), SameSite: http.SameSiteLaxMode,
 	})
 }

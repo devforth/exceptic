@@ -81,8 +81,8 @@ func New(ctx context.Context, options Options) (*App, error) {
 	})
 
 	// The first start creates the superadmin from env; later starts do not
-	// use ADMIN_USERNAME/ADMIN_PASSWORD.
-	if err := all.Users.EnsureSuperadmin(ctx, settings.AdminUsername, settings.AdminPassword); err != nil {
+	// use ADMIN_EMAIL/ADMIN_PASSWORD.
+	if err := all.Users.EnsureSuperadmin(ctx, settings.AdminEmail, settings.AdminPassword); err != nil {
 		_ = notifier.Close(ctx)
 
 		return nil, err

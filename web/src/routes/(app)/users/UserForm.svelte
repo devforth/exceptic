@@ -1,7 +1,6 @@
 <!--
 @component
-The form of a new user (username, name, role, projects) and of an existing one, whose username
-stays. The projects offered are the viewer's; a user's projects the viewer does not have are
+The form of a new user (email, name, role, projects) and of an existing one. The projects offered are the viewer's; a user's projects the viewer does not have are
 not shown and stay as they are. save sends it; a refusal shows at its fields.
 -->
 <script lang="ts">
@@ -25,14 +24,14 @@ not shown and stay as they are. save sends it; a refusal shows at its fields.
 		roles: readonly string[];
 		/** The user as stored, their projects as the viewer is shown them; none for a new one. */
 		user?: {
-			username: string;
+			email: string;
 			name: string;
 			role: string;
 			allProjects: boolean;
 			projectIds: number[];
 			accessEditable: boolean;
 			accessReason?: string;
-			/** Why the viewer may not change the name and role (they lack some of the user's projects). */
+			/** Why the viewer may not change the email, name and role (they lack some of the user's projects). */
 			takeOverLocked?: string;
 		};
 		submitLabel: string;
@@ -41,7 +40,7 @@ not shown and stay as they are. save sends it; a refusal shows at its fields.
 
 	let { projects, viewerAll, roles, user, submitLabel, save }: Props = $props();
 
-	let username = $derived(user?.username ?? '');
+	let email = $derived(user?.email ?? '');
 	let name = $derived(user?.name ?? '');
 	// A new user is a user unless chosen otherwise.
 	let role = $derived(user && isAssignable(user.role) ? user.role : 'user');
@@ -57,7 +56,7 @@ not shown and stay as they are. save sends it; a refusal shows at its fields.
 	// A saved user is sent only once changed.
 	// svelte-ignore state_referenced_locally
 	const form = new FormState(
-		user ? () => ({ name: name.trim(), role, access: access() }) : undefined
+		user ? () => ({ email: email.trim(), name: name.trim(), role, access: access() }) : undefined
 	);
 
 	function submit(event: SubmitEvent) {
@@ -65,33 +64,31 @@ not shown and stay as they are. save sends it; a refusal shows at its fields.
 
 		const chosen = access();
 
-		void form.submit(() => save({ username, name, role, ...(chosen ? { access: chosen } : {}) }));
+		void form.submit(() => save({ email, name, role, ...(chosen ? { access: chosen } : {}) }));
 	}
 </script>
 
 <form onsubmit={submit} class={narrowFormClasses}>
-	{#if user}
-		<TextField label="Username" name="username" value={user.username} readonly />
-	{:else}
-		<TextField
-			label="Username"
-			name="username"
-			bind:value={username}
-			maxlength={limits.username}
-			pattern={limits.usernamePattern}
-			autocomplete="off"
-			required
-			error={form.fields.username}
-		/>
-	{/if}
 	{#if user?.takeOverLocked}
+		<TextField label="Email" name="email" value={email} readonly />
 		<TextField label="Name" name="name" value={name} readonly description={user.takeOverLocked} />
 	{:else}
+		<!-- A saved user may still have a login from before emails: the server checks a changed one. -->
+		<TextField
+			label="Email"
+			name="email"
+			type={user ? 'text' : 'email'}
+			bind:value={email}
+			maxlength={limits.email}
+			autocomplete="off"
+			required
+			error={form.fields.email}
+		/>
 		<TextField
 			label="Name"
 			name="name"
 			bind:value={name}
-			note="optional: the username when empty"
+			note="optional: the email when empty"
 			maxlength={limits.displayName}
 			autocomplete="off"
 			error={form.fields.name}

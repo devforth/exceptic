@@ -46,9 +46,9 @@ A temporary password made here or on the way here is shown once.
 		return handed ? { owner, secret: handed } : undefined;
 	}
 
-	async function save({ name, role, access }: UserInput) {
+	async function save({ email, name, role, access }: UserInput) {
 		await refreshingOnRefusal(() =>
-			post('update_user', { user_id: user.id, name, role, ...access })
+			post('update_user', { user_id: user.id, email, name, role, ...access })
 		);
 		toast.show('Saved.');
 		await invalidateAll();
@@ -70,7 +70,7 @@ A temporary password made here or on the way here is shown once.
 
 	type Fact = { label: string };
 
-	const facts: Fact[] = [{ label: 'Username' }, { label: 'Role' }];
+	const facts: Fact[] = [{ label: 'Email' }, { label: 'Role' }];
 </script>
 
 <Breadcrumbs
@@ -83,7 +83,7 @@ A temporary password made here or on the way here is shown once.
 	{#snippet actions()}
 		{#if data.managed.can_manage}
 			<ConfirmButton
-				confirm={deleteConfirmation(user.username)}
+				confirm={deleteConfirmation(user.email)}
 				action={remove}
 				unavailable={takeOverLocked}
 			>
@@ -113,7 +113,7 @@ A temporary password made here or on the way here is shown once.
 		viewerAll={data.session.all_projects}
 		roles={data.session.assignable_roles ?? []}
 		user={{
-			username: user.username,
+			email: user.email,
 			name: user.display_name,
 			role: user.role,
 			allProjects: user.all_projects,
@@ -128,7 +128,7 @@ A temporary password made here or on the way here is shown once.
 	<div class="mt-6">
 		<ConfirmButton
 			variant="default"
-			confirm={resetConfirmation(user.username)}
+			confirm={resetConfirmation(user.email)}
 			action={reset}
 			unavailable={takeOverLocked}
 		>
@@ -138,7 +138,7 @@ A temporary password made here or on the way here is shown once.
 {:else}
 	<Facts {facts}>
 		{#snippet value(fact: Fact)}
-			{#if fact.label === 'Username'}{user.username}{:else}<RoleBadge role={user.role} />{/if}
+			{#if fact.label === 'Email'}{user.email}{:else}<RoleBadge role={user.role} />{/if}
 		{/snippet}
 	</Facts>
 	<p class="text-muted">{takeOverLocked}</p>

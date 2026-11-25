@@ -135,16 +135,18 @@ type Store interface {
 
 	// Users.
 
-	// CreateUser returns ErrUsernameTaken for a username taken in any case.
+	// CreateUser, UpdateUser and UpdateUserEmail return ErrEmailTaken for an email taken in any case.
 	CreateUser(ctx context.Context, user User, passwordHash string) (string, error)
 	GetUser(ctx context.Context, id string) (User, error)
-	FindUser(ctx context.Context, username string) (User, error)
-	FindLogin(ctx context.Context, username string) (User, string, error)
+	FindUser(ctx context.Context, email string) (User, error)
+	FindLogin(ctx context.Context, email string) (User, string, error)
 	UserPassword(ctx context.Context, id string) (string, error)
 	Superadmin(ctx context.Context) (User, error)
 	ListUsers(ctx context.Context) ([]User, error)
 	UpdateUser(ctx context.Context, id string, change UserChange) error
 	UpdateUserName(ctx context.Context, id string, name string) error
+	// UpdateUserEmail changes the login; a name that was the email follows it.
+	UpdateUserEmail(ctx context.Context, id string, email string) error
 	UpdateUserTheme(ctx context.Context, id string, theme string) error
 	// SetPassword ends the user's other sessions.
 	SetPassword(ctx context.Context, id string, change PasswordChange) error

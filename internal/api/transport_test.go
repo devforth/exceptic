@@ -235,8 +235,8 @@ func TestInputErrorBody(t *testing.T) {
 			"conflict: connection conn0001 (alerts) already sends there: update it instead",
 		},
 		"refusal": {
-			services.Refusal{Kind: services.ErrConflict, Problems: services.Problems{"username": "taken"}}, http.StatusConflict,
-			ErrorBody{Error: "username: taken", Fields: map[string]string{"username": "taken"}}, "conflict: username: taken",
+			services.Refusal{Kind: services.ErrConflict, Problems: services.Problems{"email": "taken"}}, http.StatusConflict,
+			ErrorBody{Error: "email: taken", Fields: map[string]string{"email": "taken"}}, "conflict: email: taken",
 		},
 		"hidden":  {services.Hidden("issue", "abcd1234"), http.StatusForbidden, ErrorBody{Error: "issue abcd1234 is not in your projects"}, "forbidden: issue abcd1234 is not in your projects"},
 		"missing": {services.Missing("issue", "abcd1234"), http.StatusNotFound, ErrorBody{Error: "not found: issue abcd1234"}, "not found: issue abcd1234"},

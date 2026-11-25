@@ -39,7 +39,7 @@ func testAuthorization(t *testing.T) (*Server, http.Handler) {
 	database := storetest.Open(t)
 
 	// The user agents act for (users are created by the UI).
-	if _, err := database.CreateUser(context.Background(), store.User{Username: "admin", Role: store.RoleSuperadmin, CreatedAt: time.Now()}, "x"); err != nil {
+	if _, err := database.CreateUser(context.Background(), store.User{Email: "admin", Role: store.RoleSuperadmin, CreatedAt: time.Now()}, "x"); err != nil {
 		t.Fatal(err)
 	}
 

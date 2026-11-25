@@ -509,7 +509,7 @@ func (server *testServer) asWith(role string, access store.Access) *testServer {
 	server.t.Helper()
 
 	ctx := context.Background()
-	user := store.User{Username: role + "-" + store.NewID(), Role: role, Access: access, CreatedAt: time.Now()}
+	user := store.User{Email: role + "-" + store.NewID(), Role: role, Access: access, CreatedAt: time.Now()}
 	id, err := server.database.CreateUser(ctx, user, "x")
 
 	if err != nil {

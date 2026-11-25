@@ -253,10 +253,10 @@ func TestDeviceStamp(t *testing.T) {
 	ctx := context.Background()
 	database := openStore(t)
 	users := NewUsers(slog.New(slog.DiscardHandler), database)
-	root := store.User{ID: "root", Username: "root", Role: store.RoleSuperadmin}
+	root := store.User{ID: "root", Email: "root", Role: store.RoleSuperadmin}
 
 	create := func() string {
-		id, _, problems, err := users.Create(ctx, root, UserInput{Username: "Dev", Role: store.RoleUser})
+		id, _, problems, err := users.Create(ctx, root, UserInput{Email: "Dev@example.com", Role: store.RoleUser})
 
 		if err != nil || len(problems) > 0 {
 			t.Fatal(err, problems)
@@ -265,7 +265,7 @@ func TestDeviceStamp(t *testing.T) {
 		return id
 	}
 	stamp := func() string {
-		value, err := users.DeviceStamp(ctx, " dev ")
+		value, err := users.DeviceStamp(ctx, " dev@EXAMPLE.com ")
 
 		if err != nil {
 			t.Fatal(err)
@@ -290,7 +290,7 @@ func TestDeviceStamp(t *testing.T) {
 
 	before := stamp()
 
-	if _, err := users.UpdateName(ctx, store.User{ID: id, Username: "Dev"}, "Developer"); err != nil || stamp() != before {
+	if _, err := users.UpdateName(ctx, store.User{ID: id, Email: "dev@example.com"}, "Developer"); err != nil || stamp() != before {
 		t.Fatal("a new name changed the stamp", err)
 	}
 
@@ -300,7 +300,7 @@ func TestDeviceStamp(t *testing.T) {
 
 	changed("password reset")
 
-	if _, err := users.Update(ctx, root, id, UserInput{Name: "Dev", Role: store.RoleAdmin}); err != nil {
+	if _, err := users.Update(ctx, root, id, UserInput{Email: "dev@example.com", Name: "Dev", Role: store.RoleAdmin}); err != nil {
 		t.Fatal(err)
 	}
 

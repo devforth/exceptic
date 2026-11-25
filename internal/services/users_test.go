@@ -58,7 +58,7 @@ func TestAuthenticateWithoutPasswordHash(t *testing.T) {
 	users := NewUsers(slog.New(slog.DiscardHandler), database)
 
 	for username, hash := range map[string]string{"sso": "", "broken": "x"} {
-		if _, err := database.CreateUser(ctx, store.User{Username: username, Name: username, Role: store.RoleUser, CreatedAt: time.Now()}, hash); err != nil {
+		if _, err := database.CreateUser(ctx, store.User{Email: username, Name: username, Role: store.RoleUser, CreatedAt: time.Now()}, hash); err != nil {
 			t.Fatal(err)
 		}
 

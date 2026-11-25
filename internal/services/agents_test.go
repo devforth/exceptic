@@ -20,13 +20,13 @@ func TestPersonalTokenSetup(t *testing.T) {
 	database := openStore(t)
 	agents := newAgents(&oauth.Server{Store: database, ResourcePath: "/mcp"}, database, &config.Config{AppName: "Acme Errors"})
 	address := &url.URL{Scheme: "https", Host: "errors.example.com", Path: "/monitoring"}
-	id, err := database.CreateUser(ctx, store.User{Username: "dev", Role: store.RoleUser, CreatedAt: time.Now()}, "x")
+	id, err := database.CreateUser(ctx, store.User{Email: "dev", Role: store.RoleUser, CreatedAt: time.Now()}, "x")
 
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	viewer := store.User{ID: id, Username: "dev", Role: store.RoleUser}
+	viewer := store.User{ID: id, Email: "dev", Role: store.RoleUser}
 	setup, err := agents.Setup(ctx, viewer, address)
 
 	if err != nil || setup.TokenSet || setup.Unencrypted || setup.ServerName != "acme-errors" ||

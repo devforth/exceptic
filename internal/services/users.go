@@ -32,10 +32,10 @@ func NewUsers(logger *slog.Logger, database store.Store) *Users {
 	return &Users{logger: logger, store: database, now: time.Now}
 }
 
-// EnsureSuperadmin creates the superadmin from ADMIN_USERNAME and
-// ADMIN_PASSWORD when there is none: once, at the first start. Later the
-// variables are not used.
-func (users *Users) EnsureSuperadmin(ctx context.Context, username, password string) error {
+// EnsureSuperadmin creates the superadmin from ADMIN_EMAIL (the login as
+// given, an email or not) and ADMIN_PASSWORD when there is none: once, at
+// the first start. Later the variables are not used.
+func (users *Users) EnsureSuperadmin(ctx context.Context, email, password string) error {
 	_, err := users.store.Superadmin(ctx)
 
 	switch {
@@ -44,7 +44,7 @@ func (users *Users) EnsureSuperadmin(ctx context.Context, username, password str
 	case !errors.Is(err, store.ErrNotFound):
 		return err
 	case password == "":
-		users.logger.Warn("no superadmin yet: set ADMIN_PASSWORD (and ADMIN_USERNAME) to create one, the UI is closed until then")
+		users.logger.Warn("no superadmin yet: set ADMIN_PASSWORD (and ADMIN_EMAIL) to create one, the UI is closed until then")
 
 		return nil
 	}
@@ -55,17 +55,17 @@ func (users *Users) EnsureSuperadmin(ctx context.Context, username, password str
 		return err
 	}
 
-	_, err = users.store.CreateUser(ctx, store.User{Username: username, Name: username, Role: store.RoleSuperadmin, CreatedAt: users.now()}, hash)
+	_, err = users.store.CreateUser(ctx, store.User{Email: email, Name: email, Role: store.RoleSuperadmin, CreatedAt: users.now()}, hash)
 
-	if errors.Is(err, store.ErrUsernameTaken) {
-		return fmt.Errorf("ADMIN_USERNAME %q belongs to an existing user: choose another username for the superadmin", username)
+	if errors.Is(err, store.ErrEmailTaken) {
+		return fmt.Errorf("ADMIN_EMAIL %q belongs to an existing user: choose another email for the superadmin", email)
 	}
 
 	if err != nil {
 		return err
 	}
 
-	users.logger.Info("superadmin created", "username", username)
+	users.logger.Info("superadmin created", "email", email)
 
 	return nil
 }
@@ -89,7 +89,7 @@ func (users *Users) Create(ctx context.Context, viewer store.User, input UserInp
 		return "", "", nil, ErrForbidden
 	}
 
-	input.Username = strings.TrimSpace(input.Username)
+	email, emailOK := config.ParseEmail(input.Email)
 	access := viewer.ProjectAccess()
 
 	if input.Access != nil {
@@ -99,11 +99,8 @@ func (users *Users) Create(ctx context.Context, viewer store.User, input UserInp
 	problems := checkUserInput(input)
 	users.checkAccess(problems, access)
 
-	switch {
-	case input.Username == "":
-		problems["username"] = "Enter a username."
-	case !config.ValidUsername(input.Username):
-		problems["username"] = fmt.Sprintf("Up to %d letters, digits and . _ @ -.", config.MaxUsername)
+	if !emailOK {
+		problems["email"] = enterEmail
 	}
 
 	forbidden := Problems{}
@@ -124,20 +121,48 @@ func (users *Users) Create(ctx context.Context, viewer store.User, input UserInp
 		return "", "", nil, err
 	}
 
-	user := store.User{Username: input.Username, Name: nameOr(input.Name, input.Username), Role: input.Role, MustChangePassword: true, CreatedAt: users.now(), Access: access}
+	user := store.User{Email: email, Name: nameOr(input.Name, email), Role: input.Role, MustChangePassword: true, CreatedAt: users.now(), Access: access}
 	id, err := users.store.CreateUser(ctx, user, hash)
 
-	if errors.Is(err, store.ErrUsernameTaken) {
-		return "", "", nil, Refusal{Kind: ErrConflict, Problems: Problems{"username": "This username is taken."}}
+	if errors.Is(err, store.ErrEmailTaken) {
+		return "", "", nil, emailTaken()
 	}
 
 	return id, password, nil, err
 }
 
-// Update changes a user's name, role and access. The access chosen
+const enterEmail = "Enter a valid email address."
+
+// emailTaken: emails are unique; telling so names a user only to
+// administrators, or to a user who has just typed their own password.
+func emailTaken() error {
+	return Refusal{Kind: ErrConflict, Problems: Problems{"email": emailTakenProblem}}
+}
+
+const emailTakenProblem = "This email is taken."
+
+// newEmail is the email a form sets: the stored one when unchanged (in any
+// case; a login stored before emails stays), else a valid email.
+func newEmail(problems Problems, stored, entered string) string {
+	entered = strings.TrimSpace(entered)
+
+	if strings.EqualFold(entered, stored) {
+		return stored
+	}
+
+	email, ok := config.ParseEmail(entered)
+
+	if !ok {
+		problems["email"] = enterEmail
+	}
+
+	return email
+}
+
+// Update changes a user's email, name, role and access. The access chosen
 // replaces only the part the viewer sees (store.Access.Replace): the
-// user's other projects stay. Name and role change only when the viewer
-// may take the user over (store.User.CanTakeOver).
+// user's other projects stay. Email, name and role change only when the
+// viewer may take the user over (store.User.CanTakeOver).
 func (users *Users) Update(ctx context.Context, viewer store.User, id string, input UserInput) (Problems, error) {
 	target, err := users.manageable(ctx, viewer, id)
 
@@ -146,7 +171,8 @@ func (users *Users) Update(ctx context.Context, viewer store.User, id string, in
 	}
 
 	problems := checkUserInput(input)
-	change := store.UserChange{Name: nameOr(input.Name, target.Username), Role: input.Role, By: viewer.ProjectAccess(), Access: input.Access}
+	email := newEmail(problems, target.Email, input.Email)
+	change := store.UserChange{Email: email, Name: store.NameAfterEmail(strings.TrimSpace(input.Name), target.Email, email), Role: input.Role, By: viewer.ProjectAccess(), Access: input.Access}
 
 	if input.Access != nil {
 		users.checkAccess(problems, *input.Access)
@@ -168,6 +194,8 @@ func (users *Users) Update(ctx context.Context, viewer store.User, id string, in
 
 	// What the viewer may not give, decided again against the stored user.
 	switch {
+	case errors.Is(err, store.ErrEmailTaken):
+		return nil, emailTaken()
 	case errors.Is(err, store.ErrAccessLocked):
 		return nil, Refusal{Kind: ErrForbidden, Problems: Problems{"projects": accessLockedProblem}}
 	case errors.Is(err, store.ErrTakeOverLocked):
@@ -200,9 +228,13 @@ func checkRole(problems Problems, viewer store.User, role string) {
 	}
 }
 
-// takeOverProblems adds a problem at the name and the role when change
-// changes them.
+// takeOverProblems adds a problem at the email, the name and the role when
+// change changes them.
 func takeOverProblems(problems Problems, target store.User, change store.UserChange) {
+	if change.Email != target.Email {
+		problems["email"] = TakeOverProblem
+	}
+
 	if change.Name != target.DisplayName() {
 		problems["name"] = TakeOverProblem
 	}
@@ -213,7 +245,7 @@ func takeOverProblems(problems Problems, target store.User, change store.UserCha
 }
 
 // TakeOverProblem: why viewer may not rename, delete or reset the password
-// of a user, or change their role (store.User.CanTakeOver).
+// of a user, or change their email or role (store.User.CanTakeOver).
 const TakeOverProblem = "Only an admin with all of this user's projects can change it."
 
 // AccessEditable says whether viewer may change target's access, and why
@@ -288,7 +320,7 @@ func (users *Users) UpdateName(ctx context.Context, viewer store.User, name stri
 		return problems, nil
 	}
 
-	return nil, users.store.UpdateUserName(ctx, viewer.ID, nameOr(name, viewer.Username))
+	return nil, users.store.UpdateUserName(ctx, viewer.ID, nameOr(name, viewer.Email))
 }
 
 // SetTheme saves the viewer's own theme of the web app (one of store.Themes).
@@ -304,8 +336,8 @@ func (users *Users) SetTheme(ctx context.Context, viewer store.User, theme strin
 // SetPasswordByOperator is the reset-password command: run with the server
 // stopped by whoever runs it, usually the superadmin who forgot the password.
 // Sessions end, agents stay; the new password is temporary.
-func (users *Users) SetPasswordByOperator(ctx context.Context, username string) (string, error) {
-	user, err := users.store.FindUser(ctx, username)
+func (users *Users) SetPasswordByOperator(ctx context.Context, email string) (string, error) {
+	user, err := users.store.FindUser(ctx, email)
 
 	if err != nil {
 		return "", err
@@ -339,12 +371,12 @@ func (users *Users) manageable(ctx context.Context, viewer store.User, id string
 // OwnAccountProblem: nobody changes themselves as a user they manage.
 const OwnAccountProblem = "change your own account on /account (update_account_name)"
 
-// Authenticate checks a login: the user with username and password, ok
-// false when either is wrong. An unknown username is checked against a dummy
-// hash, so the response time does not tell which usernames exist; so is a
-// user without a password hash, whom no password opens.
-func (users *Users) Authenticate(ctx context.Context, username, password string) (store.User, bool, error) {
-	user, hash, err := users.store.FindLogin(ctx, strings.TrimSpace(username))
+// Authenticate checks a login: the user with email and password, ok false
+// when either is wrong. An unknown email is checked against a dummy hash, so
+// the response time does not tell which emails exist; so is a user without
+// a password hash, whom no password opens.
+func (users *Users) Authenticate(ctx context.Context, email, password string) (store.User, bool, error) {
+	user, hash, err := users.store.FindLogin(ctx, strings.TrimSpace(email))
 
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return store.User{}, false, err
@@ -357,11 +389,11 @@ func (users *Users) Authenticate(ctx context.Context, username, password string)
 	return user, true, nil
 }
 
-// DeviceStamp is a hash of the login of username that changes with its
+// DeviceStamp is a hash of the login of email that changes with its
 // password, role or deletion ("" for no such user): the login limit's
 // device cookie is bound to it.
-func (users *Users) DeviceStamp(ctx context.Context, username string) (string, error) {
-	user, hash, err := users.store.FindLogin(ctx, strings.TrimSpace(username))
+func (users *Users) DeviceStamp(ctx context.Context, email string) (string, error) {
+	user, hash, err := users.store.FindLogin(ctx, strings.TrimSpace(email))
 
 	if errors.Is(err, store.ErrNotFound) || (err == nil && user.ID == "") {
 		return "", nil
@@ -402,9 +434,45 @@ func (users *Users) ChangeOwnPassword(ctx context.Context, viewer store.User, cu
 	return nil, false, setPassword(ctx, users.store, viewer.ID, password, store.PasswordChange{KeepSession: keepSession})
 }
 
-// nameOr is the display name as saved: the username when none is given.
-func nameOr(name, username string) string {
-	return cmp.Or(strings.TrimSpace(name), username)
+// ChangeOwnEmail replaces the viewer's own email after checking the current
+// password (wrongCurrent counts as a failed login) and returns the email
+// the user has now. Sessions and agents stay.
+func (users *Users) ChangeOwnEmail(ctx context.Context, viewer store.User, current, entered string) (problems Problems, wrongCurrent bool, email string, err error) {
+	hash, err := users.store.UserPassword(ctx, viewer.ID)
+
+	if err != nil {
+		return nil, false, viewer.Email, err
+	}
+
+	problems = Problems{}
+
+	if !checkPassword(hash, current) {
+		wrongCurrent = true
+		problems["current_password"] = "The current password is wrong."
+	}
+
+	email = newEmail(problems, viewer.Email, entered)
+
+	if len(problems) > 0 || email == viewer.Email {
+		return problems, wrongCurrent, viewer.Email, nil
+	}
+
+	err = users.store.UpdateUserEmail(ctx, viewer.ID, email)
+
+	if errors.Is(err, store.ErrEmailTaken) {
+		return Problems{"email": emailTakenProblem}, false, viewer.Email, nil
+	}
+
+	if err != nil {
+		return nil, false, viewer.Email, err
+	}
+
+	return nil, false, email, nil
+}
+
+// nameOr is the display name as saved: the email when none is given.
+func nameOr(name, email string) string {
+	return cmp.Or(strings.TrimSpace(name), email)
 }
 
 // setPassword stores a new password hash with what the change ends. It

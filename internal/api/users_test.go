@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,7 +15,7 @@ import (
 type managedUser struct {
 	User struct {
 		ID                 string     `json:"id"`
-		Username           string     `json:"username"`
+		Email              string     `json:"email"`
 		Name               string     `json:"name"`
 		DisplayName        string     `json:"display_name"`
 		Role               string     `json:"role"`
@@ -40,7 +41,7 @@ func decodeOK(t *testing.T, label string, response *httptest.ResponseRecorder, r
 
 // createWebUser adds a user from admin's web app, returns their id and a
 // browser logged in as them with their own password.
-func createWebUser(t *testing.T, admin *browser, username, role string) (string, *browser) {
+func createWebUser(t *testing.T, admin *browser, email, role string) (string, *browser) {
 	t.Helper()
 
 	var created struct {
@@ -50,10 +51,10 @@ func createWebUser(t *testing.T, admin *browser, username, role string) (string,
 		TemporaryPassword string `json:"temporary_password"`
 	}
 
-	response := admin.call(http.MethodPost, "create_user", map[string]string{"username": username, "role": role})
-	decodeOK(t, "create_user "+username, response, &created)
+	response := admin.call(http.MethodPost, "create_user", map[string]string{"email": email, "role": role})
+	decodeOK(t, "create_user "+email, response, &created)
 
-	user := admin.server.browser().loggedIn(username, created.TemporaryPassword)
+	user := admin.server.browser().loggedIn(email, created.TemporaryPassword)
 
 	if response := user.changePassword(created.TemporaryPassword, "user password 123"); response.Code != http.StatusNoContent {
 		t.Fatalf("choose a password: %d %s", response.Code, response.Body)
@@ -68,9 +69,9 @@ func createWebUser(t *testing.T, admin *browser, username, role string) (string,
 func TestUIUsers(t *testing.T) {
 	server := newLoginServer(t)
 	root := server.browser().loggedIn("admin", adminPassword)
-	otherID, _ := createWebUser(t, root, "ops2", store.RoleAdmin)
-	adminID, admin := createWebUser(t, root, "ops", store.RoleAdmin)
-	devID, _ := createWebUser(t, root, "dev", store.RoleUser)
+	otherID, _ := createWebUser(t, root, "ops2@example.com", store.RoleAdmin)
+	adminID, admin := createWebUser(t, root, "ops@example.com", store.RoleAdmin)
+	devID, _ := createWebUser(t, root, "dev@example.com", store.RoleUser)
 	rootID := superadmin(t, server)
 
 	var list struct {
@@ -121,30 +122,40 @@ func TestUIUsers(t *testing.T) {
 	}
 
 	// A second superadmin is refused by the input's choices; a taken name at its field.
-	if response := root.call(http.MethodPost, "create_user", map[string]string{"username": "second", "role": store.RoleSuperadmin}); response.Code != http.StatusBadRequest {
+	if response := root.call(http.MethodPost, "create_user", map[string]string{"email": "second@example.com", "role": store.RoleSuperadmin}); response.Code != http.StatusBadRequest {
 		t.Errorf("a second superadmin: %d %s", response.Code, response.Body)
 	}
 
-	response = root.call(http.MethodPost, "create_user", map[string]string{"username": "OPS", "role": store.RoleUser})
+	response = root.call(http.MethodPost, "create_user", map[string]string{"email": "OPS@example.com", "role": store.RoleUser})
 
-	if body := errorOf(t, response); response.Code != http.StatusConflict || body.Fields["username"] != "This username is taken." {
-		t.Errorf("a username in another case: %d %s", response.Code, response.Body)
+	if body := errorOf(t, response); response.Code != http.StatusConflict || body.Fields["email"] != "This email is taken." {
+		t.Errorf("an email in another case: %d %s", response.Code, response.Body)
+	}
+
+	// A new user's login is an email.
+	for _, email := range []string{"", "ops4", "two words@example.com"} {
+		response = root.call(http.MethodPost, "create_user", map[string]string{"email": email, "role": store.RoleUser})
+
+		if body := errorOf(t, response); response.Code != http.StatusBadRequest || body.Fields["email"] != "Enter a valid email address." {
+			t.Errorf("create_user with email %q: %d %s", email, response.Code, response.Body)
+		}
 	}
 
 	// Another admin is read-only for an admin: no change, reset, delete or new admin.
 	for name, input := range map[string]map[string]string{
 		"update_user":         {"user_id": otherID, "name": "Second admin"},
+		"update_user email":   {"user_id": otherID, "email": "second@example.com"},
 		"reset_user_password": {"user_id": otherID},
 		"delete_user":         {"user_id": otherID},
 	} {
-		response := admin.call(http.MethodPost, name, input)
+		response := admin.call(http.MethodPost, strings.Fields(name)[0], input)
 
 		if body := errorOf(t, response); response.Code != http.StatusForbidden || body.Error != "your role may not change this user" {
 			t.Errorf("%s of another admin: %d %s", name, response.Code, response.Body)
 		}
 	}
 
-	response = admin.call(http.MethodPost, "create_user", map[string]string{"username": "ops3", "role": store.RoleAdmin})
+	response = admin.call(http.MethodPost, "create_user", map[string]string{"email": "ops3@example.com", "role": store.RoleAdmin})
 
 	if body := errorOf(t, response); response.Code != http.StatusForbidden || body.Fields["role"] != "Your role may not give this role." {
 		t.Errorf("an admin creates an admin: %d %s", response.Code, response.Body)
@@ -160,6 +171,31 @@ func TestUIUsers(t *testing.T) {
 		t.Fatalf("admin edits a user: %d %s", response.Code, response.Body)
 	}
 
+	// An admin changes a user's email: an email, not taken in any case.
+	for email, want := range map[string]int{"developer": http.StatusBadRequest, "OPS2@example.com": http.StatusConflict} {
+		response = admin.call(http.MethodPost, "update_user", map[string]string{"user_id": devID, "email": email})
+
+		if body := errorOf(t, response); response.Code != want || body.Fields["email"] == "" {
+			t.Errorf("update_user email %q: %d %s", email, response.Code, response.Body)
+		}
+	}
+
+	if response := admin.call(http.MethodPost, "update_user", map[string]string{"user_id": devID, "email": " Developer@Example.com "}); response.Code != http.StatusOK {
+		t.Fatalf("admin changes a user's email: %d %s", response.Code, response.Body)
+	}
+
+	response = admin.call(http.MethodGet, "get_user?user_id="+devID, nil)
+	decodeOK(t, "get_user", response, &page)
+
+	if page.User.Email != "developer@example.com" || page.User.DisplayName != "Developer" {
+		t.Errorf("after the email change: %+v", page.User)
+	}
+
+	if server.browser().login("dev@example.com", "user password 123").Code != http.StatusUnauthorized ||
+		server.browser().login("developer@example.com", "user password 123").Code != http.StatusOK {
+		t.Error("the login did not move to the new email")
+	}
+
 	// The superadmin manages admins.
 	if response := root.call(http.MethodPost, "update_user", map[string]string{"user_id": otherID, "name": "Second admin", "role": store.RoleUser}); response.Code != http.StatusOK {
 		t.Fatalf("the superadmin edits an admin: %d %s", response.Code, response.Body)
@@ -172,7 +208,7 @@ func TestUIUsers(t *testing.T) {
 		t.Errorf("after the change: %+v", page)
 	}
 
-	// An empty own name is the username.
+	// An empty own name is the email.
 	var account struct {
 		DisplayName string `json:"display_name"`
 	}
@@ -180,7 +216,7 @@ func TestUIUsers(t *testing.T) {
 	response = admin.call(http.MethodPost, "update_account_name", map[string]string{"name": " "})
 	decodeOK(t, "update_account_name", response, &account)
 
-	if account.DisplayName != "ops" {
+	if account.DisplayName != "ops@example.com" {
 		t.Errorf("an empty name: %+v", account)
 	}
 }
@@ -192,7 +228,7 @@ func TestUIResetAndDeleteEndAccess(t *testing.T) {
 	root := server.browser().loggedIn("admin", adminPassword)
 
 	for _, request := range []string{"reset_user_password", "delete_user"} {
-		id, user := createWebUser(t, root, "dev-"+request[:5], store.RoleUser)
+		id, user := createWebUser(t, root, "dev-"+request[:5]+"@example.com", store.RoleUser)
 		token, err := server.app.OAuth.NewPersonalToken(context.Background(), id)
 
 		if err != nil {

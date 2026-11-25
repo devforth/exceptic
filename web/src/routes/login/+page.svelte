@@ -19,7 +19,7 @@ to go after it (a local path only); a full load opens that page with a fresh ses
 	let { data }: PageProps = $props();
 
 	const form = new FormState();
-	let username = $state('');
+	let email = $state('');
 	let password = $state('');
 	let element: HTMLFormElement | undefined = $state();
 
@@ -27,7 +27,7 @@ to go after it (a local path only); a full load opens that page with a fresh ses
 		element?.querySelector<HTMLInputElement>(`input[name="${name}"]`)?.focus();
 	}
 
-	onMount(() => focus('username'));
+	onMount(() => focus('email'));
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
@@ -35,7 +35,7 @@ to go after it (a local path only); a full load opens that page with a fresh ses
 		let next = '';
 		const loggedIn = await form.submit(async () => {
 			({ next } = await send('login', {
-				username,
+				email,
 				password,
 				next: page.url.searchParams.get('next') ?? ''
 			}));
@@ -61,13 +61,7 @@ to go after it (a local path only); a full load opens that page with a fresh ses
 			<Notice tone="info">{data.state.disabled}</Notice>
 		{:else}
 			<form bind:this={element} onsubmit={submit} class={formClasses}>
-				<TextField
-					label="Username"
-					name="username"
-					bind:value={username}
-					autocomplete="username"
-					required
-				/>
+				<TextField label="Email" name="email" bind:value={email} autocomplete="username" required />
 				<TextField
 					label="Password"
 					name="password"

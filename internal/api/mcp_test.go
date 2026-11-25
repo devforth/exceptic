@@ -54,7 +54,7 @@ func newTestServer(t *testing.T, configure ...func(*config.Config)) *testServer 
 	}
 
 	// The agent acts for this user (users are created by the UI).
-	userID, err := database.CreateUser(context.Background(), store.User{Username: "admin", Role: store.RoleSuperadmin, CreatedAt: time.Now()}, "x")
+	userID, err := database.CreateUser(context.Background(), store.User{Email: "admin", Role: store.RoleSuperadmin, CreatedAt: time.Now()}, "x")
 
 	if err != nil {
 		t.Fatal(err)

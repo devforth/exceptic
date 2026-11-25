@@ -33,6 +33,7 @@ var PlainRequests = []PlainRequest{
 	plainRequest[LoginInput, LoginOutput]("login", http.MethodPost),
 	plainRequest[noInput, NoContent]("logout", http.MethodPost),
 	plainRequest[ChangePasswordInput, NoContent]("change_password", http.MethodPost),
+	plainRequest[ChangeEmailInput, NoContent]("change_email", http.MethodPost),
 	plainRequest[noInput, PersonalToken]("personal_token", http.MethodPost),
 	plainRequest[AuthorizationInput, Authorization]("authorization_request", http.MethodGet),
 	plainRequest[AuthorizationDecision, AuthorizationTarget]("authorization_decision", http.MethodPost),
@@ -53,7 +54,7 @@ type LoginState struct {
 }
 
 type LoginInput struct {
-	Username string `json:"username"`
+	Email    string `json:"email"`
 	Password string `json:"password"`
 	Next     string `json:"next,omitempty"`
 }
@@ -69,6 +70,11 @@ type ChangePasswordInput struct {
 	ConfirmPassword string `json:"confirm_password"`
 }
 
+type ChangeEmailInput struct {
+	CurrentPassword string `json:"current_password"`
+	Email           string `json:"email"`
+}
+
 // PersonalToken is a new personal token, shown once; SetupPrompt has an
 // agent add the server with it.
 type PersonalToken struct {
@@ -76,14 +82,14 @@ type PersonalToken struct {
 	SetupPrompt string `json:"setup_prompt"`
 }
 
-// wrongLogin is the answer to a wrong password and to an unknown username alike.
-const wrongLogin = "Wrong username or password."
+// wrongLogin is the answer to a wrong password and to an unknown email alike.
+const wrongLogin = "Wrong email or password."
 
 // loginDisabled is why nobody can log in to a server without a superadmin.
 const loginDisabled = "The web UI is disabled: set ADMIN_PASSWORD to enable it."
 
 // LoginRequests are the handlers of the login's plain requests (login_state,
-// login, logout, change_password) for NewUI. Every password check goes
+// login, logout, change_password, change_email) for NewUI. Every password check goes
 // through auth, so the login's limits apply to each.
 func LoginRequests(logger *slog.Logger, auth *session.Auth, appName string) map[string]http.Handler {
 	failed := func(w http.ResponseWriter, r *http.Request, name string, err error) {
@@ -120,7 +126,7 @@ func LoginRequests(logger *slog.Logger, auth *session.Auth, appName string) map[
 				return
 			}
 
-			result, err := auth.Login(w, r, input.Username, input.Password)
+			result, err := auth.Login(w, r, input.Email, input.Password)
 
 			switch {
 			case err != nil:
@@ -155,23 +161,53 @@ func LoginRequests(logger *slog.Logger, auth *session.Auth, appName string) map[
 			}
 
 			problems, err := auth.ChangePassword(w, r, viewer, input.CurrentPassword, input.Password, input.ConfirmPassword)
+			answerPasswordChecked(w, r, "change_password", problems, err, failed)
+		}),
 
-			switch {
-			case errors.Is(err, session.ErrTooManyAttempts):
-				err = tooManyAttempts(map[string]string{"current_password": session.TooManyAttempts})
-			case err == nil:
-				err = problemsError(problems, nil)
+		// Not with a temporary password: only replacing it is open then.
+		"change_email": http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			viewer, ok := sessionViewer(logger, auth, w, r)
+
+			if !ok {
+				return
 			}
 
-			if err != nil {
-				failed(w, r, "change_password", err)
+			if viewer.MustChangePassword {
+				failed(w, r, "change_email", errPasswordChange)
 
 				return
 			}
 
-			noContent(w)
+			var input ChangeEmailInput
+
+			if !readPlain(w, r, &input) {
+				return
+			}
+
+			problems, err := auth.ChangeEmail(w, r, viewer, input.CurrentPassword, input.Email)
+			answerPasswordChecked(w, r, "change_email", problems, err, failed)
 		}),
 	}
+}
+
+// answerPasswordChecked answers a change of the account that checked the
+// current password: 204, the form's problems, or the login limit at the
+// current password.
+func answerPasswordChecked(w http.ResponseWriter, r *http.Request, name string, problems map[string]string, err error, failed func(http.ResponseWriter, *http.Request, string, error)) {
+	switch {
+	case errors.Is(err, session.ErrTooManyAttempts):
+		err = tooManyAttempts(map[string]string{"current_password": session.TooManyAttempts})
+	case err == nil:
+		err = problemsError(problems, nil)
+	}
+
+	if err != nil {
+		failed(w, r, name, err)
+
+		return
+	}
+
+	noContent(w)
 }
 
 // tooManyAttempts: the login limit refused a password check (429), for

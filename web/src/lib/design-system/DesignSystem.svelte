@@ -7,6 +7,8 @@ Every component with its variants, on sample data. Served only by the dev server
 	import { help, levels, projectPalette } from '#lib/api/catalog.gen.ts';
 	import { ApiError } from '#lib/api/client.ts';
 	import { FormState } from '#lib/form.svelte.ts';
+	import ActionList from '#lib/components/ActionList.svelte';
+	import ActionRow from '#lib/components/ActionRow.svelte';
 	import Badge from '#lib/components/Badge.svelte';
 	import type { BadgeTone } from '#lib/components/badge.ts';
 	import BulkBar from '#lib/components/BulkBar.svelte';
@@ -604,8 +606,8 @@ Every component with its variants, on sample data. Served only by the dev server
 						onchange={(value: string) => (sampleStatus = value)}
 					/>
 				</Row>
-				<TextField label="Name" name="display_name" note="optional: the username when empty" />
-				<TextField label="Username" name="username" value="developer" readonly />
+				<TextField label="Name" name="display_name" note="optional: the email when empty" />
+				<TextField label="Email" name="email" value="developer@example.com" readonly />
 				<TextField label="Bot token" name="bot_token" type="password" saved="1234…wxyz" />
 				<TextField
 					label="Connection name"
@@ -1343,6 +1345,21 @@ Every component with its variants, on sample data. Served only by the dev server
 					note="try: taken"
 				/>
 			</FormDialog>
+		</Row>
+		<Row caption="ActionList and ActionRow: rows that open a dialog (the account's Security)" wide>
+			<ActionList title="Security">
+				<ActionRow
+					icon="email"
+					label="Change email"
+					description="developer@example.com"
+					onclick={() => (sampleNarrowDialog = true)}
+				/>
+				<ActionRow
+					icon="password"
+					label="Change password"
+					onclick={() => (sampleNarrowDialog = true)}
+				/>
+			</ActionList>
 		</Row>
 		<Row
 			caption="IssueActions: an issue's page (by its status), and the checked issues of a list (off with none checked); Ignore is a menu: forever, for a time, until events more"

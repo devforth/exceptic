@@ -11,8 +11,6 @@ describe('limits', () => {
 		expect(matches(limits.projectNamePattern, 'backend-2')).toBe(true);
 		expect(matches(limits.projectNamePattern, 'Not Valid')).toBe(false);
 		expect(matches(limits.projectNamePattern, '123')).toBe(false);
-		expect(matches(limits.usernamePattern, 'dev.ops@example-1')).toBe(true);
-		expect(matches(limits.usernamePattern, 'two words')).toBe(false);
 		expect(matches(limits.telegramToken, '123456:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw')).toBe(true);
 		expect(matches(limits.telegramChat, '-1001234567890')).toBe(true);
 		expect(matches(limits.slackToken, 'xoxb-1234567890-abcdef')).toBe(true);

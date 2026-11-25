@@ -69,7 +69,7 @@
 				{
 					label: 'Reset password',
 					icon: 'token',
-					confirm: resetConfirmation(user.username),
+					confirm: resetConfirmation(user.email),
 					action: () => reset(user.id)
 				},
 				locked
@@ -80,7 +80,7 @@
 					icon: 'delete',
 					danger: true,
 					separatorBefore: true,
-					confirm: deleteConfirmation(user.username),
+					confirm: deleteConfirmation(user.email),
 					action: async () => {
 						await refreshingOnRefusal(() => deleteUser(user.id));
 						void invalidateAll();
@@ -112,8 +112,8 @@
 			{:else}
 				<Button variant="title" href={pageOf(user.id)}>{user.display_name}</Button>
 			{/if}
-			{#if user.username !== user.display_name}
-				<div class="text-xs text-muted">{user.username}</div>
+			{#if user.email !== user.display_name}
+				<div class="text-xs text-muted">{user.email}</div>
 			{/if}
 		{:else if column.key === 'role'}
 			<RoleBadge role={user.role} />

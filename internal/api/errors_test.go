@@ -77,16 +77,16 @@ func TestUIConflicts(t *testing.T) {
 	server := newNotificationsServer(t)
 	root := server.admin
 
-	response := root.call(http.MethodPost, "create_user", `{"username":"taken","role":"user"}`)
+	response := root.call(http.MethodPost, "create_user", `{"email":"taken@example.com","role":"user"}`)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("create_user: %d %s", response.Code, response.Body)
 	}
 
-	response = root.call(http.MethodPost, "create_user", `{"username":"taken","role":"user"}`)
+	response = root.call(http.MethodPost, "create_user", `{"email":"taken@example.com","role":"user"}`)
 
-	if body := errorOf(t, response); response.Code != http.StatusConflict || body.Fields["username"] != "This username is taken." {
-		t.Errorf("a taken username: %d %s", response.Code, response.Body)
+	if body := errorOf(t, response); response.Code != http.StatusConflict || body.Fields["email"] != "This email is taken." {
+		t.Errorf("a taken email: %d %s", response.Code, response.Body)
 	}
 
 	response = root.call(http.MethodPost, "create_project", `{"name":"backend"}`)

@@ -6,8 +6,7 @@ package config
 // web app's (catalog.gen.ts).
 type FieldLimits struct {
 	ConnectionName     int    `json:"connectionName"`
-	Username           int    `json:"username"`
-	UsernamePattern    string `json:"usernamePattern"`
+	Email              int    `json:"email"`
 	DisplayName        int    `json:"displayName"`
 	MinPassword        int    `json:"minPassword"`
 	MaxPassword        int    `json:"maxPassword"`
@@ -21,7 +20,7 @@ type FieldLimits struct {
 }
 
 var Limits = FieldLimits{
-	ConnectionName: MaxConnectionName, Username: MaxUsername, UsernamePattern: UsernamePattern, DisplayName: MaxDisplayName,
+	ConnectionName: MaxConnectionName, Email: MaxEmail, DisplayName: MaxDisplayName,
 	MinPassword: MinPasswordLength, MaxPassword: MaxPasswordLength, ProjectName: MaxProjectName, ProjectNamePattern: ProjectNamePattern,
 	VerificationCode: VerificationCodeDigits, TelegramToken: TelegramTokenPattern, TelegramChat: TelegramChatPattern,
 	SlackToken: SlackTokenPattern, SlackChannel: SlackChannelPattern,

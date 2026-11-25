@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
-	"net/mail"
 	"strings"
 	"time"
 
@@ -43,13 +42,11 @@ func newVerification(logger *slog.Logger, database store.Store, factory notify.F
 // (Duplicate, not named outside access), a confirmed one is accepted at once, otherwise a code is
 // mailed. An error is a failure of the database.
 func (verification *Verification) StartEmail(ctx context.Context, access store.Access, entered string) (EmailStep, error) {
-	parsed, err := mail.ParseAddress(strings.TrimSpace(entered))
+	address, ok := config.ParseEmail(entered)
 
-	if err != nil {
+	if !ok {
 		return EmailStep{State: EmailInput, Address: entered, Error: "Enter a valid email address."}, nil
 	}
-
-	address := strings.ToLower(parsed.Address)
 
 	// One connection per address: edit the existing one instead.
 	existing, err := verification.connections.findDuplicate(ctx, access, config.ChannelEmail, address, "")
