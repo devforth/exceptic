@@ -15,6 +15,7 @@ Go is installed in `~/.local/go`; if `go` is not on PATH, run `export PATH="$HOM
 ```sh
 make test         # go test -race ./...
 make lint         # golangci-lint (.golangci.yml): vet, staticcheck, errcheck, gofmt/goimports, wsl blank lines
+make vulncheck    # govulncheck: known vulnerabilities in Go and modules that the code calls
 make fix          # auto-fix formatting, import order and blank lines; run after editing Go code
 make build        # static binary to bin/exceptic
 make docker       # build image devforth/exceptic:dev
@@ -30,7 +31,7 @@ go test ./web                                                     # checks a bui
 
 Do not start the server (`make run`, `docker run`, …) yourself; the user runs it in their own terminal. Check it with `curl localhost:8000/health` and ask the user to start it if it is not reachable. `make run` loads `.env` and `.env.local` (gitignored; template in `.env.example`); without projects (`PROJECTS` or added in the web app) every event is rejected: the start logs a warning, each rejected envelope only a debug line (`LOG_LEVEL=debug`). `.env.example` is a working local setup (a superadmin `admin`/`admin-password`, one project, an API token), short, every variable only in `docs/configuration.md`; real keys and passwords go into `.env.local` and never into it. `go run` does not rebuild on change: after editing Go code (or rebuilding the web app, which is embedded), the user must restart it.
 
-The image has a writable `/tmp` (scratch has none). CI (`.github/workflows/ci.yml`) runs golangci-lint (pinned version), `make test`, `make web-check web` with `go test ./web`, an amd64 image build with the size check and an arm64 build. `release.yml` runs on a `vX.Y.Z` tag: it calls `ci.yml` (`workflow_call`), then pushes `devforth/exceptic:X.Y.Z`, `:X.Y` and `:latest` (not for pre-releases) for amd64 and arm64 to Docker Hub, and for a release the repository's description there from `docs/dockerhub.md` (short, links to GitHub by absolute URL, since Docker Hub resolves no relative link; secrets `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`, a token with Read, Write & Delete). `compose.yml` is the example deployment the docs refer to.
+The image has a writable `/tmp` (scratch has none). CI (`.github/workflows/ci.yml`) runs golangci-lint (pinned version), `make test`, `make vulncheck`, `make web-check web` with `go test ./web`, an amd64 image build with the size check and an arm64 build. `release.yml` runs on a `vX.Y.Z` tag: it calls `ci.yml` (`workflow_call`), then pushes `devforth/exceptic:X.Y.Z`, `:X.Y` and `:latest` (not for pre-releases) for amd64 and arm64 to Docker Hub, and for a release the repository's description there from `docs/dockerhub.md` (short, links to GitHub by absolute URL, since Docker Hub resolves no relative link; secrets `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`, a token with Read, Write & Delete). `image-scan.yml` runs Trivy weekly over the published `:latest` (fixable HIGH/CRITICAL fail the run: a patch release with a newer Go or module). `compose.yml` is the example deployment the docs refer to.
 
 ## Architecture
 

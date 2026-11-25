@@ -2,7 +2,7 @@ IMAGE ?= devforth/exceptic
 VERSION ?= dev
 MAX_IMAGE_MB ?= 50
 
-.PHONY: test lint fix build api-types web web-deps web-check dev run backup docker image-size
+.PHONY: test lint vulncheck fix build api-types web web-deps web-check dev run backup docker image-size
 
 test:
 	go test -race ./...
@@ -10,6 +10,10 @@ test:
 # Needs golangci-lint v2 (config: .golangci.yml): https://golangci-lint.run/docs/welcome/install/
 lint:
 	golangci-lint run
+
+# Known vulnerabilities of Go and the modules that the code actually calls (Go's own vulnerability database).
+vulncheck:
+	go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
 # Fixes formatting, imports and blank lines; prints what is left to fix by hand.
 fix:

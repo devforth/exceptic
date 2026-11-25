@@ -1,0 +1,37 @@
+name: Image Scan
+
+# Trivy over the published image every week: CVEs in Go and the modules appear while :latest stays
+# the same, so a finding means a patch release (a newer Go or module). Only HIGH/CRITICAL with a
+# fixed version count; a run that finds one fails, and GitHub mails it.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  trivy:
+    runs-on: ubuntu-latest
+    env:
+      TRIVY_VERSION: "0.76.2"
+      TRIVY_SHA256: "bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf"
+      IMAGE: devforth/exceptic:latest
+    steps:
+      - name: Install trivy
+        run: |
+          curl -fsSL -o trivy.tar.gz "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          echo "${TRIVY_SHA256}  trivy.tar.gz" | sha256sum -c -
+          tar -xzf trivy.tar.gz trivy
+          rm trivy.tar.gz
+
+      # Before the first release there is nothing to scan.
+      - name: Scan the published image
+        run: |
+          if ! docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "$IMAGE is not published yet" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+
+          ./trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "$IMAGE"

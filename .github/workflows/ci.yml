@@ -26,6 +26,8 @@ jobs:
           # Pinned: a new release can add checks and break CI on unchanged code.
           version: v2.15.0
       - run: make test
+      # Fails while the code calls a function with a known vulnerability; the fix is a newer Go or module.
+      - run: make vulncheck
 
   web:
     runs-on: ubuntu-latest
