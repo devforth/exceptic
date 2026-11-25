@@ -70,7 +70,7 @@ Or copy the folder to `~/.claude/skills/` (Claude Code) or `~/.agents/skills/` (
 Needs Go (see `go.mod`), [golangci-lint](https://golangci-lint.run) v2, and for the web app (`web/`, SvelteKit) Node 24 with pnpm (`corepack enable`).
 
 ```sh
-cp .env.example .env.local   # then set ADMIN_PASSWORD and the other values
+cp .env.example .env.local   # works as is: log in as admin / admin-password
 make run                     # http://localhost:8000
 make dev                     # server and web app with hot reload, both at http://localhost:8000 (Ctrl+C stops both)
 make test lint web-check     # what CI runs

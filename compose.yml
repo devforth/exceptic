@@ -1,5 +1,5 @@
 # Example deployment: `docker compose up -d`, then open http://localhost:8000.
-# Put the settings in .env next to this file (see .env.example and docs/configuration.md).
+# Put the settings in .env next to this file (docs/configuration.md; a minimal one in docs/deployment.md).
 services:
   exceptic:
     image: devforth/exceptic:latest # in production pin X.Y (docs/deployment.md)

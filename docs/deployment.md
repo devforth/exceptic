@@ -7,7 +7,7 @@ Image tags: `latest` (newest release), `X.Y` (newest patch of a minor version), 
 ## Docker Compose
 
 1. Copy [compose.yml](../compose.yml) to the server and pin its image to the `X.Y` you start with (`devforth/exceptic:X.Y`).
-2. Next to it, create `.env` (template: [.env.example](../.env.example), all settings: [Configuration](configuration.md)). A minimal one:
+2. Next to it, create `.env` (all settings: [Configuration](configuration.md)). A minimal one:
 
    ```sh
    PUBLIC_URL=https://errors.example.com

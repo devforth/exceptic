@@ -2,7 +2,7 @@
 
 Everything is set with environment variables (in Docker: `-e`, `env_file` or `environment:`). An invalid value stops the server at startup with a message naming the variable. Lists are comma-separated. Durations take days or Go units: `30d`, `12h`, `90m`.
 
-[.env.example](../.env.example) has every variable with a comment; copy it to `.env` and fill in what you need.
+[.env.example](../.env.example) is a working local setup to copy to `.env.local`; the tables below have every variable.
 
 ## Server
 
