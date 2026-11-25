@@ -36,14 +36,20 @@ func (notifier *Notifier) dispatch() {
 
 	for {
 		select {
-		case notification, ok := <-notifier.queue:
+		case next, ok := <-notifier.queue:
 			if !ok {
 				flush()
 
 				return
 			}
 
-			notifier.routeOrDrop(notification, windows)
+			if next.notice != nil {
+				notifier.routeNotice(*next.notice)
+
+				continue
+			}
+
+			notifier.routeOrDrop(next.notification, windows)
 		case <-windowEnds:
 			flush()
 		}

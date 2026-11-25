@@ -76,6 +76,7 @@ type Channel interface {
 	Name() string
 	Send(ctx context.Context, notification Notification) error
 	SendSummary(ctx context.Context, summary Summary) error
+	SendNotice(ctx context.Context, notice Notice) error
 }
 
 // RetryAfterError asks the notifier to retry after Delay (a rate limit response).
@@ -168,7 +169,7 @@ const dueBatch = 20
 
 type Notifier struct {
 	options Options
-	queue   chan Notification
+	queue   chan queued
 
 	// ctx is cancelled when Close gives up waiting: sends in progress stop.
 	ctx    context.Context
@@ -188,6 +189,12 @@ type Notifier struct {
 	// issues reads them once, and an edit applies to the next notification.
 	connections []store.Connection
 	inBurst     bool
+}
+
+// queued is a notification or a notice on its way to the dispatcher.
+type queued struct {
+	notification Notification
+	notice       *noticeFor
 }
 
 type worker struct {
@@ -216,7 +223,7 @@ func New(options Options) *Notifier {
 	ctx, cancel := context.WithCancel(context.Background())
 	notifier := &Notifier{
 		options:    options,
-		queue:      make(chan Notification, options.QueueSize),
+		queue:      make(chan queued, options.QueueSize),
 		ctx:        ctx,
 		cancel:     cancel,
 		dispatched: make(chan struct{}),
@@ -317,7 +324,7 @@ func (notifier *Notifier) Notify(notification Notification) {
 	}
 
 	select {
-	case notifier.queue <- notification:
+	case notifier.queue <- queued{notification: notification}:
 	default:
 		notifier.options.Logger.Warn("notification queue full, dropping", "issue_id", notification.IssueID, "title", notification.Title)
 	}

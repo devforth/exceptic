@@ -1400,7 +1400,7 @@ export const help = {
 			'Color': 'Marks the project\'s badge in lists and the header of its emails.',
 			'DSN': 'The address the app\'s Sentry SDK sends errors and logs to. The key in it only allows sending to this project, so it can be in browser code.',
 			'Disk share': 'The part of MAX_DATABASE_SIZE the project may take. When it reaches 99% of it, even with the database under its limit, the cleanup deletes the project\'s own data in the usual order, down to 80% of its share, so a flood in one project does not push out the others. A ceiling, not a reservation: shares may add up to more than 100%. At 100% the project has no limit of its own.',
-			'Dropped': 'What the project sent in the last 24 hours that was not stored: over its rate limit, refused while the server was busy, too large, unreadable or not received whole, plus what its SDK reports holding back during a rate limit or dropping with its queue full (its failed sends are not counted, since it reports the refusals here that way too). Counted in memory, so a restart starts from zero; shown only when something was dropped.',
+			'Dropped': 'What the project sent in the last 24 hours that was not stored: over its rate limit, refused while the server was busy, too large or broken, and what its SDK reports it held back. Resets on restart.',
 			'History kept': 'The oldest record of each kind still stored. When the database nears its limit, the cleanup deletes the oldest first: logs below error, then error logs, then errors.',
 			'Logs': 'Log levels to store; others are dropped when they arrive. Unchanged, the project follows RECORD_LOG_LEVELS. Errors and messages of every level are stored.',
 		},

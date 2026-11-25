@@ -1009,3 +1009,34 @@ func TestEventsPerIssueCap(t *testing.T) {
 		t.Fatalf("stored %d, count %d, not stored %d", stored, issue.EventCount, issue.NotStored)
 	}
 }
+
+// When a project's dropped data was last notified survives a reopen, and
+// goes with the project.
+func TestDropNotices(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	database := openOnDisk(t, dir)
+	at := time.Date(2026, 11, 25, 10, 0, 0, 0, time.UTC)
+
+	for _, project := range []store.Project{{ID: 1, Name: "backend", PublicKey: "0123456789abcdef"}, {ID: 2, Name: "frontend", PublicKey: "abcdef0123456789"}} {
+		if err := database.SeedProject(ctx, project, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := database.MarkDropNotice(project.ID, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := database.DeleteProject(ctx, 2); err != nil {
+		t.Fatal(err)
+	}
+
+	_ = database.Close()
+	reopened := openOnDisk(t, dir)
+	notices, err := reopened.DropNotices()
+
+	if err != nil || len(notices) != 1 || !notices[1].Equal(at) {
+		t.Fatalf("notices %v, %v: want only project 1 at %s", notices, err, at)
+	}
+}

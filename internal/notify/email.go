@@ -97,6 +97,7 @@ type emailView struct {
 	Breadcrumbs  []breadcrumbLine
 	Heading      string
 	Summary      Summary
+	Notice       Notice
 	Note         string
 	// PromptFile is the name of the attached agent prompt, empty without one.
 	PromptFile string
@@ -245,6 +246,16 @@ func (email Email) SendSummary(ctx context.Context, summary Summary) error {
 	text.WriteString("\n" + summary.note() + "\n")
 
 	return email.send(ctx, "["+appNameOr(email.AppName)+"] "+summary.heading(), text.String(), "summary", view)
+}
+
+func (email Email) SendNotice(ctx context.Context, notice Notice) error {
+	text := notice.Heading + "\n\n" + strings.Join(notice.Lines, "\n") + "\n"
+
+	if notice.URL != "" {
+		text += "\n" + notice.URL + "\n"
+	}
+
+	return email.send(ctx, "["+appNameOr(email.AppName)+"] "+notice.Heading, text, "notice", emailView{Heading: notice.Heading, Notice: notice})
 }
 
 // plainText is the text/plain part for clients that do not show HTML.

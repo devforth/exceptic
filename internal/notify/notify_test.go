@@ -23,6 +23,7 @@ type fakeChannel struct {
 	mutex     sync.Mutex
 	sent      []Notification
 	summaries []Summary
+	notices   []Notice
 	attempts  int
 	failFirst int   // fail this many attempts before succeeding
 	failWith  error // the error of a failing attempt
@@ -68,6 +69,26 @@ func (channel *fakeChannel) SendSummary(_ context.Context, summary Summary) erro
 	channel.summaries = append(channel.summaries, summary)
 
 	return nil
+}
+
+func (channel *fakeChannel) SendNotice(_ context.Context, notice Notice) error {
+	channel.mutex.Lock()
+	defer channel.mutex.Unlock()
+
+	if err := channel.attempt(); err != nil {
+		return err
+	}
+
+	channel.notices = append(channel.notices, notice)
+
+	return nil
+}
+
+func (channel *fakeChannel) noticeCount() int {
+	channel.mutex.Lock()
+	defer channel.mutex.Unlock()
+
+	return len(channel.notices)
 }
 
 func (channel *fakeChannel) sentCount() int {

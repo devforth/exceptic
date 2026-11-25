@@ -3,9 +3,11 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"maps"
 	"net/http"
+	"time"
 
 	"github.com/devforth/exceptic/internal/api"
 	"github.com/devforth/exceptic/internal/ingest"
@@ -65,6 +67,13 @@ func New(ctx context.Context, options Options) (*App, error) {
 	sink := ingest.StoreSink{Logger: logger, Notifier: notifier, PublicURL: settings.Notifications.PublicURL, Recording: settings.Recording}
 	pipeline := ingest.NewPipeline(logger, settings, registry, db, sink)
 	pipeline.MaxInboxBytes = config.MaxInboxBytes(settings.Retention.MaxDatabaseBytes)
+
+	if err := noticeStorage(db, registry, notifier, pipeline.Dropped(), logger, settings.Notifications.PublicURL); err != nil {
+		_ = notifier.Close(ctx)
+
+		return nil, err
+	}
+
 	all := services.New(services.Dependencies{
 		Logger: logger, Store: db, Registry: registry, Settings: settings, Factory: options.Factory, Notifier: notifier, OAuth: authorization,
 		Dropped: pipeline.Dropped(),
@@ -109,4 +118,48 @@ func New(ctx context.Context, options Options) (*App, error) {
 	}).Handler()
 
 	return app, nil
+}
+
+// noticeStorage sends the connections of a project a notice at its first
+// dropped data in a day, and at every cleanup run done that deleted its data.
+func noticeStorage(db *database.Store, registry *projects.Registry, notifier *notify.Notifier, dropped *ingest.DropCounter, logger *slog.Logger, publicURL string) error {
+	page := func(path string) string {
+		if publicURL == "" {
+			return ""
+		}
+
+		return publicURL + path
+	}
+
+	noticed, err := db.DropNotices()
+
+	if err != nil {
+		return err
+	}
+
+	dropped.OnFirstDrop(noticed, func(project config.Project, kind, reason string, count int64, at time.Time) {
+		if err := db.MarkDropNotice(project.ID, at); err != nil {
+			logger.Error("record the notice of dropped data", "project", project.Name, "err", err)
+		}
+
+		notifier.Notice([]int{project.ID}, notify.DroppedNotice(project.Name, kind, reason, count, page("/projects")))
+	})
+
+	db.OnCleanupDone(func(run database.CleanupRun) {
+		names := map[int]string{}
+
+		for _, project := range registry.List() {
+			names[project.ID] = project.Name
+		}
+
+		scope := "all projects"
+
+		if run.Project != database.AllProjects {
+			scope = fmt.Sprintf("%s, down to its disk share of %d%%", names[run.Project], run.Share)
+		}
+
+		notifier.Notice(notify.RunProjects(run), notify.CleanupNotice(run, names, scope, page("/projects/cleanups")))
+	})
+
+	return nil
 }

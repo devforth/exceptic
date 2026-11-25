@@ -95,6 +95,20 @@ func (telegram Telegram) SendSummary(ctx context.Context, summary Summary) error
 	return telegram.send(ctx, strings.Join(lines, "\n"))
 }
 
+func (telegram Telegram) SendNotice(ctx context.Context, notice Notice) error {
+	lines := []string{"ℹ️ <b>" + html.EscapeString(notice.Heading) + "</b>"}
+
+	for _, line := range notice.Lines {
+		lines = append(lines, html.EscapeString(line))
+	}
+
+	if notice.URL != "" {
+		lines = append(lines, telegramLink(notice.URL, notice.LinkText))
+	}
+
+	return telegram.send(ctx, strings.Join(lines, "\n"))
+}
+
 func (telegram Telegram) send(ctx context.Context, text string) error {
 	return telegram.call(ctx, "sendMessage", map[string]any{
 		"chat_id":                  telegram.ChatID,

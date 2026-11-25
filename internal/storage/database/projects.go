@@ -211,6 +211,36 @@ func (database *Store) MarkContact(projectID int, at time.Time) (written bool, e
 	return written && err == nil, err
 }
 
+// dropNotice is when a project's dropped data was last notified: one notice a day, across restarts.
+type dropNotice struct {
+	ProjectID int       `json:"project_id"`
+	At        time.Time `json:"at"`
+}
+
+// DropNotices are when each project's dropped data was last notified.
+func (database *Store) DropNotices() (map[int]time.Time, error) {
+	notices := map[int]time.Time{}
+
+	err := database.dropNotices.Primary().Each(database.db, func(entry kv.Entry[dropNotice]) (bool, error) {
+		notices[entry.Record.ProjectID] = entry.Record.At
+
+		return true, nil
+	})
+
+	return notices, err
+}
+
+// MarkDropNotice records that a project's dropped data was notified at at.
+func (database *Store) MarkDropNotice(projectID int, at time.Time) error {
+	return database.db.Update(false, func(batch *kv.Batch) error {
+		if database.goneProjects[projectID] {
+			return nil
+		}
+
+		return database.dropNotices.Save(batch, dropNotice{ProjectID: projectID, At: at.UTC()})
+	})
+}
+
 // DeleteProject deletes the project and its place in connections and users'
 // access in one batch,
 // so its DSN stops at once and no later event or log of it is stored, and
@@ -232,6 +262,10 @@ func (database *Store) DeleteProject(_ context.Context, id int) error {
 		}
 
 		if err := database.contacts.Delete(batch, projectContact{ProjectID: id}); err != nil {
+			return err
+		}
+
+		if err := database.dropNotices.Delete(batch, dropNotice{ProjectID: id}); err != nil {
 			return err
 		}
 

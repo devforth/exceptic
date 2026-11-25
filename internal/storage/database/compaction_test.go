@@ -621,3 +621,29 @@ func TestCompactionWaitsForQuietIngest(t *testing.T) {
 		t.Fatalf("once quiet: %+v", compaction)
 	}
 }
+
+// A run done that deleted something is told to OnCleanupDone once, with
+// its steps; a check under the limit tells nothing.
+func TestCleanupDoneIsTold(t *testing.T) {
+	database := liveStore(t)
+
+	var told []CleanupRun
+
+	database.OnCleanupDone(func(run CleanupRun) { told = append(told, run) })
+
+	live, _ := measuredUsage(t, database)
+
+	if _, err := database.Cleanup(context.Background(), AllProjects, live*10); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(told) != 0 {
+		t.Fatalf("a check under the limit told %d runs", len(told))
+	}
+
+	run := pendingRun(t, database)
+
+	if len(told) != 1 || told[0].Sequence != run.Sequence || told[0].Status != store.CleanupDone || len(told[0].Steps) == 0 {
+		t.Fatalf("told %+v, want the run %d with its steps", told, run.Sequence)
+	}
+}

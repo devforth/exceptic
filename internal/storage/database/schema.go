@@ -36,6 +36,7 @@ type collections struct {
 	projects     *kv.Collection[store.Project]
 	purges       *kv.Collection[projectPurge]
 	contacts     *kv.Collection[projectContact]
+	dropNotices  *kv.Collection[dropNotice]
 	destinations *kv.Collection[destinationRecord]
 	connections  *kv.Collection[connectionRecord]
 	outbox       *kv.Collection[store.OutboxRecord]
@@ -264,6 +265,11 @@ func defineCollections(schema *kv.Schema) collections {
 		contacts: kv.Define(schema, kv.Definition[projectContact]{
 			Name: "project_contact",
 			Key:  func(contact projectContact) kv.Key { return projectKey(contact.ProjectID) },
+		}),
+		// drop_notice/<id>: when a project's dropped data was last notified.
+		dropNotices: kv.Define(schema, kv.Definition[dropNotice]{
+			Name: "drop_notice",
+			Key:  func(notice dropNotice) kv.Key { return projectKey(notice.ProjectID) },
 		}),
 		// destination/<id>: where notifications go, an email address or a chat.
 		destinations: kv.Define(schema, kv.Definition[destinationRecord]{

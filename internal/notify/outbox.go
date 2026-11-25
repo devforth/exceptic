@@ -307,6 +307,14 @@ func (notifier *Notifier) send(ctx context.Context, channel Channel, message sto
 		notification.Event = notifier.storedEvent(ctx, notification)
 
 		return channel.Send(ctx, notification)
+	case kindNotice:
+		var notice Notice
+
+		if err := json.Unmarshal(message.Payload, &notice); err != nil {
+			return fmt.Errorf("%w: unreadable message: %w", errGone, err)
+		}
+
+		return channel.SendNotice(ctx, notice)
 	default:
 		return fmt.Errorf("%w: unknown message kind %q", errGone, message.Kind)
 	}

@@ -402,8 +402,18 @@ func (database *Store) finishCleanup(run *CleanupRun, err error, stopped string)
 		run.Status = cleanupFailed
 	}
 
-	return errors.Join(err, database.db.Update(true, func(batch *kv.Batch) error { return database.cleanups.Save(batch, *run) }))
+	err = errors.Join(err, database.db.Update(true, func(batch *kv.Batch) error { return database.cleanups.Save(batch, *run) }))
+
+	if err == nil && run.Status == cleanupDone && len(run.Steps) > 0 && database.cleanupDone != nil {
+		database.cleanupDone(*run)
+	}
+
+	return err
 }
+
+// OnCleanupDone tells done of every run done that deleted something, on the
+// database lane, before its compaction; set before the lane starts.
+func (database *Store) OnCleanupDone(done func(CleanupRun)) { database.cleanupDone = done }
 
 // saveCleanup stores a new run and keeps the newest store.CleanupRunsKept of them.
 func (database *Store) saveCleanup(run *CleanupRun) error {

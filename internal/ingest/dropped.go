@@ -3,6 +3,7 @@ package ingest
 import (
 	"cmp"
 	"log/slog"
+	"maps"
 	"math"
 	"slices"
 	"sync"
@@ -53,6 +54,11 @@ type DropCounter struct {
 	logger   *slog.Logger
 	mutex    sync.Mutex
 	projects map[int]*projectDrops
+
+	// noticed is when each project's drops were last notified, notice tells
+	// the first drop of a project in dropHours (OnFirstDrop).
+	noticed map[int]time.Time
+	notice  func(project config.Project, kind, reason string, count int64, at time.Time)
 }
 
 type projectDrops struct {
@@ -66,7 +72,18 @@ type dropHour struct {
 }
 
 func newDropCounter(logger *slog.Logger) *DropCounter {
-	return &DropCounter{logger: logger, projects: map[int]*projectDrops{}}
+	return &DropCounter{logger: logger, projects: map[int]*projectDrops{}, noticed: map[int]time.Time{}}
+}
+
+// OnFirstDrop calls notice, in its own goroutine, at the first drop of a
+// project in dropHours since its last notice; noticed are the last notices
+// stored, so a restart does not repeat one. Set before ingest starts.
+func (counter *DropCounter) OnFirstDrop(noticed map[int]time.Time, notice func(project config.Project, kind, reason string, count int64, at time.Time)) {
+	counter.mutex.Lock()
+	defer counter.mutex.Unlock()
+
+	maps.Copy(counter.noticed, noticed)
+	counter.notice = notice
 }
 
 // add counts count of kind dropped from project for reason at now.
@@ -98,8 +115,19 @@ func (counter *DropCounter) add(project config.Project, reason dropReason, kind 
 	*total = min(*total, math.MaxInt64-count) + count
 	warn := !drops.warned.Equal(hour)
 	drops.warned = hour
+	first := counter.notice != nil && !now.Before(counter.noticed[project.ID].Add(dropHours*time.Hour))
+
+	if first {
+		counter.noticed[project.ID] = now
+	}
+
+	notice := counter.notice
 
 	counter.mutex.Unlock()
+
+	if first {
+		go notice(project, dropKindNames[kind], store.DropReasons[dropReasons[reason]], count, now)
+	}
 
 	if warn {
 		counter.logger.Warn("data dropped; counted on the Projects page, the next warning of this project in an hour at the earliest",

@@ -13,11 +13,13 @@ A project is one service (backend, frontend, worker) with its own DSN. Projects 
 | Logs | Log levels to store; others are dropped when they arrive. Unchanged, the project follows RECORD_LOG_LEVELS. Errors and messages of every level are stored. |
 | Disk share | The part of MAX_DATABASE_SIZE the project may take. When it reaches 99% of it, even with the database under its limit, the cleanup deletes the project's own data in the usual order, down to 80% of its share, so a flood in one project does not push out the others. A ceiling, not a reservation: shares may add up to more than 100%. At 100% the project has no limit of its own. |
 | History kept | The oldest record of each kind still stored. When the database nears its limit, the cleanup deletes the oldest first: logs below error, then error logs, then errors. |
-| Dropped | What the project sent in the last 24 hours that was not stored: over its rate limit, refused while the server was busy, too large, unreadable or not received whole, plus what its SDK reports holding back during a rate limit or dropping with its queue full (its failed sends are not counted, since it reports the refusals here that way too). Counted in memory, so a restart starts from zero; shown only when something was dropped. |
+| Dropped | What the project sent in the last 24 hours that was not stored: over its rate limit, refused while the server was busy, too large or broken, and what its SDK reports it held back. Resets on restart. |
 
 ## Notifications
 
 A connection sends new issues and issues that happen again after being resolved or once their ignore has ended to one place: an email address, a Telegram chat or a Slack channel.
+
+It also sends notices about the storage of its projects, whatever its levels: when data a project sent is dropped for the first time in 24 hours (over a rate limit, the server busy, an SDK reporting what it held back; the next notice after a day without one, also across restarts; the Projects page counts every drop), and when a cleanup run that deleted data of the project is done, with the data held before and after and what each step deleted ([Retention](configuration.md#retention)). A connection for all projects also gets the notices of cleanups that deleted no project's data.
 
 | Field | |
 |---|---|

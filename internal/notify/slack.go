@@ -106,6 +106,26 @@ func (slack Slack) SendSummary(ctx context.Context, summary Summary) error {
 	return slack.post(ctx, strings.Join(lines, "\n"))
 }
 
+func (slack Slack) SendNotice(ctx context.Context, notice Notice) error {
+	lines := []string{":information_source: *" + slackEscape(notice.Heading) + "*"}
+
+	for _, line := range notice.Lines {
+		lines = append(lines, slackEscape(line))
+	}
+
+	if notice.URL != "" {
+		lines = append(lines, slackLink(notice.URL, notice.LinkText))
+	}
+
+	if slack.BotToken != "" {
+		_, err := slack.postMessage(ctx, strings.Join(lines, "\n"), "")
+
+		return err
+	}
+
+	return slack.post(ctx, strings.Join(lines, "\n"))
+}
+
 // postMessage posts as the bot (https://api.slack.com/methods/chat.postMessage),
 // in the thread of threadTimestamp when given, and returns the timestamp of
 // the new message. Slack answers 200 with {"ok": false, "error": ...} on

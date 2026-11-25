@@ -61,6 +61,8 @@ type Store struct {
 	compactFault func() error
 	// whileCompacting, for tests, runs inside every compaction part.
 	whileCompacting func()
+	// cleanupDone is told of every run done that deleted something (OnCleanupDone).
+	cleanupDone func(CleanupRun)
 
 	closeOnce sync.Once
 	closeErr  error

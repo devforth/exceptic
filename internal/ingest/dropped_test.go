@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"testing/iotest"
@@ -151,5 +152,47 @@ func TestDroppedWarnsOncePerHour(t *testing.T) {
 
 	if warnings := counter.warnings.Load(); warnings != 2 {
 		t.Fatalf("%d warnings in the next hour, want 2", warnings)
+	}
+}
+
+// The first drop of a project in a day is notified once: the next one after
+// a day without a notice, and a notice stored before a restart counts.
+func TestDroppedNotifiesOncePerDay(t *testing.T) {
+	counter := newDropCounter(slog.New(slog.DiscardHandler))
+	start := time.Date(2026, 11, 11, 10, 30, 0, 0, time.UTC)
+	backend, frontend := config.Project{ID: 1, Name: "backend"}, config.Project{ID: 2, Name: "frontend"}
+	notices := make(chan string, 10)
+
+	counter.OnFirstDrop(map[int]time.Time{2: start.Add(-time.Hour)}, func(project config.Project, kind, reason string, count int64, _ time.Time) {
+		notices <- fmt.Sprintf("%s %d %s %s", project.Name, count, kind, reason)
+	})
+
+	counter.add(backend, dropRateLimit, dropLogs, 5, start)
+	counter.add(backend, dropBusy, dropEvents, 1, start.Add(time.Hour))
+	counter.add(frontend, dropRateLimit, dropLogs, 3, start)
+	counter.add(backend, dropRateLimit, dropLogs, 2, start.Add(24*time.Hour))
+	counter.add(frontend, dropRateLimit, dropLogs, 4, start.Add(23*time.Hour))
+
+	var got []string
+
+	for range 3 {
+		select {
+		case notice := <-notices:
+			got = append(got, notice)
+		case <-time.After(2 * time.Second):
+			t.Fatalf("notices %v, want 3", got)
+		}
+	}
+
+	slices.Sort(got)
+
+	if want := []string{"backend 2 logs rate limit", "backend 5 logs rate limit", "frontend 4 logs rate limit"}; !slices.Equal(got, want) {
+		t.Errorf("notices %v, want %v", got, want)
+	}
+
+	select {
+	case extra := <-notices:
+		t.Errorf("one more notice: %s", extra)
+	case <-time.After(50 * time.Millisecond):
 	}
 }

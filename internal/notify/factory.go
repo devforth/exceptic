@@ -131,6 +131,12 @@ func (channel withoutIssueLinks) SendSummary(ctx context.Context, summary Summar
 	return channel.Channel.SendSummary(ctx, summary)
 }
 
+func (channel withoutIssueLinks) SendNotice(ctx context.Context, notice Notice) error {
+	notice.URL = ""
+
+	return channel.Channel.SendNotice(ctx, notice)
+}
+
 func (factory Factory) channel(connection store.Connection) (Channel, error) {
 	switch connection.Type {
 	case config.ChannelEmail:
