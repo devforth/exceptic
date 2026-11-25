@@ -422,3 +422,40 @@ func TestSlackBotErrorHints(t *testing.T) {
 		t.Fatalf("err %v", err)
 	}
 }
+
+// A chat summary keeps its issues apart: each a numbered block with its MCP
+// request under it, an empty line between blocks.
+func TestChatSummariesSeparateIssues(t *testing.T) {
+	second := sample
+	second.IssueID, second.IssueURL, second.Title = "issue043", "https://errors.example.com/issues/issue043", "RangeError: Invalid time value"
+	summary := Summary{Count: 2, Window: time.Minute, Items: []Notification{sample, second}}
+
+	server, _, payload := recordingServer(t, http.StatusOK, nil, "ok")
+
+	if err := (Slack{WebhookURL: server.URL, AppName: "Exceptic"}).SendSummary(context.Background(), summary); err != nil {
+		t.Fatal(err)
+	}
+
+	var slack struct{ Text string }
+
+	_ = json.Unmarshal(*payload, &slack)
+
+	telegramServer, _, telegramPayload := recordingServer(t, http.StatusOK, nil, `{"ok":true,"result":{}}`)
+
+	if err := (Telegram{BotToken: "1:token", ChatID: "-100", AppName: "Exceptic", apiURL: telegramServer.URL}).SendSummary(context.Background(), summary); err != nil {
+		t.Fatal(err)
+	}
+
+	var telegram struct{ Text string }
+
+	_ = json.Unmarshal(*telegramPayload, &telegram)
+
+	for name, text := range map[string]string{"slack": slack.Text, "telegram": telegram.Text} {
+		blocks := strings.Split(text, "\n\n")
+
+		if len(blocks) != 4 || !strings.Contains(blocks[1], "1.") || !strings.Contains(blocks[1], "issue042") || strings.Contains(blocks[1], "issue043") ||
+			!strings.Contains(blocks[2], "2.") || !strings.Contains(blocks[2], "issue043") || strings.Contains(blocks[2], "issue042") {
+			t.Errorf("%s summary, blocks %d:\n%s", name, len(blocks), text)
+		}
+	}
+}

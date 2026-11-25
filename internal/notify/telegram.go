@@ -82,15 +82,16 @@ func (err *telegramError) Error() string {
 func (telegram Telegram) SendSummary(ctx context.Context, summary Summary) error {
 	lines := []string{"⚠️ <b>" + html.EscapeString(summary.heading()) + "</b>"}
 
-	for _, item := range summary.Items {
-		lines = append(lines, fmt.Sprintf("• <code>%s</code> %s", html.EscapeString(item.Project), telegramLink(item.IssueURL, textutil.Shorten(item.Title, shortTitleLength))))
+	// Each issue a numbered block of its own, its MCP request under it, an empty line between.
+	for index, item := range summary.Items {
+		lines = append(lines, "", fmt.Sprintf("<b>%d.</b> <code>%s</code> %s", index+1, html.EscapeString(item.Project), telegramLink(item.IssueURL, textutil.Shorten(item.Title, shortTitleLength))))
 
 		if reference := mcpReference(telegram.AppName, item); reference != "" {
 			lines = append(lines, "<code>"+html.EscapeString(reference)+"</code>")
 		}
 	}
 
-	lines = append(lines, "<i>"+html.EscapeString(summary.note())+"</i>")
+	lines = append(lines, "", "<i>"+html.EscapeString(summary.note())+"</i>")
 
 	return telegram.send(ctx, strings.Join(lines, "\n"))
 }

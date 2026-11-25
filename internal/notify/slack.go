@@ -87,15 +87,16 @@ func slackPrompt(notification Notification) string {
 func (slack Slack) SendSummary(ctx context.Context, summary Summary) error {
 	lines := []string{":warning: *" + summary.heading() + "*"}
 
-	for _, item := range summary.Items {
-		lines = append(lines, fmt.Sprintf("• `%s` %s", slackEscape(item.Project), slackLink(item.IssueURL, textutil.Shorten(item.Title, shortTitleLength))))
+	// Each issue a numbered block of its own, its MCP request under it, an empty line between.
+	for index, item := range summary.Items {
+		lines = append(lines, "", fmt.Sprintf("*%d.* `%s` %s", index+1, slackEscape(item.Project), slackLink(item.IssueURL, textutil.Shorten(item.Title, shortTitleLength))))
 
 		if reference := mcpReference(slack.AppName, item); reference != "" {
-			lines = append(lines, "  `"+slackEscape(reference)+"`")
+			lines = append(lines, "`"+slackEscape(reference)+"`")
 		}
 	}
 
-	lines = append(lines, "_"+summary.note()+"_")
+	lines = append(lines, "", "_"+summary.note()+"_")
 
 	if slack.BotToken != "" {
 		_, err := slack.postMessage(ctx, strings.Join(lines, "\n"), "")
