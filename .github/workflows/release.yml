@@ -2,8 +2,9 @@ name: Release
 
 # Pushing a tag like v1.2.3 publishes devforth/exceptic:1.2.3,
 # :1.2 and :latest for amd64 and arm64 to Docker Hub.
+# Also replaces the repository's description on Docker Hub with docs/dockerhub.md.
 # Needs the repository secrets DOCKERHUB_USERNAME and DOCKERHUB_TOKEN
-# (an access token with Read & Write scope).
+# (an access token with Read, Write & Delete scope, which the description needs).
 on:
   push:
     tags: ['v*.*.*']
@@ -48,3 +49,13 @@ jobs:
           build-args: VERSION=${{ steps.meta.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      # Not for pre-releases: the description is the newest release's.
+      - if: ${{ !contains(github.ref_name, '-') }}
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: devforth/exceptic
+          short-description: Self-hosted error and log monitoring for the official Sentry SDKs
+          readme-filepath: docs/dockerhub.md
