@@ -431,7 +431,9 @@ func TestNoticeEmail(t *testing.T) {
 	}
 
 	for _, want := range []string{">Cleanup done</span>", "Logs below error", "border:1px solid #db2777", ">frontend</span>", `align="right"`, ">25,458 logs</td>",
-		">2.0 GB</div>", "https://errors.example.com/projects/cleanups", "Sent by Exceptic to ops@example.com."} {
+		">2.0 GB</div>", "https://errors.example.com/projects/cleanups", "Sent by Exceptic to ops@example.com.",
+		// A dark theme for the clients that read <style>; the card keeps its stripe.
+		"@media (prefers-color-scheme: dark)", `<td class="x-card" style="background:#ffffff;border:1px solid #e4e4ea;border-top:4px solid #16a34a`} {
 		if !strings.Contains(htmlPart, want) {
 			t.Errorf("the HTML lacks %q", want)
 		}
