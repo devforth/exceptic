@@ -355,3 +355,36 @@ func TestBackupCopiesSecretKey(t *testing.T) {
 		t.Errorf("key file mode %v %v, want 0600", info.Mode(), err)
 	}
 }
+
+// A backup written while a purge compacts keeps the purged records in the
+// files through its snapshot: the purge leaves them counted stale, for a
+// later compaction to take off.
+func TestPurgeDuringABackupKeepsStale(t *testing.T) {
+	ctx := context.Background()
+	database := openOnDisk(t, t.TempDir())
+	seedShares(t, database, 100, 100)
+	clockAt(database, scenarioNow)
+	writeMeasured(t, database, measuredPart{project: 2, to: 200})
+
+	if err := database.DeleteProject(ctx, 2); err != nil {
+		t.Fatal(err)
+	}
+
+	database.whileCompacting = func() {
+		database.whileCompacting = nil
+
+		if _, err := database.Backup(ctx, filepath.Join(t.TempDir(), "backup"), nil); err != nil {
+			t.Error(err)
+		}
+	}
+
+	if err := database.PurgeProjects(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	if database.staleBytes() == 0 {
+		t.Error("the purge took its deletes off the stale count while a backup's snapshot kept them")
+	}
+
+	checkCollections(t, database)
+}

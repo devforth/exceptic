@@ -14,6 +14,9 @@ var ErrCompacting = errors.New("the database is compacting its files")
 // While a compaction part runs it refuses at once (ErrCompacting).
 func (database *Store) Append(projectID int, received time.Time, body []byte) (InboxEntry, error) {
 	if !database.ingestWrites.TryRLock() {
+		// Refused, it still counts as ingest: the next part waits for quiet.
+		database.lastAppend.Store(time.Now().UnixNano())
+
 		return InboxEntry{}, ErrCompacting
 	}
 

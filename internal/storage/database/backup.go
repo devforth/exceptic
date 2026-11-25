@@ -63,10 +63,17 @@ func (database *Store) Backup(ctx context.Context, target string, progress func(
 	}
 
 	database.backups.Add(1)
+	database.backupsStarted.Add(1)
 
 	defer database.backups.Add(-1)
 
 	return writeBackup(ctx, database.db, database.dataDir, target, progress)
+}
+
+// backupSince says whether a backup runs or ran since started
+// (backupsStarted then): its snapshot kept deleted records in the files.
+func (database *Store) backupSince(started int64) bool {
+	return database.backups.Load() > 0 || database.backupsStarted.Load() != started
 }
 
 // BackupStopped writes a backup of the database in dataDir that no server holds, opened only to read.

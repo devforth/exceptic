@@ -23,30 +23,26 @@ type cleanupTarget struct {
 
 // cleanupTargets are the runs a check may start, in order: each project with
 // a disk share below 100%, the smallest share first, then all projects.
-// Projects wait while data stored before their counters is still counted:
-// their bytes and the events' project index fall short meanwhile.
 func (database *Store) cleanupTargets(maxBytes int64) ([]cleanupTarget, error) {
 	if maxBytes <= 0 {
 		return nil, nil
 	}
 
+	projects, err := database.projects.Primary().All(database.db)
+
+	if err != nil {
+		return nil, err
+	}
+
+	slices.SortFunc(projects, func(first, second store.Project) int {
+		return cmp.Or(cmp.Compare(first.Share(), second.Share()), cmp.Compare(first.ID, second.ID))
+	})
+
 	var targets []cleanupTarget
 
-	if database.backfilled() {
-		projects, err := database.projects.Primary().All(database.db)
-
-		if err != nil {
-			return nil, err
-		}
-
-		slices.SortFunc(projects, func(first, second store.Project) int {
-			return cmp.Or(cmp.Compare(first.Share(), second.Share()), cmp.Compare(first.ID, second.ID))
-		})
-
-		for _, project := range projects {
-			if limit := store.ShareLimit(maxBytes, project.Share()); limit > 0 {
-				targets = append(targets, cleanupTarget{project.ID, limit})
-			}
+	for _, project := range projects {
+		if limit := store.ShareLimit(maxBytes, project.Share()); limit > 0 {
+			targets = append(targets, cleanupTarget{project.ID, limit})
 		}
 	}
 
@@ -207,13 +203,6 @@ func (database *Store) liveSize() (int64, diskUsage, error) {
 	return usage.onDisk(database.logicalSize()) + usage.other, usage, err
 }
 
-// projectOnDisk is a project's part of liveSize: its bytes counted on disk.
-func (database *Store) projectOnDisk(project int) (int64, float64, error) {
-	usage, err := database.diskUsage()
-
-	return usage.onDisk(database.projectBytes(project)), usage.ratio, err
-}
-
 // staleBytes is what deletes and rewrites (the cleanup's, a project's
 // purge, deleted issues, thinned events, repeated log messages) left in the
 // logs and events, in bytes counted. Issues are left out: rewritten with
@@ -226,13 +215,15 @@ func (database *Store) staleBytes() int64 {
 // compactStale compacts the logs and events once their stale records take
 // more than config.StalePercent of the bytes counted: goleveldb frees some
 // of them on its own without telling, and each project is then measured
-// low by up to that part. It says whether it compacted.
-func (database *Store) compactStale() (bool, error) {
+// low by up to that part.
+func (database *Store) compactStale() error {
 	if !database.staleOver() {
-		return false, nil
+		return nil
 	}
 
-	return database.compact(false, database.staleData()...)
+	_, err := database.compact(false, database.staleData()...)
+
+	return err
 }
 
 // staleOver says the stale records are over config.StalePercent of the bytes counted, with no backup running.

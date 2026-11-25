@@ -26,7 +26,7 @@ func (scope cleanupScope) deleteOrphans() cleanupBatch {
 		phase, from, sequence := decoder.U8(), decoder.Text(), decoder.U64()
 
 		if phase == 0 {
-			if done, err := orphanPhase(writer, cursor, scope, database.status, 0, from, sequence, func(entry kv.Entry[statusRecord], project int) {
+			if done, err := orphanPhase(cursor, scope, database.status, 0, from, sequence, func(entry kv.Entry[statusRecord], project int) {
 				database.status.DeleteEntry(writer.batch, entry)
 				writer.count(project).StatusChanges++
 			}); err != nil || !done {
@@ -36,7 +36,7 @@ func (scope cleanupScope) deleteOrphans() cleanupBatch {
 			from, sequence = "", 0
 		}
 
-		return orphanPhase(writer, cursor, scope, database.events, 1, from, sequence, func(entry kv.Entry[eventRecord], _ int) {
+		return orphanPhase(cursor, scope, database.events, 1, from, sequence, func(entry kv.Entry[eventRecord], _ int) {
 			writer.deleteEvent(entry)
 		})
 	}
@@ -46,7 +46,7 @@ func (scope cleanupScope) deleteOrphans() cleanupBatch {
 // of missing issues, from the issue ID from and the sequence in it on. A
 // key read counts as a record, so a batch holds the write lock for at most
 // cleanupChunk of them. It says whether it reached the end.
-func orphanPhase[T any](writer *batchWriter, cursor *cleanupCursor, scope cleanupScope, collection *kv.Collection[T], phase byte,
+func orphanPhase[T any](cursor *cleanupCursor, scope cleanupScope, collection *kv.Collection[T], phase byte,
 	from string, sequence uint64, remove func(entry kv.Entry[T], project int),
 ) (bool, error) {
 	database := scope.database

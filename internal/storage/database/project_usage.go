@@ -13,11 +13,11 @@ import (
 // backfillChunk is how many records one step of the backfill brings up to date.
 const backfillChunk = 2000
 
-// Backfill counts the data stored before the project counters (their bytes,
-// and the events' project index) in steps, until done or ctx ends; the next
-// pass goes on where it stopped. Once done it does nothing.
+// Backfill brings the records stored before an index (the issues' trim)
+// up to date in steps, until done or ctx ends; the next pass goes on where
+// it stopped. Once done it does nothing.
 func (database *Store) Backfill(ctx context.Context) error {
-	for _, step := range []func(*kv.DB, int) (bool, error){database.issues.BackfillStep, database.events.BackfillStep, database.logs.BackfillStep} {
+	for _, step := range []func(*kv.DB, int) (bool, error){database.issues.BackfillStep} {
 		for done := false; !done; {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -39,15 +39,9 @@ func (database *Store) projectBytes(projectID int) int64 {
 	return database.db.Group(projectCounter(projectID))
 }
 
-// backfilled: every record is counted per project (the issues' backfill is their trim index).
-func (database *Store) backfilled() bool {
-	return database.events.Backfilled() && database.logs.Backfilled()
-}
-
 func (database *Store) ProjectUsage(context.Context) (store.ProjectUsage, error) {
 	usage := store.ProjectUsage{
 		Bytes: map[int]int64{}, OnDisk: map[int]int64{}, LastReceived: map[int]time.Time{}, Oldest: map[int]store.OldestKept{},
-		Counting: !database.backfilled(),
 	}
 
 	database.contactsMutex.RLock()

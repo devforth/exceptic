@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/devforth/exceptic/internal/notify"
 	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/platform/secret"
+	"github.com/devforth/exceptic/internal/sentry"
 	"github.com/devforth/exceptic/internal/storage/database"
 	"github.com/devforth/exceptic/internal/storage/projects"
 	"github.com/devforth/exceptic/internal/storage/store"
@@ -466,25 +468,48 @@ func TestStorage(t *testing.T) {
 
 // A run over the database leaves out, for a limited viewer, the steps that
 // deleted only in hidden projects, and the hidden counts of the others.
-func TestVisibleRunHidesStepsOfHiddenProjects(t *testing.T) {
-	run := store.CleanupRun{Steps: []store.CleanupStep{
+func TestVisibleRunShowsHiddenProjectsAsOther(t *testing.T) {
+	run := store.CleanupRun{Compacted: 1000, Ratio: 1, Steps: []store.CleanupStep{
 		{Number: 1, Freed: 100, Projects: map[int]*store.CleanupCounts{2: {Logs: 5}}},
-		{Number: 2, Freed: 200, Projects: map[int]*store.CleanupCounts{1: {Logs: 1}, 2: {Logs: 3}}},
+		{Number: 2, Freed: 200, Projects: map[int]*store.CleanupCounts{1: {Logs: 1}, 2: {Logs: 3}, 3: {Logs: 4}}},
 		{Number: 3, Freed: 300},
 	}}
 
-	shown, ok := visibleRun(store.OnlyProjects(1), run)
+	visible, ok := VisibleRun(store.OnlyProjects(1), run)
+	shown := visible.Run
 
-	if !ok || len(shown.Steps) != 2 || shown.Steps[0].Number != 2 || shown.Steps[1].Number != 3 {
+	if !ok || len(shown.Steps) != 3 {
 		t.Fatalf("steps shown: %+v", shown.Steps)
 	}
 
-	if _, hidden := shown.Steps[0].Projects[2]; hidden || len(run.Steps[1].Projects) != 2 {
-		t.Errorf("counts shown %v, stored %v", shown.Steps[0].Projects, run.Steps[1].Projects)
+	// Projects outside access only as one Other row, by no name.
+	if other := shown.Steps[1].Projects[store.OtherProjects]; other == nil || other.Logs != 7 || shown.Steps[1].Projects[1].Logs != 1 || len(shown.Steps[1].Projects) != 2 {
+		t.Errorf("step 2 shown %v", shown.Steps[1].Projects)
 	}
 
-	if all, _ := visibleRun(store.Access{}, run); len(all.Steps) != 3 {
-		t.Errorf("every project: %+v", all.Steps)
+	if other := shown.Steps[0].Projects[store.OtherProjects]; other == nil || other.Logs != 5 || len(shown.Steps[0].Projects) != 1 {
+		t.Errorf("step 1 shown %v", shown.Steps[0].Projects)
+	}
+
+	if len(run.Steps[1].Projects) != 3 || run.Steps[1].Projects[2].Logs != 3 {
+		t.Errorf("the stored run changed: %v", run.Steps[1].Projects)
+	}
+
+	if order := store.StepProjects(shown.Steps[1].Projects); order[len(order)-1] != store.OtherProjects {
+		t.Errorf("order %v: Other goes last", order)
+	}
+
+	// The sizes stay the database's.
+	if visible.Left != 400 || !visible.Known {
+		t.Errorf("left = %d, want 400 as for every project", visible.Left)
+	}
+
+	if all, _ := VisibleRun(store.Access{}, run); all.Run.Steps[1].Projects[store.OtherProjects] != nil {
+		t.Errorf("every project: %+v", all.Run.Steps)
+	}
+
+	if _, ok := VisibleRun(store.OnlyProjects(1), store.CleanupRun{Project: 2}); ok {
+		t.Error("a run of a hidden project is shown")
 	}
 }
 
@@ -516,5 +541,65 @@ func TestRelatedLogsStoppedSearch(t *testing.T) {
 
 	if found, err := issues.TraceLogs(ctx, store.Access{}, event); err != nil || !found {
 		t.Errorf("trace has logs %v, %v: unknown after a stopped search", found, err)
+	}
+}
+
+// Without logs of its spans, an event's related logs are those of its trace
+// within a minute of it by the server's clock and by the device's, not the
+// hours between them; a time ingest replaced by the receive time is no drift.
+func TestRelatedLogsAroundBothClocks(t *testing.T) {
+	ctx := context.Background()
+	database := openStore(t)
+	issues := newIssues(slog.New(slog.DiscardHandler), database)
+	// The server's time; the device's clock is an hour behind it.
+	at := time.Now().Truncate(time.Second)
+	device := at.Add(-time.Hour)
+	logAt := func(body string, timestamp time.Time) store.NewLog {
+		return store.NewLog{ProjectID: 1, Timestamp: timestamp, Level: "error", Body: body, TraceID: "trace"}
+	}
+
+	if err := database.SaveLogs(ctx, []store.NewLog{
+		logAt("by the server's clock", at.Add(-20*time.Second)),
+		logAt("by the device's clock", device.Add(10*time.Second)),
+		logAt("between the two", at.Add(-30*time.Minute)),
+	}, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	bodies := func(event store.Event, sent time.Time) []string {
+		t.Helper()
+
+		related, err := issues.RelatedLogs(ctx, store.Access{}, event, &sentry.Event{Timestamp: sentry.Timestamp{Time: sent}})
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var found []string
+
+		for _, record := range related.Logs {
+			found = append(found, record.Body)
+		}
+
+		slices.Sort(found)
+
+		return found
+	}
+
+	drifted := store.Event{EventSummary: store.EventSummary{ProjectID: 1, TraceID: "trace", Timestamp: at, ReceivedAt: at.Add(time.Second)}}
+
+	if found := bodies(drifted, device); !slices.Equal(found, []string{"by the device's clock", "by the server's clock"}) {
+		t.Errorf("a device an hour behind: %v", found)
+	}
+
+	// A time ingest replaced (stored as the receive time) has no drift: only the server's window.
+	replaced := store.Event{EventSummary: store.EventSummary{ProjectID: 1, TraceID: "trace", Timestamp: at, ReceivedAt: at}}
+
+	if found := bodies(replaced, device); !slices.Equal(found, []string{"by the server's clock"}) {
+		t.Errorf("a replaced time: %v", found)
+	}
+
+	if drift := ClockDrift(replaced, &sentry.Event{Timestamp: sentry.Timestamp{Time: device}}); drift != 0 {
+		t.Errorf("drift of a replaced time: %s", drift)
 	}
 }

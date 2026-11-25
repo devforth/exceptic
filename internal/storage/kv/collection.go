@@ -112,33 +112,15 @@ func (collection *Collection[T]) KeyRange() (lower, upper []byte) {
 }
 
 // Stale is what the collection's deletes and rewrites left in the files
-// since Compact last ran, in bytes counted: the engine frees a deleted
-// record's space only when a compaction reaches it. Its own compactions are
-// not told, so it may count bytes they freed.
+// and no compaction took off (TakeStale), in bytes counted: the engine frees
+// a deleted record's space only when a compaction reaches it. Its own
+// compactions are not told, so it may count bytes they freed.
 func (collection *Collection[T]) Stale(db *DB) int64 {
 	db.countersMutex.RLock()
 
 	defer db.countersMutex.RUnlock()
 
 	return db.stale[collection.name]
-}
-
-// Compact compacts the collection's keys, which frees what its deletes and
-// rewrites left in the files, and takes that off Stale. What is deleted
-// while it runs stays counted: the compaction may not have reached it.
-func (collection *Collection[T]) Compact(db *DB) error {
-	db.compactMutex.Lock()
-	defer db.compactMutex.Unlock()
-
-	mark := collection.StaleMark(db)
-
-	if err := db.CompactRange(collection.KeyRange()); err != nil {
-		return err
-	}
-
-	_, err := collection.TakeStale(db, mark)
-
-	return err
 }
 
 // StaleMark is all the collection's deletes and rewrites have ever added to
@@ -165,7 +147,7 @@ func (collection *Collection[T]) TakeStale(db *DB, mark int64) (int64, error) {
 
 		// staled-stale is what compactions took off so far.
 		taken = min(max(mark-(staled-stale), 0), stale)
-		batch.addStale(collection.name, -taken)
+		batch.takeStale(collection.name, taken)
 
 		return nil
 	})

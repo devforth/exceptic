@@ -38,7 +38,6 @@ type compactRange struct{ lower, upper []byte }
 type compactable interface {
 	Name() string
 	KeyRange() (lower, upper []byte)
-	Stale(db *kv.DB) int64
 	StaleMark(db *kv.DB) int64
 	TakeStale(db *kv.DB, mark int64) (int64, error)
 }
@@ -51,12 +50,14 @@ func (database *Store) compactables() []compactable {
 // deleted records when it started and no other compaction took off. Unless
 // forced it compacts only while ingest is quiet and says whether it
 // finished; forced, each part refuses ingest for its time (compactRange).
+// A backup during it stops it before it takes anything off.
 func (database *Store) compact(forced bool, collections ...compactable) (bool, error) {
 	if err := database.compactFaults(); err != nil {
 		return false, err
 	}
 
 	marks := make([]int64, len(collections))
+	backups := database.backupsStarted.Load()
 
 	for index, collection := range collections {
 		marks[index] = collection.StaleMark(database.db)
@@ -65,15 +66,21 @@ func (database *Store) compact(forced bool, collections ...compactable) (bool, e
 	parts, err := database.compactParts(collections, database.db.Peek(), nil)
 
 	for _, part := range parts {
-		if err != nil {
+		switch {
+		case err != nil:
 			return false, err
-		}
-
-		if !forced && !database.quiet() {
+		case !forced && !database.quiet():
+			return false, nil
+		// A backup's snapshot keeps the deleted records: nothing is freed to take off.
+		case database.backupSince(backups):
 			return false, nil
 		}
 
 		err = database.compactRange(part)
+	}
+
+	if err == nil && database.backupSince(backups) {
+		return false, nil
 	}
 
 	for index, collection := range collections {
@@ -120,10 +127,15 @@ func (database *Store) compactParts(collections []compactable, below uint64, fro
 		records := []byte(collection.Name() + "/")
 		parts = append(parts, compactRange{lower, records})
 
-		found, err := database.spreadParts(records, upper)
+		var (
+			found []compactRange
+			err   error
+		)
 
 		if lead, ok := arrivalLeads[collection.Name()]; ok {
 			found, err = database.arrivalParts(records, upper, lead, below)
+		} else {
+			found, err = database.spreadParts(records, upper)
 		}
 
 		if err != nil {
@@ -461,10 +473,19 @@ func (database *Store) compactParted(ctx context.Context, run *CleanupRun) (bool
 			return false, background.ErrYielded
 		}
 
-		if err = database.compactRange(part); err == nil {
-			progress.Reached = part.upper
-			err = database.saveRun(*run)
+		backups := database.backupsStarted.Load()
+
+		if err = database.compactRange(part); err != nil {
+			continue
 		}
+
+		// A backup that started meanwhile kept what the part would free: it goes again.
+		if database.backupSince(backups) {
+			return false, nil
+		}
+
+		progress.Reached = part.upper
+		err = database.saveRun(*run)
 	}
 
 	return err == nil, err

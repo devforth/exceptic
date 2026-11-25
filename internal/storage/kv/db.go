@@ -23,14 +23,13 @@ type DB struct {
 	// fresh: the engine held no key when opened.
 	fresh bool
 
-	writeMutex   sync.Mutex // one DB.Update at a time
-	compactMutex sync.Mutex // one Collection.Compact at a time
+	writeMutex sync.Mutex // one DB.Update at a time
 
 	countersMutex sync.RWMutex
 	counters      map[string]int64
 	groups        map[string]int64
 	// stale is per collection what its deletes and rewrites left in the
-	// files since Collection.Compact last compacted it, in bytes counted.
+	// files that no compaction took off (Collection.TakeStale), in bytes counted.
 	stale map[string]int64
 	// staled is per collection all its deletes and rewrites ever added to
 	// stale: a compaction's mark (Collection.StaleMark), so it takes off

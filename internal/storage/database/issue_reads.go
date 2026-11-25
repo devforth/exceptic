@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -119,12 +120,33 @@ func (database *Store) walkIssues(ctx context.Context, filter store.IssueFilter,
 	prefixes := database.issuePrefixes(filter)
 	stopped := false
 
+	// Of the ignored issues, the unresolved read only those whose time has passed, by their keys.
+	var expired map[string]bool
+
+	if filter.Status == store.StatusUnresolved {
+		expired = map[string]bool{}
+
+		if err := database.eachExpired(filter.ProjectIDs, func(issue issueRecord) { expired[issue.ID] = true }); err != nil {
+			return err
+		}
+	}
+
 	walk := func(prefixes []tallyPrefix) error {
 		queries := make([]kv.Query[issueRecord], 0, len(prefixes))
 
 		for _, prefix := range prefixes {
-			queries = append(queries, database.issues.By(index, kv.U8(statusRank(prefix.status)), kv.U32(uint32(prefix.project)),
-				kv.U8(levelRank(prefix.level))).Where(match).WithContext(budget))
+			query := database.issues.By(index, kv.U8(statusRank(prefix.status)), kv.U32(uint32(prefix.project)),
+				kv.U8(levelRank(prefix.level))).Where(match).WithContext(budget)
+
+			if expired != nil && prefix.status == store.StatusIgnored {
+				if len(expired) == 0 {
+					continue
+				}
+
+				query = query.Keyed(func(key kv.Key) bool { return expired[kv.Decode(key, 0).Text()] })
+			}
+
+			queries = append(queries, query)
 		}
 
 		return kv.Merge(database.db, queries, newest, func(entry kv.Entry[issueRecord]) (bool, error) {
@@ -266,23 +288,47 @@ func (database *Store) tallied(filter store.IssueFilter) (int, error) {
 }
 
 // expiredIgnores counts the ignored issues of the projects and levels (none:
-// any) whose time has passed: few, as people set ignores.
+// any) whose time has passed: few, as the size check stores them
+// (ExpireIgnores).
 func (database *Store) expiredIgnores(projectIDs []int, levels []string) (int, error) {
-	now := database.now()
 	count := 0
 
-	err := database.issues.By("expiry").Each(database.db, func(entry kv.Entry[issueRecord]) (bool, error) {
-		issue := entry.Record
-
-		if issue.IgnoreExpired(now) && (len(projectIDs) == 0 || slices.Contains(projectIDs, issue.ProjectID)) &&
-			(len(levels) == 0 || slices.Contains(levels, issue.Level)) {
+	err := database.eachExpired(projectIDs, func(issue issueRecord) {
+		if len(levels) == 0 || slices.Contains(levels, issue.Level) {
 			count++
 		}
-
-		return true, nil
 	})
 
 	return count, err
+}
+
+// eachExpired visits the ignored issues of the projects (none: any) whose
+// time has passed, by the expiry index up to now.
+func (database *Store) eachExpired(projectIDs []int, visit func(issue issueRecord)) error {
+	now := database.now()
+	projects := map[int]bool{}
+
+	for _, prefix := range database.issuePrefixes(store.IssueFilter{Status: store.StatusIgnored, ProjectIDs: projectIDs}) {
+		projects[prefix.project] = true
+	}
+
+	for _, project := range slices.Sorted(maps.Keys(projects)) {
+		query := database.issues.By("expiry", kv.U32(uint32(project))).Before(kv.U64(uint64(now.UnixNano()) + 1))
+
+		err := query.Each(database.db, func(entry kv.Entry[issueRecord]) (bool, error) {
+			if entry.Record.IgnoreExpired(now) {
+				visit(entry.Record)
+			}
+
+			return true, nil
+		})
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (database *Store) GetIssue(_ context.Context, issueID string) (store.Issue, error) {
@@ -323,15 +369,7 @@ func (database *Store) UnresolvedCounts(context.Context) (map[int]int, error) {
 		}
 	}
 
-	now := database.now()
-
-	err := database.issues.By("expiry").Each(database.db, func(entry kv.Entry[issueRecord]) (bool, error) {
-		if entry.Record.IgnoreExpired(now) {
-			counts[entry.Record.ProjectID]++
-		}
-
-		return true, nil
-	})
+	err := database.eachExpired(nil, func(issue issueRecord) { counts[issue.ProjectID]++ })
 
 	return counts, err
 }

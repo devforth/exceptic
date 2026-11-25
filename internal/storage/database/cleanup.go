@@ -29,8 +29,10 @@ const (
 	cleanupChunk  = 2000
 	cleanupPassed = 10 * cleanupChunk
 	cleanupDecode = 2 << 20
-	cleanupRest   = 2 * time.Millisecond
 )
+
+// cleanupRest is the pause between batches, a variable for tests.
+var cleanupRest = 2 * time.Millisecond
 
 // The records of a run are the store's.
 type (
@@ -91,12 +93,21 @@ func (database *Store) Lane(maxBytes int64, logger *slog.Logger) background.Lane
 // AllProjects is the scope of the cleanup over the whole database; any other is a project's ID.
 const AllProjects = 0
 
-// CheckSize thins the events that turned a month old and runs the cleanups due (cleanupPass).
+// CheckSize stores the ignores whose time has passed (ExpireIgnores), thins
+// the events that turned a month old and runs the cleanups due (cleanupPass).
 func (database *Store) CheckSize(ctx context.Context, maxBytes int64, logger *slog.Logger) error {
-	if maxBytes > 0 {
-		reduced, err := database.ReduceAging(ctx)
+	if err := database.ExpireIgnores(ctx); err != nil {
+		return fmt.Errorf("storing ended ignores: %w", err)
+	}
 
-		if err != nil {
+	if maxBytes > 0 {
+		thinning, cancel := thinningTime(ctx)
+		reduced, err := database.ReduceAging(thinning)
+
+		cancel()
+
+		// A backlog left at its time goes on at the next pass.
+		if err != nil && (ctx.Err() != nil || !errors.Is(err, context.DeadlineExceeded)) {
 			return fmt.Errorf("thinning old events: %w", err)
 		}
 
@@ -114,6 +125,18 @@ func (database *Store) CheckSize(ctx context.Context, maxBytes int64, logger *sl
 	}
 
 	return err
+}
+
+// thinningTime is half the time left to ctx: a backlog of events to thin
+// never keeps the cleanup by size from its pass.
+func thinningTime(ctx context.Context) (context.Context, context.CancelFunc) {
+	deadline, ok := ctx.Deadline()
+
+	if !ok {
+		return context.WithCancel(ctx)
+	}
+
+	return context.WithDeadline(ctx, deadline.Add(-time.Until(deadline)/2))
 }
 
 // runFailed labels an error of a run with its scope and step; nil stays nil.
@@ -195,7 +218,7 @@ func (database *Store) cleanupPass(ctx context.Context, maxBytes int64) ([]Clean
 	pending, err := database.pendingCompactions()
 
 	if err == nil && len(pending) == 0 {
-		_, err = database.compactStale()
+		err = database.compactStale()
 	}
 
 	if err != nil {
@@ -242,7 +265,8 @@ func (database *Store) resumeCleanup(ctx context.Context, maxBytes int64) ([]Cle
 		return nil, fmt.Errorf("cleanup: %w", err)
 	}
 
-	if run.Status != cleanupRunning {
+	// It goes on once the backup is written, as a new run would start (cleanup).
+	if run.Status != cleanupRunning || database.backups.Load() > 0 {
 		return nil, nil
 	}
 
@@ -1123,6 +1147,10 @@ func (scope cleanupScope) deleteOldestEvents(cutoff time.Time, ranks []byte) cle
 		}
 
 		full := false
+		latest := map[string]uint64{}
+
+		var latestErr error
+
 		// Keys passed over are not decoded, so they stop at the cutoff's sequence (time marks).
 		var stopAt uint64
 
@@ -1153,18 +1181,41 @@ func (scope cleanupScope) deleteOldestEvents(cutoff time.Time, ranks []byte) cle
 			from = entry.Record.Sequence + 1
 			cursor.records++
 
-			// The latest event of an issue is the one it was last seen with.
-			if issue, ok := writer.issue(entry.Record.IssueID); ok && issue.Stored > 1 && entry.Record.ReceivedAt.Before(issue.LastSeen) {
+			// The latest event of an issue is its newest stored one: the
+			// events it was last seen with may be over the cap, never stored.
+			newest, found := latest[entry.Record.IssueID]
+
+			if !found {
+				newest, latestErr = database.newestEvent(writer.batch, entry.Record.IssueID)
+				latest[entry.Record.IssueID] = newest
+			}
+
+			if issue, ok := writer.issue(entry.Record.IssueID); ok && issue.Stored > 1 && entry.Record.Sequence < newest {
 				writer.deleteEvent(entry)
 			}
 
-			return true
+			return latestErr == nil
 		})
+
+		err = errors.Join(err, latestErr)
 
 		cursor.position = kv.K(kv.U64(from))
 
 		return !full, err
 	}
+}
+
+// newestEvent is the sequence of an issue's newest stored event, 0 without one.
+func (database *Store) newestEvent(reader kv.Reader, issueID string) (uint64, error) {
+	var newest uint64
+
+	err := database.events.Primary(kv.Text(issueID)).Newest().Keys(reader, func(key kv.Key) (bool, error) {
+		newest = sequenceOf(key)
+
+		return false, nil
+	})
+
+	return newest, err
 }
 
 // deleteUnseen deletes, longest unseen first, the events of the issues last

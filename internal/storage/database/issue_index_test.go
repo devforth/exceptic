@@ -1,6 +1,7 @@
 package database
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -361,5 +362,53 @@ func TestIssueCountStopsAtTheLimit(t *testing.T) {
 
 	if counts, err := database.UnresolvedCounts(ctx); err != nil || counts[1] != 7 {
 		t.Errorf("unresolved %v %v: the menu's count stays exact", counts, err)
+	}
+}
+
+// issueComparison is the order of a sort over issues held in memory, the
+// reference the index walks are checked against.
+type issueComparison func(first, second *issueRecord) int
+
+// reversed orders the other way, ties included.
+func (compare issueComparison) reversed() issueComparison {
+	return func(first, second *issueRecord) int { return compare(second, first) }
+}
+
+// issueOrder breaks ties by id, so pages stay stable.
+func issueOrder(sort string, projectNames map[int]string) issueComparison {
+	lastSeen := issueComparison(func(first, second *issueRecord) int {
+		return cmp.Or(second.LastSeen.Compare(first.LastSeen), cmp.Compare(second.ID, first.ID))
+	})
+	firstSeen := issueComparison(func(first, second *issueRecord) int {
+		return cmp.Or(second.FirstSeen.Compare(first.FirstSeen), cmp.Compare(second.ID, first.ID))
+	})
+	eventCount := issueComparison(func(first, second *issueRecord) int {
+		return cmp.Or(cmp.Compare(second.EventCount, first.EventCount), cmp.Compare(second.ID, first.ID))
+	})
+	byProject := issueComparison(func(first, second *issueRecord) int {
+		return cmp.Compare(projectNames[first.ProjectID], projectNames[second.ProjectID])
+	})
+	// The issues of one project: newest first in both directions.
+	thenLastSeen := func(compare issueComparison) issueComparison {
+		return func(first, second *issueRecord) int { return cmp.Or(compare(first, second), lastSeen(first, second)) }
+	}
+
+	switch sort {
+	case store.SortProject:
+		return thenLastSeen(byProject)
+	case store.SortProjectDesc:
+		return thenLastSeen(byProject.reversed())
+	case store.SortLastSeenAsc:
+		return lastSeen.reversed()
+	case store.SortFirstSeen:
+		return firstSeen
+	case store.SortFirstSeenAsc:
+		return firstSeen.reversed()
+	case store.SortEventCount:
+		return eventCount
+	case store.SortEventCountAsc:
+		return eventCount.reversed()
+	default: // "": store.SortLastSeen
+		return lastSeen
 	}
 }

@@ -2,6 +2,8 @@ package database
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"slices"
 	"sync/atomic"
 	"testing"
@@ -146,5 +148,67 @@ func TestLogSearchStoppedBeforeTheFirstKey(t *testing.T) {
 
 	if err != nil || len(rest.Logs) != 5 || rest.Stopped {
 		t.Fatalf("going on found %d logs, %+v, %v", len(rest.Logs), rest.LogScan, err)
+	}
+}
+
+// The logs of a span within a trace are read through the span index, not
+// by walking every log of the trace.
+func TestSpanLogsSearchOnlyTheSpan(t *testing.T) {
+	database := openTest(t)
+	logs := []store.NewLog{{ProjectID: 1, Timestamp: database.now(), Level: "info", Body: "request", TraceID: "trace", SpanID: "span"}}
+
+	for range 3 * int(config.LogSearchTime/time.Second) {
+		logs = append(logs, store.NewLog{ProjectID: 1, Timestamp: database.now(), Level: "info", Body: "poll", TraceID: "trace", SpanID: "other"})
+	}
+
+	if err := database.SaveLogs(context.Background(), logs, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	slowClock(database)
+
+	page, err := database.ListLogs(context.Background(), store.LogFilter{TraceID: "trace", SpanIDs: []string{"span"}, Limit: 10})
+
+	if err != nil || page.Stopped || len(page.Logs) != 1 || page.Logs[0].Body != "request" {
+		t.Fatalf("%d logs, %+v, %v", len(page.Logs), page.LogScan, err)
+	}
+}
+
+// A log links to the issue of an event of its span in its trace; the walk
+// ends with the request's context.
+func TestIssuesForLogs(t *testing.T) {
+	ctx := context.Background()
+	database := openTest(t)
+	event := func(id, fingerprint, trace, span string) {
+		t.Helper()
+
+		_, err := database.SaveEvent(ctx, store.NewEvent{
+			ProjectID: 1, EventID: id, Fingerprint: fingerprint, Title: fingerprint, Level: "error",
+			Timestamp: database.now(), ReceivedAt: database.now(), TraceID: trace, SpanID: span, Payload: []byte(`{}`),
+		})
+
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	event("linked", "linked", "trace", "span")
+
+	for index := range 20 {
+		event(fmt.Sprintf("other-%d", index), fmt.Sprintf("other-%d", index), fmt.Sprintf("other-%d", index), "span")
+	}
+
+	logs := []store.LogRecord{{ID: 1, TraceID: "trace", SpanID: "span"}, {ID: 2, TraceID: "missing", SpanID: "span"}}
+	linked, err := database.IssuesForLogs(ctx, logs)
+
+	if err != nil || len(linked) != 1 || linked[1].Title != "linked" {
+		t.Fatalf("linked %+v, %v", linked, err)
+	}
+
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+
+	if _, err := database.IssuesForLogs(cancelled, logs); !errors.Is(err, context.Canceled) {
+		t.Fatalf("a request gone: %v", err)
 	}
 }

@@ -328,9 +328,10 @@ func (issues *Issues) TraceLogs(ctx context.Context, access store.Access, event 
 }
 
 // ClockDrift is how far the device's clock was off: the stored time of an
-// event is its payload's moved by it.
+// event is its payload's moved by it, unless ingest replaced a time that
+// was missing or out of range by the receive time.
 func ClockDrift(event store.Event, parsed *sentry.Event) time.Duration {
-	if parsed == nil || parsed.Timestamp.IsZero() {
+	if parsed == nil || parsed.Timestamp.IsZero() || event.Timestamp.Equal(event.ReceivedAt) {
 		return 0
 	}
 
@@ -403,22 +404,7 @@ func (issues *Issues) RelatedLogsLimit(ctx context.Context, access store.Access,
 	}
 
 	if err == nil && len(logs) == 0 && !stopped {
-		earliest, latest := event.Timestamp, event.Timestamp.Add(-ClockDrift(event, parsed))
-
-		if latest.Before(earliest) {
-			earliest, latest = latest, earliest
-		}
-
-		var page store.LogPage
-
-		page, err = issues.store.ListLogs(ctx, store.LogFilter{
-			ProjectIDs: projectIDs,
-			TraceID:    event.TraceID,
-			Since:      earliest.Add(-relatedLogsWindow),
-			Until:      latest.Add(relatedLogsWindow),
-			Limit:      limit,
-		})
-		logs, stopped = page.Logs, page.Stopped
+		logs, stopped, err = issues.logsAround(ctx, projectIDs, event, parsed, limit)
 	}
 
 	// Oldest first: read what happened in order.
@@ -426,6 +412,44 @@ func (issues *Issues) RelatedLogsLimit(ctx context.Context, access store.Access,
 
 	return RelatedLogs{Logs: logs, FromRequest: fromRequest, Stopped: stopped}, err
 }
+
+// logsAround are the newest logs of the event's trace, at most limit,
+// within relatedLogsWindow of its time by the server's clock or by the
+// device's: one window around each, not the time between them.
+func (issues *Issues) logsAround(ctx context.Context, projectIDs []int, event store.Event, parsed *sentry.Event, limit int) ([]store.LogRecord, bool, error) {
+	times := []time.Time{event.Timestamp}
+
+	if drift := ClockDrift(event, parsed); drift != 0 {
+		times = append(times, event.Timestamp.Add(-drift))
+	}
+
+	slices.SortFunc(times, time.Time.Compare)
+
+	// One search from the earliest to the latest: dates bound a search by when the logs
+	// arrived too, and a device's log arrives now with its own time. Of those, only the
+	// logs within a window of either time are kept, not the ones between.
+	page, err := issues.store.ListLogs(ctx, store.LogFilter{
+		ProjectIDs: projectIDs, TraceID: event.TraceID,
+		Since: times[0].Add(-relatedLogsWindow), Until: times[len(times)-1].Add(relatedLogsWindow),
+		Limit: limit * len(times) * relatedLogsSpread,
+	})
+
+	if err != nil {
+		return nil, false, err
+	}
+
+	logs := slices.DeleteFunc(page.Logs, func(record store.LogRecord) bool {
+		return !slices.ContainsFunc(times, func(at time.Time) bool {
+			return record.Timestamp.Sub(at).Abs() <= relatedLogsWindow
+		})
+	})
+
+	return logs[:min(len(logs), limit)], page.Stopped, nil
+}
+
+// relatedLogsSpread: a search over a device's clock drift reads this many times the
+// logs it shows, so the logs between the two windows do not take their place.
+const relatedLogsSpread = 10
 
 // AgentPrompt is the text of the "Prompt" button: what a coding agent needs
 // to explain the error, without what identifies servers or people.

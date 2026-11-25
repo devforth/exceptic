@@ -213,6 +213,45 @@ func (writer *batchWriter) expireIgnore(issue *issueRecord, now time.Time) error
 	return nil
 }
 
+// ExpireIgnores stores the ignores whose time has passed as reads already
+// show them (expireIgnore), in batches, so what the reads walk of the
+// expiry index stays the few that passed since.
+func (database *Store) ExpireIgnores(ctx context.Context) error {
+	for ctx.Err() == nil {
+		var issueIDs []string
+
+		err := database.eachExpired(nil, func(issue issueRecord) {
+			if len(issueIDs) < cleanupChunk {
+				issueIDs = append(issueIDs, issue.ID)
+			}
+		})
+
+		if err != nil || len(issueIDs) == 0 {
+			return err
+		}
+
+		err = database.update(func(writer *batchWriter) error {
+			now := database.now().UTC()
+
+			for _, id := range issueIDs {
+				if issue, ok := writer.issue(id); ok {
+					if err := writer.expireIgnore(issue, now); err != nil {
+						return err
+					}
+				}
+			}
+
+			return nil
+		})
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return ctx.Err()
+}
+
 // DeleteIssues deletes the issues that exist, in batches of up to cleanupChunk
 // records; a large issue's events take several batches, its record goes in the last.
 func (database *Store) DeleteIssues(ctx context.Context, issueIDs []string) (int, error) {
@@ -353,7 +392,7 @@ type batchWriter struct {
 	peeked map[string]*issueRecord
 	// failed is a read of an issue that failed; the batch is not written.
 	failed error
-	// capped counts the events this batch stores per issue, for the minute's cap.
+	// capped counts the events this batch stores per issue in its newest minute, for the cap.
 	capped map[string]int
 	minute int64
 }
@@ -362,10 +401,12 @@ type batchWriter struct {
 // events its issue stores a minute (0: none), and counts it when it is not;
 // an event that must be stored is counted whatever the cap.
 func (writer *batchWriter) overCap(issueID string, received time.Time, limit int, mustStore bool) bool {
-	minute := max(received.Unix()/60, writer.database.minute.minute)
+	// The newest minute of the batch: what it stored in an earlier one does not count.
+	minute := max(received.Unix()/60, writer.minute, writer.database.minute.minute)
 
-	if writer.minute != minute {
+	if minute > writer.minute {
 		writer.minute = minute
+		clear(writer.capped)
 	}
 
 	before := 0

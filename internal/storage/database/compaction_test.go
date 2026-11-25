@@ -287,7 +287,7 @@ func TestCompactionUnderIngestLoad(t *testing.T) {
 			var err error
 
 			if whole {
-				err = errors.Join(database.logs.Compact(database.db), database.events.Compact(database.db))
+				err = errors.Join(database.db.CompactRange(database.logs.KeyRange()), database.db.CompactRange(database.events.KeyRange()))
 			} else {
 				parts, _ := database.compactParts([]compactable{database.logs, database.events}, database.db.Peek(), nil)
 
@@ -645,5 +645,32 @@ func TestCleanupDoneIsTold(t *testing.T) {
 
 	if len(told) != 1 || told[0].Sequence != run.Sequence || told[0].Status != store.CleanupDone || len(told[0].Steps) == 0 {
 		t.Fatalf("told %+v, want the run %d with its steps", told, run.Sequence)
+	}
+}
+
+// An envelope refused during a part counts as ingest: the parts after it
+// wait for ingest to be quiet again, the compaction stays pending.
+func TestRefusedEnvelopeStopsTheNextPart(t *testing.T) {
+	database, engine := openRecording(t, t.TempDir())
+	liveData(t, database)
+	run := pendingRun(t, database)
+
+	quietFor = time.Hour
+
+	t.Cleanup(func() { quietFor = 0 })
+	engine.taken()
+
+	database.whileCompacting = func() {
+		database.whileCompacting = nil
+
+		if _, err := database.Append(1, scenarioNow, []byte(`{}`)); !errors.Is(err, ErrCompacting) {
+			t.Errorf("an envelope during a part: %v, want ErrCompacting", err)
+		}
+	}
+
+	compactCleanups(t, database)
+
+	if compaction := storedRun(t, database, run.Sequence).Compaction; compaction.Status != store.CompactionPending || len(engine.taken()) != 1 {
+		t.Fatalf("after an envelope refused during the first part: %+v", compaction)
 	}
 }

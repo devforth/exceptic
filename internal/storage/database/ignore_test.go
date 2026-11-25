@@ -1,10 +1,15 @@
 package database
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"log/slog"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/devforth/exceptic/internal/storage/kv"
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
@@ -295,4 +300,99 @@ func TestCleanupAfterIgnoreTime(t *testing.T) {
 	if _, finished := runBatch(t, database, 4, nil, 0); !finished || storedEvents(database, "expired") != 4 {
 		t.Fatalf("expired ignore keeps %d events (finished %v)", storedEvents(database, "expired"), finished)
 	}
+}
+
+// The size check stores an ignore whose time has passed, as reads show it:
+// the issue unresolved, the change in its history once, at the time it
+// ended, and out of the expiry index the reads walk.
+func TestSizeCheckStoresEndedIgnores(t *testing.T) {
+	ctx := context.Background()
+	database := openTest(t)
+	start := time.Date(2026, 11, 10, 8, 0, 0, 0, time.UTC)
+	now := start
+
+	database.SetClock(func() time.Time { return now })
+	ended := saveEvent(t, database, "ended", start).IssueID
+	pending := saveEvent(t, database, "pending", start.Add(time.Second)).IssueID
+	ignore(t, database, ended, store.IgnoreBound{For: time.Hour})
+	ignore(t, database, pending, store.IgnoreBound{For: 24 * time.Hour})
+
+	now = start.Add(2 * time.Hour)
+
+	if err := database.CheckSize(ctx, 0, slog.New(slog.DiscardHandler)); err != nil {
+		t.Fatal(err)
+	}
+
+	record, err := database.issues.Get(database.db, kv.K(kv.Text(ended)))
+
+	if err != nil || record.Status != store.StatusUnresolved || record.IgnoredUntil != nil {
+		t.Fatalf("stored %+v, %v", record.Issue, err)
+	}
+
+	if indexed, _, err := database.issues.By("expiry").Count(database.db, 0); err != nil || indexed != 1 {
+		t.Fatalf("%d ignores in the expiry index (%v), want the pending one", indexed, err)
+	}
+
+	history, err := database.IssueStatusHistory(ctx, ended)
+
+	if err != nil || len(history) != 2 || !history[0].ByExpiry() || !history[0].CreatedAt.Equal(start.Add(time.Hour)) {
+		t.Fatalf("history %+v, %v", history, err)
+	}
+
+	if count, perProject := unresolvedNow(t, database); count != 1 || perProject != 1 {
+		t.Fatalf("unresolved: %d, %d", count, perProject)
+	}
+}
+
+// issueReads counts the issue records read by key.
+type issueReads struct {
+	kv.Engine
+	reads atomic.Int64
+}
+
+func (engine *issueReads) Get(key []byte) ([]byte, error) {
+	if bytes.HasPrefix(key, []byte("issue/")) {
+		engine.reads.Add(1)
+	}
+
+	return engine.Engine.Get(key)
+}
+
+// The unresolved list reads of the ignored issues only those whose time
+// has passed: not the ignored ones that keep firing, seen after the page.
+func TestUnresolvedListPassesOverIgnored(t *testing.T) {
+	ctx := context.Background()
+	engine := &issueReads{Engine: openMemoryEngine()}
+	database, err := open(engine)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = database.Close() })
+
+	start := time.Date(2026, 11, 10, 8, 0, 0, 0, time.UTC)
+	now := start
+
+	database.SetClock(func() time.Time { return now })
+	saveEvent(t, database, "unresolved", start)
+
+	for index := range 50 {
+		issueID := saveEvent(t, database, fmt.Sprintf("ignored-%d", index), start.Add(time.Minute+time.Duration(index)*time.Second)).IssueID
+		ignore(t, database, issueID, store.IgnoreBound{})
+	}
+
+	engine.reads.Store(0)
+
+	listed, err := database.ListIssues(ctx, store.IssueFilter{Status: store.StatusUnresolved, Limit: 20})
+
+	if err != nil || len(listed) != 1 || listed[0].Title != "Error: unresolved" {
+		t.Fatalf("listed %+v, %v", listed, err)
+	}
+
+	if reads := engine.reads.Load(); reads > 5 {
+		t.Errorf("read %d issues for one unresolved", reads)
+	}
+
+	checkCollections(t, database)
 }

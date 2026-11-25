@@ -215,9 +215,8 @@ func (database *Store) logQueries(ctx context.Context, filter store.LogFilter) [
 
 	var queries []kv.Query[logRecord]
 
+	// A span's logs are few, a trace's may be a whole browser tab's: spans first, logMatches checks the trace.
 	switch {
-	case filter.TraceID != "":
-		queries = append(queries, database.logs.By("trace", kv.Text(filter.TraceID)))
 	case len(filter.SpanIDs) > 0:
 		spans := slices.Clone(filter.SpanIDs)
 		slices.Sort(spans)
@@ -225,6 +224,8 @@ func (database *Store) logQueries(ctx context.Context, filter store.LogFilter) [
 		for _, span := range slices.Compact(spans) {
 			queries = append(queries, database.logs.By("span", kv.Text(span)))
 		}
+	case filter.TraceID != "":
+		queries = append(queries, database.logs.By("trace", kv.Text(filter.TraceID)))
 	case len(filter.ProjectIDs) > 0:
 		for _, project := range filter.ProjectIDs {
 			for _, rank := range ranksOf(filter.Levels) {
@@ -481,37 +482,73 @@ func (database *Store) CountLogs(ctx context.Context, filter store.LogFilter) (s
 	return result, err
 }
 
-func (database *Store) IssuesForLogs(_ context.Context, logs []store.LogRecord) (map[int64]store.LogIssue, error) {
+// IssuesForLogs links logs to the issue of an event of their span. Each
+// span's walk stops once its logs are linked, ctx ends or
+// config.LogSearchTime has passed (the logs left are not linked); each
+// issue is read once.
+func (database *Store) IssuesForLogs(ctx context.Context, logs []store.LogRecord) (map[int64]store.LogIssue, error) {
+	budget := searchBudget{Context: ctx, now: database.now, deadline: database.now().Add(config.LogSearchTime)}
 	result := map[int64]store.LogIssue{}
-	bySpan := map[string]store.LogIssue{} // trace + "/" + span
-	looked := map[string]bool{}
+	bySpan := map[string]store.LogIssue{}  // trace + "/" + span
+	wanted := map[string][]string{}        // span -> its trace + "/" + span keys
+	issues := map[string]*store.LogIssue{} // nil: missing
 
 	for _, record := range logs {
-		if record.SpanID == "" || looked[record.SpanID] {
+		if key := record.TraceID + "/" + record.SpanID; record.SpanID != "" && !slices.Contains(wanted[record.SpanID], key) {
+			wanted[record.SpanID] = append(wanted[record.SpanID], key)
+		}
+	}
+
+	linked := func(keys []string) bool {
+		return !slices.ContainsFunc(keys, func(key string) bool { return bySpan[key] == (store.LogIssue{}) })
+	}
+	issueOf := func(id string) *store.LogIssue {
+		if issue, read := issues[id]; read {
+			return issue
+		}
+
+		if record, err := database.issues.Get(database.db, kv.K(kv.Text(id))); err == nil {
+			issues[id] = &store.LogIssue{IssueID: record.ID, ProjectID: record.ProjectID, Title: record.Title}
+		} else {
+			issues[id] = nil
+		}
+
+		return issues[id]
+	}
+
+	for _, record := range logs {
+		keys := wanted[record.SpanID]
+
+		if record.SpanID == "" || linked(keys) {
 			continue
 		}
 
-		looked[record.SpanID] = true
-
 		queries := []kv.Query[eventRecord]{
-			database.events.By("span", kv.Text(record.SpanID)).Head(), database.events.By("parent", kv.Text(record.SpanID)).Head(),
+			database.events.By("span", kv.Text(record.SpanID)).Head().WithContext(budget),
+			database.events.By("parent", kv.Text(record.SpanID)).Head().WithContext(budget),
 		}
 
 		err := newestFirst(database.db, queries, func(entry kv.Entry[eventRecord]) bool {
 			meta := entry.Record
 
-			issue, err := database.issues.Get(database.db, kv.K(kv.Text(meta.IssueID)))
+			for _, span := range []string{meta.SpanID, meta.ParentSpanID} {
+				key := meta.TraceID + "/" + span
 
-			if err == nil {
-				for _, span := range []string{meta.SpanID, meta.ParentSpanID} {
-					if key := meta.TraceID + "/" + span; span != "" && bySpan[key] == (store.LogIssue{}) {
-						bySpan[key] = store.LogIssue{IssueID: issue.ID, ProjectID: issue.ProjectID, Title: issue.Title}
-					}
+				if span == "" || !slices.Contains(wanted[span], key) || bySpan[key] != (store.LogIssue{}) {
+					continue
+				}
+
+				if issue := issueOf(meta.IssueID); issue != nil {
+					bySpan[key] = *issue
 				}
 			}
 
-			return true
+			return !linked(keys)
 		})
+
+		if errors.Is(err, errSearchTime) {
+			break
+		}
 
 		if err != nil {
 			return nil, err

@@ -62,13 +62,19 @@ func (batch *Batch) Tally(tally Key, delta int64) {
 	}
 }
 
+// addStale adds what a write left stale, or takes back what it did not;
+// both count toward staled, so staled-stale stays what compactions took off.
 func (batch *Batch) addStale(collection string, delta int64) {
 	if delta != 0 {
 		batch.stale[collection] += delta
-	}
-
-	if delta > 0 {
 		batch.staled[collection] += delta
+	}
+}
+
+// takeStale takes off stale what a compaction freed.
+func (batch *Batch) takeStale(collection string, taken int64) {
+	if taken != 0 {
+		batch.stale[collection] -= taken
 	}
 }
 

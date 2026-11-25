@@ -289,7 +289,7 @@ func projectIssue(database *Store, project int, fingerprint string) *issueRecord
 func measured(t *testing.T, database *Store, project int) int64 {
 	t.Helper()
 
-	onDisk, _, err := database.projectOnDisk(project)
+	onDisk, _, err := database.scope(project).size()
 
 	if err != nil {
 		t.Fatal(err)
@@ -578,7 +578,7 @@ func TestDiskShareStepOrder(t *testing.T) {
 	goal := database.projectBytes(2) - (oldLogs + oldEvents/3 + resolved*5/6 + debugLogs + warnings*9/10 + fresh/3 + errorLogs/2)
 
 	// As the check finds it: the thinned events' old versions compacted away.
-	if _, err := database.compactStale(); err != nil {
+	if err := database.compactStale(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -806,8 +806,8 @@ func TestDiskShareWithoutALimit(t *testing.T) {
 	})
 }
 
-// While a backup runs, no project's run starts (its snapshot keeps deleted
-// records on disk); one already running goes on.
+// While a backup runs, no project's run starts or goes on (its snapshot
+// keeps deleted records on disk); one stopped before goes on after it.
 func TestDiskShareWaitsForABackup(t *testing.T) {
 	database := scenarioFlood(t, t.TempDir(), 20, 5, 3000)
 	maxBytes := limitFor(measured(t, database, 2), 20, 3)
@@ -825,8 +825,14 @@ func TestDiskShareWaitsForABackup(t *testing.T) {
 	runs := checkSize(t, database, maxBytes)
 	database.backups.Add(-1)
 
-	if run := storedRun(t, database, stopped.Sequence); len(runs) != 0 || run.Status != cleanupDone || freedBy(run) <= freedBy(stopped) {
-		t.Fatalf("the run stopped: %+v; during a backup it is %+v, new runs %+v", stopped, run, runs)
+	if run := storedRun(t, database, stopped.Sequence); len(runs) != 0 || run.Status != cleanupRunning || freedBy(run) != freedBy(stopped) {
+		t.Fatalf("the run stopped: %+v; during a backup it is %+v, runs %+v", stopped, run, runs)
+	}
+
+	checkSize(t, database, maxBytes)
+
+	if run := storedRun(t, database, stopped.Sequence); run.Status != cleanupDone || freedBy(run) <= freedBy(stopped) {
+		t.Fatalf("the run stopped: %+v; after the backup it is %+v", stopped, run)
 	}
 }
 

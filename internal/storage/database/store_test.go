@@ -1040,3 +1040,27 @@ func TestDropNotices(t *testing.T) {
 		t.Fatalf("notices %v, %v: want only project 1 at %s", notices, err, at)
 	}
 }
+
+// A batch that spans minutes caps each minute apart: what an issue stored
+// in one minute does not count against the next.
+func TestEventsPerIssueCapPerMinuteInABatch(t *testing.T) {
+	database := openTest(t)
+	start := time.Date(2026, 11, 10, 8, 0, 0, 0, time.UTC)
+
+	var envelopes []Envelope
+
+	for index, at := range []time.Time{start, start, start.Add(time.Minute), start.Add(time.Minute), start.Add(time.Minute)} {
+		envelopes = append(envelopes, Envelope{EventsPerIssue: 2, Events: []store.NewEvent{{
+			ProjectID: 1, EventID: fmt.Sprintf("%032x", index+1), Fingerprint: "loop", Title: "Error: loop",
+			Level: "error", Timestamp: at, ReceivedAt: at, Payload: []byte(`{}`),
+		}}})
+	}
+
+	if _, err := database.Write(envelopes); err != nil {
+		t.Fatal(err)
+	}
+
+	if issue := storedIssue(database, "loop"); issue.Stored != 4 || issue.NotStored != 1 {
+		t.Fatalf("stored %d, not stored %d: want 2 of each minute", issue.Stored, issue.NotStored)
+	}
+}

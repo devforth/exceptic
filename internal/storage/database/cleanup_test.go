@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -1093,4 +1094,66 @@ func TestTrimCopiesFollowsGrowingIssues(t *testing.T) {
 	}
 
 	checkCollections(t, database)
+}
+
+// A backlog of old events to thin takes at most half of the size check's
+// time: the cleanup by size still starts in the same pass.
+func TestThinningLeavesTheCleanupItsTime(t *testing.T) {
+	database := openTest(t)
+	clockAt(database, time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC))
+	writeEvents(t, database, "old", "error", cleanupChunk+1)
+	clockAt(database, time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC))
+
+	rest := cleanupRest
+	cleanupRest = time.Second
+
+	t.Cleanup(func() { cleanupRest = rest })
+
+	live, _ := measuredUsage(t, database)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+
+	defer cancel()
+
+	// The run, slowed down as well, stops at the time limit and goes on at the next pass.
+	if err := database.CheckSize(ctx, live*9/10, slog.New(slog.DiscardHandler)); err != nil && strings.HasPrefix(err.Error(), "thinning") {
+		t.Fatal(err)
+	}
+
+	if runs, err := database.CleanupHistory(context.Background(), 10); err != nil || len(runs) != 1 {
+		t.Fatalf("runs %+v, %v: the cleanup did not start after thinning", runs, err)
+	}
+}
+
+// The events below error keep the newest stored event of each issue, also
+// when the events after it were over the cap and only counted.
+func TestMinorEventsKeepTheNewestStored(t *testing.T) {
+	database := openTest(t)
+	start := time.Date(2026, 11, 10, 8, 0, 0, 0, time.UTC)
+	event := func(index int, level string) Envelope {
+		at := start.Add(time.Duration(index) * time.Second)
+
+		return Envelope{EventsPerIssue: 2, Events: []store.NewEvent{{
+			ProjectID: 1, EventID: fmt.Sprintf("%032x", index), Fingerprint: "mixed", Title: "Error: mixed",
+			Level: level, Timestamp: at, ReceivedAt: at, Payload: []byte(`{}`),
+		}}}
+	}
+
+	if _, err := database.Write([]Envelope{event(0, "error"), event(1, "warning"), event(2, "warning"), event(3, "warning")}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := database.update(func(writer *batchWriter) error {
+		writer.counted = map[int]*CleanupCounts{}
+		_, err := database.scope(AllProjects).deleteOldestEvents(time.Time{}, minorRanks)(writer, &cleanupCursor{batch: writer.batch, always: true})
+
+		return err
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := database.GetEvent(context.Background(), 1, fmt.Sprintf("%032x", 1)); err != nil {
+		t.Errorf("the newest stored event of the issue: %v", err)
+	}
 }

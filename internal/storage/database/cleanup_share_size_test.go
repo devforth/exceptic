@@ -14,7 +14,7 @@ import (
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
-// How a project's size on disk is measured (projectOnDisk): against the
+// How a project's size on disk is measured (cleanupScope.size): against the
 // files a store holding only its data takes, and as the cleanup's deletes
 // stay in the files and leave them.
 

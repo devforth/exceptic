@@ -51,6 +51,19 @@ func openStore(t *testing.T, engine Engine) testStore {
 	return testStore{db: db, items: items}
 }
 
+// compact compacts the items and takes off Stale what was stale when it started.
+func (store testStore) compact() error {
+	mark := store.items.StaleMark(store.db)
+
+	if err := store.db.CompactRange(store.items.KeyRange()); err != nil {
+		return err
+	}
+
+	_, err := store.items.TakeStale(store.db, mark)
+
+	return err
+}
+
 func newStore(t *testing.T) testStore {
 	t.Helper()
 
@@ -425,7 +438,7 @@ func (engine compactingEngine) CompactRange(lower, upper []byte) error {
 }
 
 // Deletes and rewrites count as stale, in the bytes their counters lose,
-// across a restart; Compact takes off what was stale when it started, and
+// across a restart; a compaction takes off what was stale when it started, and
 // a delete written while it runs stays counted.
 func TestStale(t *testing.T) {
 	engine := &compactingEngine{memoryEngine: newMemoryEngine()}
@@ -483,7 +496,7 @@ func TestStale(t *testing.T) {
 		during = store.items.Stale(store.db) - before
 	}
 
-	if err := store.items.Compact(store.db); err != nil {
+	if err := store.compact(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -512,12 +525,12 @@ func TestStaleCompactedTwiceAtOnce(t *testing.T) {
 	engine.during = func() {
 		engine.during = nil
 
-		go func() { other <- store.items.Compact(store.db) }()
+		go func() { other <- store.compact() }()
 
 		time.Sleep(50 * time.Millisecond) // the other compaction would read the count meanwhile
 	}
 
-	if err := store.items.Compact(store.db); err != nil {
+	if err := store.compact(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -553,7 +566,7 @@ func TestStaleTakenOnceAcrossCompactions(t *testing.T) {
 
 	mark := store.items.StaleMark(store.db)
 
-	if err := store.items.Compact(store.db); err != nil {
+	if err := store.compact(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -576,5 +589,33 @@ func TestStaleTakenOnceAcrossCompactions(t *testing.T) {
 
 	if taken, err := store.items.TakeStale(store.db, mark); err != nil || taken != deleted {
 		t.Fatalf("took %d (%v) after a restart, want %d", taken, err, deleted)
+	}
+}
+
+// A rewrite that keeps its index keys while a compaction runs does not make
+// that compaction take off less than was stale at its mark.
+func TestStaleTakenWholeAfterRewrites(t *testing.T) {
+	store := newStore(t)
+	store.insert(t, item{ID: 1, Trace: "trace"}, item{ID: 2})
+
+	if err := store.db.Update(false, func(batch *Batch) error {
+		_, err := store.items.DeleteKey(batch, K(U64(2)))
+
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	deleted := store.items.Stale(store.db)
+	mark := store.items.StaleMark(store.db)
+
+	if err := store.db.Update(false, func(batch *Batch) error {
+		return store.items.Save(batch, item{ID: 1, Trace: "trace", Name: "renamed"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if taken, err := store.items.TakeStale(store.db, mark); err != nil || taken != deleted {
+		t.Fatalf("took %d (%v), want %d stale at the mark", taken, err, deleted)
 	}
 }

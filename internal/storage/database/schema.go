@@ -56,10 +56,6 @@ func sizeCounter(kind, rank byte, day int32) kv.Key {
 // projectCounter is the group counter of a project: the bytes of its issues, events and logs.
 func projectCounter(projectID int) kv.Key { return projectKey(projectID) }
 
-// projectSizes is the backfill of the project counters and the events'
-// project index, for data stored before them (Store.Backfill).
-const projectSizes = "project-sizes"
-
 func defineCollections(schema *kv.Schema) collections {
 	return collections{
 		// inbox/<seq>: an envelope waiting to be stored.
@@ -141,8 +137,7 @@ func defineCollections(schema *kv.Schema) collections {
 			Counter: func(event eventRecord) kv.Key {
 				return sizeCounter(kindEvent, levelRank(event.Level), dayOf(event.ReceivedAt))
 			},
-			Group:    func(event eventRecord) kv.Key { return projectCounter(event.ProjectID) },
-			Backfill: &kv.Backfill{Name: projectSizes, Indexes: []string{"project"}, Group: true},
+			Group: func(event eventRecord) kv.Key { return projectCounter(event.ProjectID) },
 		}),
 		// log/<level>/<seq>: logs by level, then arrival.
 		logs: kv.Define(schema, kv.Definition[logRecord]{
@@ -168,8 +163,7 @@ func defineCollections(schema *kv.Schema) collections {
 			Counter: func(record logRecord) kv.Key {
 				return sizeCounter(kindLog, levelRank(record.Level), record.ReceivedDay)
 			},
-			Group:    func(record logRecord) kv.Key { return projectCounter(record.ProjectID) },
-			Backfill: &kv.Backfill{Name: projectSizes, Group: true},
+			Group: func(record logRecord) kv.Key { return projectCounter(record.ProjectID) },
 		}),
 		// mark/<interval>: the first sequence number of an interval.
 		timeMarks: kv.Define(schema, kv.Definition[timeMark]{

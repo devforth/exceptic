@@ -47,10 +47,14 @@ type Store struct {
 	// compactionWake ticks when a run ends that waits for its compaction.
 	compactionWake chan struct{}
 	checkedAt      atomic.Int64
-	// lastAppend is when the newest envelope came, in Unix nanoseconds; zero before the first.
+	// lastAppend is when the newest envelope came, refused by a compaction part
+	// too, in Unix nanoseconds; zero before the first.
 	lastAppend atomic.Int64
 	// backups counts running backups: their snapshot keeps deleted records on disk.
 	backups atomic.Int32
+	// backupsStarted counts every backup started, so a compaction tells one
+	// that started and ended meanwhile (backupSince).
+	backupsStarted atomic.Int64
 	// ingestWrites is held for reading by every write of ingest (Append, Write)
 	// and for writing by a compaction part (compactRange): goleveldb repeats a
 	// range compaction as long as new files come, so none may come meanwhile.
