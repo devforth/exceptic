@@ -114,7 +114,7 @@ func (slack Slack) SendNotice(ctx context.Context, notice Notice) error {
 	}
 
 	if notice.Table != nil {
-		lines = append(lines, "```"+slackEscape(strings.ReplaceAll(notice.Table.text(), "```", "ʼʼʼ"))+"```")
+		lines = append(lines, "```"+slackEscape(strings.ReplaceAll(notice.Table.text(chatTableWidth), "```", "ʼʼʼ"))+"```")
 	}
 
 	if notice.URL != "" {

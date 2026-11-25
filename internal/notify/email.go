@@ -252,7 +252,7 @@ func (email Email) SendNotice(ctx context.Context, notice Notice) error {
 	text := notice.Heading + "\n\n" + strings.Join(notice.Lines, "\n") + "\n"
 
 	if notice.Table != nil {
-		text += "\n" + notice.Table.text() + "\n"
+		text += "\n" + notice.Table.text(emailTableWidth) + "\n"
 	}
 
 	if notice.URL != "" {

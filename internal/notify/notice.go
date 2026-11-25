@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -35,29 +36,125 @@ type NoticeTable struct {
 	Rows    [][]string
 }
 
-// text is the table as aligned columns of plain text.
-func (table NoticeTable) text() string {
+// Widths of a table in plain text: chats are read on phones, the text part of an email on wider screens.
+const (
+	chatTableWidth  = 40
+	emailTableWidth = 72
+	minColumnWidth  = 4
+	columnGap       = "  "
+)
+
+// text is the table as aligned columns of plain text at most width
+// characters wide: the widest columns narrow until it fits, and a cell longer
+// than its column wraps onto more lines of its row, padded like the others.
+func (table NoticeTable) text(width int) string {
+	all := append([][]string{table.Columns}, table.Rows...)
 	widths := make([]int, len(table.Columns))
 
-	for _, row := range append([][]string{table.Columns}, table.Rows...) {
+	for _, row := range all {
 		for index, cell := range row {
 			widths[index] = max(widths[index], utf8.RuneCountInString(cell))
 		}
 	}
 
-	var lines []string
+	room := width - len(columnGap)*(len(widths)-1)
 
-	for _, row := range append([][]string{table.Columns}, table.Rows...) {
-		cells := make([]string, len(row))
+	for sum(widths) > room {
+		widest := slices.Index(widths, slices.Max(widths))
 
-		for index, cell := range row {
-			cells[index] = cell + strings.Repeat(" ", widths[index]-utf8.RuneCountInString(cell))
+		if widths[widest] <= minColumnWidth {
+			break
 		}
 
-		lines = append(lines, strings.TrimRight(strings.Join(cells, "  "), " "))
+		widths[widest]--
+	}
+
+	var lines []string
+
+	wraps := false
+
+	for _, row := range all {
+		for index, cell := range row {
+			wraps = wraps || utf8.RuneCountInString(cell) > widths[index]
+		}
+	}
+
+	for number, row := range all {
+		wrapped := make([][]string, len(row))
+		height := 0
+
+		for index, cell := range row {
+			wrapped[index] = wrap(cell, widths[index])
+			height = max(height, len(wrapped[index]))
+		}
+
+		// Rows of several lines are told apart by an empty line.
+		if wraps && number > 1 {
+			lines = append(lines, "")
+		}
+
+		for line := range height {
+			cells := make([]string, len(row))
+
+			for index := range row {
+				text := ""
+
+				if line < len(wrapped[index]) {
+					text = wrapped[index][line]
+				}
+
+				cells[index] = text + strings.Repeat(" ", widths[index]-utf8.RuneCountInString(text))
+			}
+
+			lines = append(lines, strings.TrimRight(strings.Join(cells, columnGap), " "))
+		}
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+func sum(values []int) int {
+	total := 0
+
+	for _, value := range values {
+		total += value
+	}
+
+	return total
+}
+
+// wrap breaks text into lines of at most width characters at spaces, and a
+// word longer than that into pieces.
+func wrap(text string, width int) []string {
+	var lines []string
+
+	line := ""
+
+	for _, word := range strings.Fields(text) {
+		for utf8.RuneCountInString(word) > width {
+			if line != "" {
+				lines, line = append(lines, line), ""
+			}
+
+			runes := []rune(word)
+			lines, word = append(lines, string(runes[:width])), string(runes[width:])
+		}
+
+		switch {
+		case line == "":
+			line = word
+		case utf8.RuneCountInString(line)+1+utf8.RuneCountInString(word) <= width:
+			line += " " + word
+		default:
+			lines, line = append(lines, line), word
+		}
+	}
+
+	if line != "" || len(lines) == 0 {
+		lines = append(lines, line)
+	}
+
+	return lines
 }
 
 // noticeFor is a notice and the projects it is about, on its way to the dispatcher.
@@ -136,10 +233,11 @@ func DroppedNotice(project, kind, reason string, count int64, projectsURL string
 func CleanupNotice(run store.CleanupRun, projectNames map[int]string, scope, historyURL string) Notice {
 	table := &NoticeTable{Columns: []string{"Step", "Project", "Deleted"}}
 
+	// The step by its number: the Cleanup history names it.
 	for _, step := range run.Steps {
 		for _, projectID := range slices.Sorted(maps.Keys(step.Projects)) {
 			if text := countsText(*step.Projects[projectID]); text != "" {
-				table.Rows = append(table.Rows, []string{fmt.Sprintf("%d. %s", step.Number, step.Name), cmp.Or(projectNames[projectID], "no project"), text})
+				table.Rows = append(table.Rows, []string{strconv.Itoa(step.Number), cmp.Or(projectNames[projectID], "no project"), text})
 			}
 		}
 	}

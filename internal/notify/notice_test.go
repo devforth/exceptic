@@ -77,13 +77,13 @@ func TestNoticeTexts(t *testing.T) {
 		},
 	}
 	notice := CleanupNotice(run, map[int]string{1: "backend", 2: "frontend"}, "all projects", "https://errors.example.com/projects/cleanups")
-	text := notice.Heading + "\n" + strings.Join(notice.Lines, "\n") + "\n" + notice.Table.text()
+	text := notice.Heading + "\n" + strings.Join(notice.Lines, "\n") + "\n" + notice.Table.text(chatTableWidth)
 	want := `Cleanup done: all projects
 2.0 GB → 1.5 GB of 2.0 GB, 29s
-Step                                                 Project   Deleted
-5. logs below error, oldest first                    frontend  25,458 logs
-6. events below error but the latest of their issue  backend   1,302 events
-6. events below error but the latest of their issue  frontend  231 events`
+Step  Project   Deleted
+5     frontend  25,458 logs
+6     backend   1,302 events
+6     frontend  231 events`
 
 	if text != want {
 		t.Errorf("cleanup notice:\n%s\nwant:\n%s", text, want)
@@ -95,7 +95,32 @@ Step                                                 Project   Deleted
 
 	dropped := DroppedNotice("frontend", "logs", "rate limit", 1200, "")
 
-	if dropped.Heading != "frontend: data dropped" || dropped.Table.text() != "What  Why         Count\nlogs  rate limit  1,200" {
+	if dropped.Heading != "frontend: data dropped" || dropped.Table.text(chatTableWidth) != "What  Why         Count\nlogs  rate limit  1,200" {
 		t.Errorf("dropped notice %+v", dropped)
+	}
+}
+
+// A table wider than its width narrows its widest column and wraps the
+// cell onto more lines, the other columns padded alike; rows of several
+// lines are told apart by an empty line.
+func TestNoticeTableWraps(t *testing.T) {
+	table := NoticeTable{Columns: []string{"Step", "Project", "Deleted"}, Rows: [][]string{
+		{"5", "a project with a very long name", "25,458 logs"},
+		{"6", "backend", "1,302 events"},
+	}}
+	want := `Step  Project               Deleted
+5     a project with a      25,458 logs
+      very long name
+
+6     backend               1,302 events`
+
+	if got := table.text(chatTableWidth); got != want {
+		t.Errorf("table:\n%s\nwant:\n%s", got, want)
+	}
+
+	for line := range strings.SplitSeq(table.text(chatTableWidth), "\n") {
+		if len([]rune(line)) > chatTableWidth {
+			t.Errorf("line over %d characters: %q", chatTableWidth, line)
+		}
 	}
 }

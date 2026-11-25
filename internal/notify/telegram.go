@@ -103,7 +103,7 @@ func (telegram Telegram) SendNotice(ctx context.Context, notice Notice) error {
 	}
 
 	if notice.Table != nil {
-		lines = append(lines, "<pre>"+html.EscapeString(notice.Table.text())+"</pre>")
+		lines = append(lines, "<pre>"+html.EscapeString(notice.Table.text(chatTableWidth))+"</pre>")
 	}
 
 	if notice.URL != "" {
