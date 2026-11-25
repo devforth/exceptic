@@ -269,8 +269,15 @@ func TestBurstWithCleanup(t *testing.T) {
 	}
 
 	group.Wait()
-	// The burst is over: the cleanups ran during it. Run back to back with a
-	// 3 MB limit they would hold the writer's batches for most of the time.
+
+	// On a slow machine the burst can end before the data reaches the limit:
+	// the cleanups go on until one has deleted something.
+	for deadline := time.Now().Add(30 * time.Second); cleanups.Load() == 0 && time.Now().Before(deadline); {
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	// Run back to back with a 3 MB limit they would hold the writer's batches
+	// for most of the time.
 	stopCleanup()
 	<-cleanupDone
 
