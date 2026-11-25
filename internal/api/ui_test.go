@@ -639,3 +639,37 @@ func TestAppName(t *testing.T) {
 		t.Errorf("setup prompt without the server's name:\n%s", prompt)
 	}
 }
+
+// The web app's theme is the user's: none until the app records one,
+// then what set_theme saved, also with a temporary password; another
+// theme than light or dark is refused.
+func TestUITheme(t *testing.T) {
+	server := newRESTServer(t)
+	theme := func(user uiUser) string {
+		t.Helper()
+
+		var session struct{ Theme string }
+
+		user.read("get_session", &session)
+
+		return session.Theme
+	}
+
+	for _, user := range []uiUser{server.webUser(store.RoleUser, false), server.webUser(store.RoleUser, true)} {
+		if got := theme(user); got != "" {
+			t.Fatalf("a new user's theme %q", got)
+		}
+
+		if response := user.call(http.MethodPost, "set_theme", `{"theme":"dark"}`); response.Code != http.StatusOK {
+			t.Fatalf("set_theme: %d %s", response.Code, response.Body)
+		}
+
+		if got := theme(user); got != "dark" {
+			t.Errorf("theme %q, want dark", got)
+		}
+
+		if response := user.call(http.MethodPost, "set_theme", `{"theme":"blue"}`); response.Code != http.StatusBadRequest || theme(user) != "dark" {
+			t.Errorf("an unknown theme: %d, kept %q", response.Code, theme(user))
+		}
+	}
+}

@@ -201,6 +201,15 @@ func (database *Store) UpdateUserName(_ context.Context, id string, name string)
 	})
 }
 
+// UpdateUserTheme changes only the web app's theme of a user.
+func (database *Store) UpdateUserTheme(_ context.Context, id string, theme string) error {
+	return database.changeUser(id, func(_ *kv.Batch, user *userRecord) error {
+		user.Theme = theme
+
+		return nil
+	})
+}
+
 // SetPassword replaces a user's password, ends their other sessions and, if asked, disconnects their agents.
 func (database *Store) SetPassword(_ context.Context, id string, change store.PasswordChange) error {
 	return database.changeUser(id, func(batch *kv.Batch, user *userRecord) error {

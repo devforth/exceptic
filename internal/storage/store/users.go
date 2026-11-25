@@ -37,7 +37,12 @@ type User struct {
 	LastLoginAt        *time.Time
 	// Access is the projects the user sees; ProjectAccess applies it.
 	Access Access
+	// Theme is the web app's color theme the user chose (one of Themes); empty until the first login records the system's.
+	Theme string `json:",omitempty"`
 }
+
+// Themes are the web app's color themes.
+var Themes = []string{"light", "dark"}
 
 // ProjectAccess is the projects the user sees: every one for the superadmin,
 // whatever is stored.

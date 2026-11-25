@@ -145,6 +145,7 @@ type Store interface {
 	ListUsers(ctx context.Context) ([]User, error)
 	UpdateUser(ctx context.Context, id string, change UserChange) error
 	UpdateUserName(ctx context.Context, id string, name string) error
+	UpdateUserTheme(ctx context.Context, id string, theme string) error
 	// SetPassword ends the user's other sessions.
 	SetPassword(ctx context.Context, id string, change PasswordChange) error
 	DeleteUser(ctx context.Context, id string) error

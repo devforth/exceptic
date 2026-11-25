@@ -147,7 +147,7 @@ theme (Dark mode), the account and Log out below a line. It collapses to icons (
 	<!-- The theme right above the account, as two items of one list. -->
 	<div class="flex flex-col gap-0.5 max-sidebar:contents">
 		<div class="max-sidebar:flex-none">
-			<ThemeSwitch {collapsed} />
+			<ThemeSwitch {collapsed} saved={session.theme} />
 		</div>
 		<nav aria-label="Account" class="max-sidebar:flex-none">
 			<NavLink

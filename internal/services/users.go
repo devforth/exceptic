@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -288,6 +289,16 @@ func (users *Users) UpdateName(ctx context.Context, viewer store.User, name stri
 	}
 
 	return nil, users.store.UpdateUserName(ctx, viewer.ID, nameOr(name, viewer.Username))
+}
+
+// SetTheme saves the viewer's own theme of the web app (one of store.Themes).
+func (users *Users) SetTheme(ctx context.Context, viewer store.User, theme string) error {
+	// The catalog offers only these (Choices); anything else is a caller's bug.
+	if !slices.Contains(store.Themes, theme) {
+		return fmt.Errorf("unknown theme %q", theme)
+	}
+
+	return users.store.UpdateUserTheme(ctx, viewer.ID, theme)
 }
 
 // SetPasswordByOperator is the reset-password command: run with the server

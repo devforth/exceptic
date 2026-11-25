@@ -31,6 +31,12 @@ func (handler *handlers) management() []Endpoint {
 			Idempotent:  true, Transports: ActsAsUser,
 		}, handler.updateAccountName),
 		Define(Endpoint{
+			Name:        "set_theme",
+			Description: "Save the web app's color theme of the signed-in user, so every browser they log in from shows it.",
+			Idempotent:  true, Transports: TransportUI, OpenWithTemporaryPassword: true,
+			Choices: map[string][]string{"theme": store.Themes},
+		}, handler.setTheme),
+		Define(Endpoint{
 			Name:        "list_agents",
 			Description: "Coding agents and personal tokens connected to MCP for the user (admins: user_id of a user whose projects they all have, from owners), with when each was last used; connected is false for a personal token never used.",
 			ReadOnly:    true, Transports: ActsAsUser,
@@ -196,6 +202,18 @@ func (handler *handlers) updateAccountName(ctx context.Context, call Call, input
 	user, err := handler.services.Users.Get(ctx, call.Viewer.ID)
 
 	return handler.userView(user, user), err
+}
+
+type themeInput struct {
+	Theme string `json:"theme" jsonschema:"light or dark."`
+}
+
+type themeOutput struct {
+	Theme string `json:"theme"`
+}
+
+func (handler *handlers) setTheme(ctx context.Context, call Call, input themeInput) (themeOutput, error) {
+	return themeOutput(input), handler.services.Users.SetTheme(ctx, call.Viewer, input.Theme)
 }
 
 type listAgentsInput struct {

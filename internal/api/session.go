@@ -19,6 +19,8 @@ type sessionOutput struct {
 	AllProjects bool `json:"all_projects"`
 	// AssignableRoles: the roles the user may give (an admin only "user"); empty for a user.
 	AssignableRoles []string `json:"assignable_roles"`
+	// Theme: the color theme the user chose (light or dark), empty until the app records the system's.
+	Theme string `json:"theme"`
 }
 
 type storageOutput struct {
@@ -125,6 +127,6 @@ func (handler *handlers) getSession(ctx context.Context, call Call, _ noInput) (
 		User: handler.userView(call.Viewer, call.Viewer), CanAdminister: call.Viewer.CanAdminister(),
 		AppName: handler.services.AppName, UnresolvedIssues: unresolved,
 		ProjectColors: handler.services.Projects.ColorsByName(call.Access()), AllProjects: call.Access().All(),
-		AssignableRoles: append([]string{}, call.Viewer.AssignableRoles()...),
+		AssignableRoles: append([]string{}, call.Viewer.AssignableRoles()...), Theme: call.Viewer.Theme,
 	}, nil
 }

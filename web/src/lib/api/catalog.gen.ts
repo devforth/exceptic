@@ -494,6 +494,7 @@ export interface Endpoints {
 			project_colors: Record<string, string>;
 			all_projects: boolean;
 			assignable_roles: string[] | null;
+			theme: string;
 		};
 	};
 	get_storage: {
@@ -933,6 +934,15 @@ export interface Endpoints {
 			} | null;
 		};
 	};
+	set_theme: {
+		in: {
+			/** light or dark. */
+			theme: 'light' | 'dark';
+		};
+		out: {
+			theme: string;
+		};
+	};
 	start_email_verification: {
 		in: {
 			/** The email address. */
@@ -1134,6 +1144,7 @@ export const endpoints = {
 	retry_connection: { method: 'POST', admin: true, destructive: false, confirm: false },
 	send_test_message: { method: 'POST', admin: true, destructive: false, confirm: false },
 	set_connection_active: { method: 'POST', admin: true, destructive: false, confirm: true },
+	set_theme: { method: 'POST', admin: false, destructive: false, confirm: false },
 	start_email_verification: { method: 'POST', admin: true, destructive: false, confirm: false },
 	test_chat: { method: 'POST', admin: true, destructive: false, confirm: false },
 	update_account_name: { method: 'POST', admin: false, destructive: false, confirm: false },
@@ -1264,6 +1275,9 @@ export const choices = {
 	},
 	list_logs: {
 		level: ['trace', 'debug', 'info', 'warn', 'error', 'fatal'],
+	},
+	set_theme: {
+		theme: ['light', 'dark'],
 	},
 	update_connection: {
 		levels: ['debug', 'info', 'warning', 'error', 'fatal'],

@@ -1,8 +1,9 @@
 <!--
 @component
-Dark mode, an item of the menu with a Switch: on when dark is chosen in this browser, or nothing
-is and the system is dark (followed as it changes). Toggling stores light or dark. A choice made
-in another tab applies here too.
+Dark mode, an item of the menu with a Switch. The user's theme is saved on the server (saved,
+from get_session), so every browser they log in from shows it; until then the theme they see (the
+system's, or one chosen in this browser) is saved at once. This browser keeps a copy for the first
+paint, and a choice made in another tab applies here too.
 -->
 <script lang="ts">
 	import {
@@ -14,9 +15,10 @@ in another tab applies here too.
 		themeKey,
 		type Theme
 	} from '#lib/theme.ts';
+	import { post } from '#lib/api/client.ts';
 	import NavLink from './NavLink.svelte';
 
-	let { collapsed = false }: { collapsed?: boolean } = $props();
+	let { collapsed = false, saved = '' }: { collapsed?: boolean; saved?: string } = $props();
 
 	const systemTheme = typeof matchMedia === 'function' ? matchMedia(systemDarkQuery) : undefined;
 
@@ -34,10 +36,25 @@ in another tab applies here too.
 		return () => systemTheme.removeEventListener('change', follow);
 	});
 
-	function toggle() {
-		const chosen = dark ? 'light' : 'dark';
+	// The server's theme wins; without one, the theme shown now is recorded (the first login).
+	$effect(() => {
+		if (saved === 'light' || saved === 'dark') {
+			theme = saved;
+			saveTheme(saved);
+		} else {
+			choose(dark ? 'dark' : 'light');
+		}
+	});
+
+	function choose(chosen: 'light' | 'dark') {
 		theme = chosen;
 		saveTheme(chosen);
+		// The theme already applies here: one the server failed to keep is asked again at the next login.
+		post('set_theme', { theme: chosen }).catch(() => {});
+	}
+
+	function toggle() {
+		choose(dark ? 'light' : 'dark');
 	}
 
 	// A choice made in another tab of this browser (key null: storage cleared).
