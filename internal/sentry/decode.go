@@ -322,3 +322,21 @@ func (fields fieldNames) find(name string) (int, bool) {
 
 	return 0, false
 }
+
+// FoldedName is a member name as Decode and encoding/json compare it with a
+// field name of lowercase ASCII: they match names in any case, so the name
+// reads as such a field exactly when its folded name equals it.
+func FoldedName(name string) string {
+	return strings.Map(func(character rune) rune {
+		switch {
+		case character >= 'A' && character <= 'Z':
+			return character + 'a' - 'A'
+		case character == 'ſ': // long s
+			return 's'
+		case character == 'K': // Kelvin sign
+			return 'k'
+		}
+
+		return character
+	}, name)
+}

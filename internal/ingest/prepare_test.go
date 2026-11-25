@@ -83,6 +83,9 @@ func samplePayloads(t testing.TB) [][]byte {
 		[]byte(`{"` + sentry.TruncatedField + `":["extra"],"message":"m"}`), []byte(`{}`),
 		// Long stacks: frames cut, the detail of the middle ones dropped.
 		[]byte(`{"threads":{"values":[{"stacktrace":{"frames":[` + strings.Repeat(`{"vars":{"a":1}},1,`, 130) + `{}]}}]}}`),
+		// Names in any case, as the event parser reads them.
+		[]byte(`{"Exception":{"Values":[{"Stacktrace":{"FRAMES":[` + strings.Repeat(`{"In_App":true,"Vars":{"a":1}},{"filename":"lib.js","Context_Line":"c"},`, 130) + `{}]}}]},` +
+			`"BREADCRUMBS":{"VALUES":[` + strings.Repeat(`{"message":"step"},`, 60) + `{}]},"SDK":{"Integrations":["a"]},"Modules":{"x":"1"},"Debug_Meta":{}}`),
 		[]byte(`{"exception":[{"stacktrace":{"frames":[` + strings.Repeat(`{"in_app":true,"vars":{"a":1},"context_line":"c","pre_context":["p"]},{"filename":"lib.js","vars":{"b":2}},`, 30) + `{}]}}],` +
 			`"stacktrace":{"frames":[` + strings.Repeat(`{"post_context":["p"]},`, 255) + `{}]}}`),
 	}
@@ -225,6 +228,18 @@ func referenceTruncate(payload []byte, earlier []string) []byte {
 		event, _ := decode()
 		names := referenceCuts(event, steps[:level])
 
+		// The last resort is the same function, on the tree's encoding.
+		if encoded, _ := referenceEncode(event); level == len(steps) && len(encoded) > config.MaxEventBytes-truncatedRoom {
+			fit, _ := fitted(encoded, config.MaxEventBytes-truncatedRoom, maxFitDepth)
+			decoder := json.NewDecoder(bytes.NewReader(fit))
+			decoder.UseNumber()
+
+			event = nil
+			_ = decoder.Decode(&event)
+
+			names = append(names, "size")
+		}
+
 		if len(names) == 0 {
 			if len(payload) <= config.MaxEventBytes || level == len(steps) {
 				return unchanged()
@@ -256,7 +271,7 @@ func referenceCuts(event map[string]any, steps []string) []string {
 
 	if applies("other") {
 		for name := range event {
-			if !store.ErrorFields[name] && name != "contexts" {
+			if field := sentry.FoldedName(name); !store.ErrorFields[field] && field != "contexts" {
 				delete(event, name)
 
 				done["other"] = true
@@ -264,40 +279,55 @@ func referenceCuts(event map[string]any, steps []string) []string {
 		}
 	}
 
-	if breadcrumbs, ok := event["breadcrumbs"]; ok && applies("breadcrumbs") {
-		list := referenceValues(breadcrumbs)
+	for _, key := range referenceKeys(event, "breadcrumbs") {
+		if !applies("breadcrumbs") {
+			break
+		}
 
-		if len(list) > config.TruncatedBreadcrumbs {
+		newest := func(list []any) []any {
+			if len(list) <= config.TruncatedBreadcrumbs {
+				return list
+			}
+
 			done["breadcrumbs"] = true
 
-			if object, ok := breadcrumbs.(map[string]any); ok {
-				object["values"] = list[len(list)-config.TruncatedBreadcrumbs:]
-			} else {
-				event["breadcrumbs"] = list[len(list)-config.TruncatedBreadcrumbs:]
+			return list[len(list)-config.TruncatedBreadcrumbs:]
+		}
+
+		switch breadcrumbs := event[key].(type) {
+		case []any:
+			event[key] = newest(breadcrumbs)
+		case map[string]any:
+			for _, name := range referenceKeys(breadcrumbs, "values") {
+				if list, ok := breadcrumbs[name].([]any); ok {
+					breadcrumbs[name] = newest(list)
+				}
 			}
 		}
 	}
 
-	if _, ok := event["extra"]; ok && applies("extra") {
-		delete(event, "extra")
+	if keys := referenceKeys(event, "extra"); len(keys) > 0 && applies("extra") {
+		referenceDelete(event, "extra")
 
 		done["extra"] = true
 	}
 
-	if request, ok := event["request"].(map[string]any); ok && applies("request.data") {
-		if _, ok := request["data"]; ok {
-			delete(request, "data")
+	for _, key := range referenceKeys(event, "request") {
+		if request, ok := event[key].(map[string]any); ok && applies("request.data") && len(referenceKeys(request, "data")) > 0 {
+			referenceDelete(request, "data")
 
 			done["request.data"] = true
 		}
 	}
 
-	if contexts, ok := event["contexts"].(map[string]any); ok && applies("contexts") {
-		for name := range contexts {
-			if !slices.Contains([]string{"runtime", "os", "browser", "trace"}, name) {
-				delete(contexts, name)
+	for _, key := range referenceKeys(event, "contexts") {
+		if contexts, ok := event[key].(map[string]any); ok && applies("contexts") {
+			for name := range contexts {
+				if !slices.Contains([]string{"runtime", "os", "browser", "trace"}, name) {
+					delete(contexts, name)
 
-				done["contexts"] = true
+					done["contexts"] = true
+				}
 			}
 		}
 	}
@@ -308,8 +338,8 @@ func referenceCuts(event map[string]any, steps []string) []string {
 		switch typed := node.(type) {
 		case map[string]any:
 			for name, step := range map[string]string{"vars": "frame_vars", "pre_context": "frame_context", "post_context": "frame_context"} {
-				if _, ok := typed[name]; ok && applies(step) {
-					delete(typed, name)
+				if keys := referenceKeys(typed, name); len(keys) > 0 && applies(step) {
+					referenceDelete(typed, name)
 
 					done[step] = true
 				}
@@ -326,7 +356,9 @@ func referenceCuts(event map[string]any, steps []string) []string {
 	}
 
 	for _, field := range []string{"exception", "threads", "stacktrace"} {
-		strip(event[field])
+		for _, key := range referenceKeys(event, field) {
+			strip(event[key])
+		}
 	}
 
 	var cut func(node any) any
@@ -466,44 +498,79 @@ func referenceFiltered(node any) any {
 	return filteredText
 }
 
-// referenceEventFields reports whether a stack lost frames.
-func referenceEventFields(event map[string]any) bool {
-	delete(event, "modules")
-	delete(event, "debug_meta")
-	delete(event, sentry.TruncatedField)
+// referenceKeys are the keys of object that read as field: the event parser
+// reads names in any case.
+func referenceKeys(object map[string]any, field string) []string {
+	var keys []string
 
-	if sdk, ok := event["sdk"].(map[string]any); ok {
-		delete(sdk, "integrations")
-		delete(sdk, "packages")
+	for key := range object {
+		if sentry.FoldedName(key) == field {
+			keys = append(keys, key)
+		}
 	}
 
-	event["breadcrumbs"] = referenceNewestBreadcrumbs(event["breadcrumbs"])
+	return keys
+}
 
-	if event["breadcrumbs"] == nil {
-		delete(event, "breadcrumbs")
+func referenceDelete(object map[string]any, fields ...string) {
+	for _, field := range fields {
+		for _, key := range referenceKeys(object, field) {
+			delete(object, key)
+		}
+	}
+}
+
+// referenceEventFields reports whether a stack lost frames.
+func referenceEventFields(event map[string]any) bool {
+	referenceDelete(event, "modules", "debug_meta", sentry.TruncatedField)
+
+	for _, key := range referenceKeys(event, "sdk") {
+		if sdk, ok := event[key].(map[string]any); ok {
+			referenceDelete(sdk, "integrations", "packages")
+		}
+	}
+
+	for _, key := range referenceKeys(event, "breadcrumbs") {
+		if event[key] = referenceNewestBreadcrumbs(event[key]); event[key] == nil {
+			delete(event, key)
+		}
 	}
 
 	framesDropped := false
 
-	for _, key := range []string{"exception", "threads"} {
-		for _, item := range referenceValues(event[key]) {
-			if object, ok := item.(map[string]any); ok && referenceStacktrace(object["stacktrace"]) {
-				framesDropped = true
+	for _, field := range []string{"exception", "threads"} {
+		for _, key := range referenceKeys(event, field) {
+			for _, item := range referenceValues(event[key]) {
+				if object, ok := item.(map[string]any); ok {
+					for _, name := range referenceKeys(object, "stacktrace") {
+						framesDropped = referenceStacktrace(object[name]) || framesDropped
+					}
+				}
 			}
 		}
 	}
 
-	return referenceStacktrace(event["stacktrace"]) || framesDropped
+	for _, key := range referenceKeys(event, "stacktrace") {
+		framesDropped = referenceStacktrace(event[key]) || framesDropped
+	}
+
+	return framesDropped
 }
 
+// referenceValues are the items of a list, or of every "values" list of an object.
 func referenceValues(node any) []any {
 	switch typed := node.(type) {
 	case []any:
 		return typed
 	case map[string]any:
-		list, _ := typed["values"].([]any)
+		var items []any
 
-		return list
+		for _, key := range referenceKeys(typed, "values") {
+			list, _ := typed[key].([]any)
+			items = append(items, list...)
+		}
+
+		return items
 	}
 
 	return nil
@@ -516,8 +583,10 @@ func referenceNewestBreadcrumbs(node any) any {
 	case []any:
 		return trim(typed)
 	case map[string]any:
-		if list, ok := typed["values"].([]any); ok {
-			typed["values"] = trim(list)
+		for _, key := range referenceKeys(typed, "values") {
+			if list, ok := typed[key].([]any); ok {
+				typed[key] = trim(list)
+			}
 		}
 
 		return typed
@@ -537,18 +606,28 @@ func referenceStacktrace(node any) bool {
 		return false
 	}
 
-	frames, isList := stacktrace["frames"].([]any)
-	dropped := len(frames) > 250
+	dropped := false
 
-	if dropped {
-		frames = slices.Concat(frames[:50], frames[len(frames)-200:])
-		stacktrace["frames"] = frames
+	for _, key := range referenceKeys(stacktrace, "frames") {
+		frames, isList := stacktrace[key].([]any)
+
+		if !isList {
+			continue
+		}
+
+		if len(frames) > 250 {
+			dropped = true
+			frames = slices.Concat(frames[:50], frames[len(frames)-200:])
+			stacktrace[key] = frames
+		}
+
+		referenceFrames(frames)
 	}
 
-	if !isList {
-		return false
-	}
+	return dropped
+}
 
+func referenceFrames(frames []any) {
 	hasAppFrames := false
 
 	for _, item := range frames {
@@ -572,28 +651,30 @@ func referenceStacktrace(node any) bool {
 		case !hasAppFrames || referenceIsAppFrame(frame):
 			withSource = append(withSource, frame)
 		default:
-			for _, key := range []string{"pre_context", "context_line", "post_context", "vars"} {
-				delete(frame, key)
-			}
+			referenceDelete(frame, "pre_context", "context_line", "post_context", "vars")
 		}
 	}
 
 	if len(withSource) > 50 {
 		for _, frame := range withSource[25 : len(withSource)-25] {
-			for _, key := range []string{"pre_context", "post_context", "vars"} {
-				delete(frame, key)
-			}
+			referenceDelete(frame, "pre_context", "post_context", "vars")
 		}
 	}
-
-	return dropped
 }
 
 func referenceIsAppFrame(frame map[string]any) bool {
-	filename, _ := frame["filename"].(string)
-	absPath, _ := frame["abs_path"].(string)
+	field := func(name string) any {
+		for _, key := range referenceKeys(frame, name) {
+			return frame[key]
+		}
 
-	return frame["in_app"] == true && !sentry.IsLibraryPath(filename) && !sentry.IsLibraryPath(absPath)
+		return nil
+	}
+
+	filename, _ := field("filename").(string)
+	absPath, _ := field("abs_path").(string)
+
+	return field("in_app") == true && !sentry.IsLibraryPath(filename) && !sentry.IsLibraryPath(absPath)
 }
 
 // A JSON document in a string is read as one once: documents nested in

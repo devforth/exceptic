@@ -46,7 +46,8 @@ type stackCompactor struct {
 
 func (stacks *stackCompactor) event(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 	return scrubObject(decoder, encoder, func(name string, decoder *jsontext.Decoder, encoder *jsontext.Encoder) (bool, error) {
-		switch name {
+		// Names in any case, as the event parser reads them.
+		switch sentry.FoldedName(name) {
 		case "modules", "debug_meta", sentry.TruncatedField: // the last is the server's own
 			return true, decoder.SkipValue()
 		case "sdk":
@@ -56,7 +57,7 @@ func (stacks *stackCompactor) event(decoder *jsontext.Decoder, encoder *jsontext
 				}
 
 				return scrubObject(decoder, encoder, func(name string, decoder *jsontext.Decoder, _ *jsontext.Encoder) (bool, error) {
-					if name == "integrations" || name == "packages" {
+					if field := sentry.FoldedName(name); field == "integrations" || field == "packages" {
 						return true, decoder.SkipValue()
 					}
 
@@ -95,7 +96,7 @@ func breadcrumbs(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 		return newest(decoder, encoder)
 	case '{':
 		return scrubObject(decoder, encoder, func(name string, decoder *jsontext.Decoder, encoder *jsontext.Encoder) (bool, error) {
-			if name != "values" || decoder.PeekKind() != '[' {
+			if sentry.FoldedName(name) != "values" || decoder.PeekKind() != '[' {
 				return false, nil
 			}
 
@@ -129,7 +130,7 @@ func (stacks *stackCompactor) withStacktraces(decoder *jsontext.Decoder, encoder
 			}
 
 			return scrubObject(decoder, encoder, func(name string, decoder *jsontext.Decoder, encoder *jsontext.Encoder) (bool, error) {
-				if name != "stacktrace" {
+				if sentry.FoldedName(name) != "stacktrace" {
 					return false, nil
 				}
 
@@ -143,7 +144,7 @@ func (stacks *stackCompactor) withStacktraces(decoder *jsontext.Decoder, encoder
 		return items(decoder, encoder)
 	case '{':
 		return scrubObject(decoder, encoder, func(name string, decoder *jsontext.Decoder, encoder *jsontext.Encoder) (bool, error) {
-			if name != "values" || decoder.PeekKind() != '[' {
+			if sentry.FoldedName(name) != "values" || decoder.PeekKind() != '[' {
 				return false, nil
 			}
 
@@ -163,7 +164,7 @@ func (stacks *stackCompactor) stacktrace(decoder *jsontext.Decoder, encoder *jso
 	}
 
 	return scrubObject(decoder, encoder, func(name string, decoder *jsontext.Decoder, encoder *jsontext.Encoder) (bool, error) {
-		if name != "frames" || decoder.PeekKind() != '[' {
+		if sentry.FoldedName(name) != "frames" || decoder.PeekKind() != '[' {
 			return false, nil
 		}
 
@@ -217,7 +218,7 @@ func (stacks *stackCompactor) stacktrace(decoder *jsontext.Decoder, encoder *jso
 				}
 
 				return scrubObject(decoder, encoder, func(name string, decoder *jsontext.Decoder, _ *jsontext.Encoder) (bool, error) {
-					if dropped[name] {
+					if dropped[sentry.FoldedName(name)] {
 						return true, decoder.SkipValue()
 					}
 

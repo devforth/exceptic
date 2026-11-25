@@ -14,6 +14,7 @@ import (
 // top-level group of one distinct child is that child's issue. False when
 // the list holds no group: the chain then counts as sent.
 func exceptionGroupComponents(exceptions []sentry.Exception, javascript bool) ([]string, bool) {
+	exceptions = exceptions[max(0, len(exceptions)-maxGroupExceptions):]
 	tree := newExceptionTree(exceptions, javascript)
 
 	if tree == nil {
@@ -39,6 +40,11 @@ func exceptionGroupComponents(exceptions []sentry.Exception, javascript bool) ([
 	// Ids that only loop leave no root: the chain counts as sent.
 	return components, len(components) > 0
 }
+
+// maxGroupExceptions: the exceptions read as a tree, the outermost (SDKs
+// send them last). A key holds its subtree's, so a deeper tree would cost
+// memory growing with the square of its depth.
+const maxGroupExceptions = 100
 
 // exceptionTree links the flat list by exception_id and parent_id.
 type exceptionTree struct {

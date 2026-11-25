@@ -1,6 +1,7 @@
 package sentry
 
 import (
+	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -67,5 +68,20 @@ func TestWrongTypedFieldCostsLittleMore(t *testing.T) {
 
 	if odd > valid*5/2 {
 		t.Errorf("a wrong-typed field costs %d KB, a valid event %d KB", odd>>10, valid>>10)
+	}
+}
+
+// A name folds to a field exactly when the decoder reads it as that field.
+func TestFoldedName(t *testing.T) {
+	for _, name := range []string{"items", "Items", "ITEMS", "itemſ", "iteMS", "it_ems", "ıtems", "İtems", "frames", "FRAMES", "breadcrumbs"} {
+		var batch struct {
+			Items []int `json:"items"`
+		}
+
+		_ = json.Unmarshal([]byte(`{"`+name+`":[1]}`), &batch)
+
+		if read, folded := len(batch.Items) == 1, FoldedName(name) == "items"; read != folded {
+			t.Errorf("%q: read as items %v, folded %q", name, read, FoldedName(name))
+		}
 	}
 }

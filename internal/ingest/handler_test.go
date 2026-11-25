@@ -5,7 +5,9 @@ import (
 	"compress/gzip"
 	"compress/zlib"
 	"context"
+	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -460,7 +462,7 @@ func TestBrotliWindowIsBudgeted(t *testing.T) {
 	}
 
 	server := newTestServer(t, testSettings())
-	server.handler.reading = newReadBudget(16 << 20)
+	server.handler.reading = newReadBudget(16<<20, 8<<20)
 
 	request := newRequest(http.MethodPost, envelopeURL("1", fixtures.BackendKey), buffer.Bytes())
 	request.Header.Set("Content-Encoding", "br")
@@ -471,6 +473,35 @@ func TestBrotliWindowIsBudgeted(t *testing.T) {
 
 	if used := server.handler.reading.used; used != 0 {
 		t.Errorf("%d bytes still reserved", used)
+	}
+}
+
+// One project's share holds the largest body any encoding may take: a brotli
+// body read whole, its window and its output, each near the size limit.
+func TestLargestBrotliBodyFitsTheShare(t *testing.T) {
+	attachment := make([]byte, 17<<20)
+	_, _ = rand.Read(attachment) // does not compress
+
+	var buffer bytes.Buffer
+
+	writer := brotli.NewWriterOptions(&buffer, brotli.WriterOptions{Quality: 2, LGWin: 24})
+	_, _ = fmt.Fprintf(writer, "{}\n{\"type\":\"attachment\",\"length\":%d}\n", len(attachment))
+	_, _ = writer.Write(attachment)
+
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if window := brotliWindow(buffer.Bytes()[0]); window != 16<<20 || buffer.Len() <= 16<<20 {
+		t.Fatalf("window %d, %d bytes", window, buffer.Len())
+	}
+
+	server := newTestServer(t, testSettings())
+	request := newRequest(http.MethodPost, envelopeURL("1", fixtures.BackendKey), buffer.Bytes())
+	request.Header.Set("Content-Encoding", "br")
+
+	if response := server.send(request); response.Code != http.StatusOK {
+		t.Fatalf("got %d %s, want 200", response.Code, response.Body)
 	}
 }
 
@@ -627,7 +658,7 @@ func TestReadBudget(t *testing.T) {
 	server := newTestServer(t, testSettings())
 	large := []byte("{}\n{\"type\":\"event\"}\n{\"message\":\"" + strings.Repeat("x", 1<<20) + "\"}\n")
 
-	server.handler.reading = newReadBudget(512 << 10)
+	server.handler.reading = newReadBudget(512<<10, 256<<10)
 
 	response := server.send(newRequest(http.MethodPost, envelopeURL("1", fixtures.BackendKey), large))
 
@@ -659,7 +690,7 @@ func TestBodyIsReadAfterAuth(t *testing.T) {
 // One project may hold half of the budget, so the public key of a browser
 // app cannot stop the others.
 func TestReadBudgetShare(t *testing.T) {
-	budget := newReadBudget(100)
+	budget := newReadBudget(100, 50)
 
 	if !budget.reserve(1, 50) || budget.reserve(1, 1) {
 		t.Fatal("project 1 is not held to its half")

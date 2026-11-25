@@ -270,6 +270,9 @@ func TestCountItems(t *testing.T) {
 		{"no logs", []byte("{}\n{\"type\":\"log\"}\n{\"items\":[]}\n"), 0, 1},
 		{"malformed", []byte("{}\n{\"type\":\"log\"}\n{\"items\":[1,\n"), 0, 1},
 		{"spans", []byte("{}\n{\"type\":\"span\"}\n{}\n"), 0, 0},
+		// The parser reads "items" in any case, and so does the count.
+		{"items in another case", []byte("{}\n{\"type\":\"log\"}\n{\"Items\":[{},{},{}]}\n"), 0, 3},
+		{"items in Unicode case", []byte("{}\n{\"type\":\"log\"}\n{\"ITEMſ\":[{},{}]}\n"), 0, 2},
 	}
 
 	for _, testCase := range tests {

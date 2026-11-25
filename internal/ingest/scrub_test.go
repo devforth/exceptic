@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"unsafe"
 )
 
 func TestScrubJSONRemovesCredentials(t *testing.T) {
@@ -799,5 +800,34 @@ func TestScrubSourceLines(t *testing.T) {
 				t.Errorf("%s: %s was changed:\n%s", name, encoded, scrubbed)
 			}
 		}
+	}
+}
+
+// A remembered key is a copy: a key cut out of a large text must not keep
+// the whole text in memory.
+func TestRememberedKeysAreCopies(t *testing.T) {
+	text := strings.Repeat("x", 1<<20) + " zqremembered=1"
+	key := text[len(text)-len("zqremembered=1") : len(text)-len("=1")]
+
+	knownKeys.Clear() // other tests may have filled it
+	knownKeyCount.Store(0)
+	isSensitiveKey(key)
+
+	found := false
+
+	knownKeys.Range(func(stored, _ any) bool {
+		if stored.(string) == key {
+			found = true
+
+			if unsafe.StringData(stored.(string)) == unsafe.StringData(key) {
+				t.Error("the remembered key shares the text's memory")
+			}
+		}
+
+		return true
+	})
+
+	if !found {
+		t.Fatal("the key was not remembered")
 	}
 }

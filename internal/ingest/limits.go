@@ -221,8 +221,9 @@ func countItems(envelope *sentry.Envelope) itemCounts {
 	return counts
 }
 
-// logsInItem counts the elements of the payload's "items" without decoding
-// them; the SDK's item_count is not trusted.
+// logsInItem counts the elements of the payload's "items" (in any case, as
+// sentry.ParseLogs reads it) without decoding them; the SDK's item_count is
+// not trusted.
 func logsInItem(payload []byte) int {
 	decoder := newTokenDecoder(payload)
 
@@ -239,7 +240,7 @@ func logsInItem(payload []byte) int {
 			return count
 		}
 
-		if name.String() != "items" || decoder.PeekKind() != '[' {
+		if sentry.FoldedName(name.String()) != "items" || decoder.PeekKind() != '[' {
 			if decoder.SkipValue() != nil {
 				return count
 			}

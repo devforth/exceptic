@@ -16,11 +16,11 @@ var variableRe = regexp.MustCompile(`^\{\{\s*(\S+)\s*\}\}$`)
 // ("{{ error.type }}", "{{ tags.tenant }}") replaced by the event's value,
 // "<no-…>" when the event has none; an unknown variable stays as written.
 // The variables are those of Sentry's Fingerprint Rules (docs/sdk.md).
-func fingerprintValue(event *sentry.Event, value string) string {
+func fingerprintValue(event *sentry.Event, messages *eventMessages, value string) string {
 	match := variableRe.FindStringSubmatch(value)
 
 	if match == nil {
-		if isEventMessage(event, value) {
+		if messages.has(value) {
 			return NormalizeMessage(value)
 		}
 
@@ -140,24 +140,28 @@ func eventLevel(event *sentry.Event) string {
 	return config.EventLevel(event.Level)
 }
 
-// isEventMessage reports whether a plain fingerprint value is the event's
-// message or an error's text, which group with numbers and IDs ignored.
-func isEventMessage(event *sentry.Event, value string) bool {
+// eventMessages are the event's message and its errors' texts, which plain
+// fingerprint values that equal one group with numbers and IDs ignored; read
+// once for all the values.
+type eventMessages struct {
+	event *sentry.Event
+	texts map[string]bool
+}
+
+func (messages *eventMessages) has(value string) bool {
 	if value == "" {
 		return false
 	}
 
-	if value == string(event.Message) {
-		return true
-	}
+	if messages.texts == nil {
+		messages.texts = map[string]bool{string(messages.event.Message): true}
 
-	for _, exception := range event.Exception {
-		if value == exception.Value {
-			return true
+		for index := range messages.event.Exception {
+			messages.texts[messages.event.Exception[index].Value] = true
 		}
 	}
 
-	return false
+	return messages.texts[value]
 }
 
 func mainException(event *sentry.Event) sentry.Exception {

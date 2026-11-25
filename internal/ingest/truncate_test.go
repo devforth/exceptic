@@ -149,6 +149,36 @@ func TestLongLogAttributeValueIsCut(t *testing.T) {
 	}
 }
 
+// Every text of a log has a limit: its ids (span_id may come from an
+// attribute), attribute names and types.
+func TestLogIDsAndAttributeNamesAreCut(t *testing.T) {
+	long := strings.Repeat("a", 1<<20)
+	stored := parsedLog(t, map[string]any{"body": "line", "trace_id": long, "attributes": map[string]any{
+		sentry.ParentSpanAttribute: map[string]any{"value": long, "type": "string"},
+		long:                       map[string]any{"value": "first", "type": "string"},
+		long + "b":                 map[string]any{"value": "second", "type": "string"},
+		"typed":                    map[string]any{"value": "v", "type": long},
+	}})
+
+	if len(stored.TraceID) > maxLogIDBytes+len("…") || len(stored.SpanID) > maxLogIDBytes+len("…") {
+		t.Errorf("trace_id of %d bytes, span_id of %d", len(stored.TraceID), len(stored.SpanID))
+	}
+
+	if len(stored.Attributes) != 3 {
+		t.Errorf("%d attributes", len(stored.Attributes))
+	}
+
+	for name, attribute := range stored.Attributes {
+		if len(name) > maxLogAttributeNameBytes+len("…") || len(attribute.Type) > maxLogAttributeTypeBytes+len("…") {
+			t.Errorf("attribute name of %d bytes, type of %d", len(name), len(attribute.Type))
+		}
+
+		if strings.HasPrefix(name, "aaa") && attribute.String() != "first" {
+			t.Errorf("of names cut alike the first by name stays: %s", attribute.String())
+		}
+	}
+}
+
 // longEvent is an event with an exception and the given fields; each string
 // of filler is a little under the string limit.
 func longEvent(t testing.TB, fields map[string]any) []byte {
@@ -290,6 +320,49 @@ func TestHugeEventKeepsTheError(t *testing.T) {
 		if _, ok := event[field]; ok {
 			t.Errorf("%s kept", field)
 		}
+	}
+}
+
+// What the cuts keep still fits the limit: the newest errors and the members
+// that fit stay, the rest goes.
+func TestEveryEventFitsTheLimit(t *testing.T) {
+	var exceptions []any
+
+	for index := range 300 {
+		exceptions = append(exceptions, map[string]any{"type": fmt.Sprint("Error", index), "value": strings.Repeat("v", config.MaxEventStringBytes-100)})
+	}
+
+	for name, fields := range map[string]map[string]any{
+		"contexts":    {"contexts": map[string]any{"os": filler(200)}},
+		"long name":   {"contexts": map[string]any{"os": map[string]any{strings.Repeat("n", 3<<20): 1, "name": "Linux"}}},
+		"exceptions":  {"exception": map[string]any{"values": exceptions}},
+		"fingerprint": {"fingerprint": slices.Repeat([]string{strings.Repeat("f", 1000)}, 3000)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			prepared := prepareEvent(longEvent(t, fields))
+
+			if len(prepared) > config.MaxEventBytes {
+				t.Fatalf("%d bytes", len(prepared))
+			}
+
+			var event map[string]any
+
+			if err := json.Unmarshal(prepared, &event); err != nil {
+				t.Fatal(err)
+			}
+
+			if got := truncated(event); !strings.HasSuffix(got, "size]") {
+				t.Errorf("truncated %s", got)
+			}
+
+			if event["event_id"] == nil || event["level"] == nil {
+				t.Errorf("small error fields lost: %.300s", prepared)
+			}
+
+			if name == "exceptions" && !strings.Contains(string(prepared), `"Error299"`) {
+				t.Error("the outermost error lost")
+			}
+		})
 	}
 }
 

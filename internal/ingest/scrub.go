@@ -67,7 +67,8 @@ func isSensitiveKey(key string) bool {
 	sensitive := namesSecret(key)
 
 	if len(key) <= maxKnownKeyLength && knownKeyCount.Load() < maxKnownKeys {
-		if _, loaded := knownKeys.LoadOrStore(key, sensitive); !loaded {
+		// A copy: the key may be a slice of a large text.
+		if _, loaded := knownKeys.LoadOrStore(strings.Clone(key), sensitive); !loaded {
 			knownKeyCount.Add(1)
 		}
 	}

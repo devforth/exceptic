@@ -13,30 +13,79 @@ import (
 	"github.com/devforth/exceptic/internal/sentry"
 )
 
-// Fingerprint returns the grouping hash of the event: 32 hex characters.
+// maxFingerprintValues: the custom fingerprint values grouping reads. SDKs
+// send a few; each "{{ default }}" stands for all default components.
+const maxFingerprintValues = 64
+
+// Fingerprint returns the grouping hash of the event: 32 hex characters, the
+// hash of its Components joined by newlines.
 func Fingerprint(event *sentry.Event) string {
-	sum := sha256.Sum256([]byte(strings.Join(Components(event), "\n")))
-	return hex.EncodeToString(sum[:16])
+	hash := sha256.New()
+
+	var buffer []byte
+
+	first := true
+
+	eachComponent(event, func(component string) {
+		buffer = buffer[:0]
+
+		if !first {
+			buffer = append(buffer, '\n')
+		}
+
+		first = false
+
+		buffer = append(buffer, component...)
+		hash.Write(buffer)
+	})
+
+	return hex.EncodeToString(hash.Sum(nil)[:16])
 }
 
 // Components returns the values the fingerprint is built from.
 // Exported so tests and, later, the UI can show why events were grouped.
 func Components(event *sentry.Event) []string {
-	if len(event.Fingerprint) == 0 {
-		return defaultComponents(event)
-	}
+	var components []string
 
-	components := []string{"custom"}
-
-	for _, value := range event.Fingerprint {
-		if isDefaultPlaceholder(value) {
-			components = append(components, defaultComponents(event)...)
-		} else {
-			components = append(components, fingerprintValue(event, value))
-		}
-	}
+	eachComponent(event, func(component string) {
+		components = append(components, component)
+	})
 
 	return components
+}
+
+// eachComponent calls each with the components in order; the default ones
+// are built once, however many "{{ default }}" stand for them.
+func eachComponent(event *sentry.Event, each func(string)) {
+	if len(event.Fingerprint) == 0 {
+		for _, component := range defaultComponents(event) {
+			each(component)
+		}
+
+		return
+	}
+
+	each("custom")
+
+	var defaults []string
+
+	messages := &eventMessages{event: event}
+
+	for _, value := range event.Fingerprint[:min(len(event.Fingerprint), maxFingerprintValues)] {
+		if !isDefaultPlaceholder(value) {
+			each(fingerprintValue(event, messages, value))
+
+			continue
+		}
+
+		if defaults == nil {
+			defaults = defaultComponents(event)
+		}
+
+		for _, component := range defaults {
+			each(component)
+		}
+	}
 }
 
 func isDefaultPlaceholder(value string) bool {
@@ -246,11 +295,11 @@ var (
 	// Hex content hashes: webpack [contenthash] (main.3f2a1b9c.js), Next.js and
 	// Turbopack chunks (page-0123456789abcdef.js, src_app_page_1a2b3c4d._.js).
 	hexHashRe = regexp.MustCompile(`[._-][0-9a-fA-F]{8,}\b`)
-	// Rollup 4 / Vite 5+ chunk hashes: 8 base64url characters after "-" or "."
-	// (index-BbtQ7Ui0.js, SvelteKit scheduler.BvLojk_z.js, Astro Counter.BkGx5dAS.js).
-	rollupHashRe = regexp.MustCompile(`[.-]([A-Za-z0-9_-]{8})$`)
-	extensionRe  = regexp.MustCompile(`\.[A-Za-z0-9]+$`)
 )
+
+// Rollup 4 / Vite 5+ chunk hashes: 8 base64url characters after "-" or "."
+// (index-BbtQ7Ui0.js, SvelteKit scheduler.BvLojk_z.js, Astro Counter.BkGx5dAS.js).
+const rollupHashLength = 8
 
 // normalizeFilename drops what changes between deploys and environments:
 // the origin of browser URLs (localhost vs production domain), query strings,
@@ -274,25 +323,45 @@ func normalizeFilename(filename string) string {
 }
 
 // stripRollupHash removes the hash nearest the end that only extensions follow
-// (app.Settings.BkGx5dAS.js keeps app.Settings).
+// (app.Settings.BkGx5dAS.js keeps app.Settings); each extension is read once.
 func stripRollupHash(filename string) string {
 	end := len(filename)
 
 	for {
 		head := filename[:end]
+		start := len(head) - rollupHashLength
 
-		if match := rollupHashRe.FindStringSubmatchIndex(head); match != nil && looksLikeHash(head[match[2]:match[3]]) {
-			return head[:match[0]] + filename[end:]
+		if start > 0 && (head[start-1] == '.' || head[start-1] == '-') && isHashText(head[start:]) && looksLikeHash(head[start:]) {
+			return head[:start-1] + filename[end:]
 		}
 
-		extension := extensionRe.FindStringIndex(head)
+		dot := len(head)
 
-		if extension == nil {
+		for dot > 0 && isAlphanumeric(head[dot-1]) {
+			dot--
+		}
+
+		if dot == len(head) || dot == 0 || head[dot-1] != '.' {
 			return filename
 		}
 
-		end = extension[0]
+		end = dot - 1
 	}
+}
+
+func isAlphanumeric(character byte) bool {
+	return character >= '0' && character <= '9' || character >= 'A' && character <= 'Z' || character >= 'a' && character <= 'z'
+}
+
+// isHashText is base64url text.
+func isHashText(text string) bool {
+	for index := range len(text) {
+		if !isAlphanumeric(text[index]) && text[index] != '_' && text[index] != '-' {
+			return false
+		}
+	}
+
+	return true
 }
 
 // looksLikeHash keeps words: a hash has a digit or an uppercase letter after

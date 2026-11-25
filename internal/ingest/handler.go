@@ -33,7 +33,7 @@ func newHandler(logger *slog.Logger, settings *config.Config, projects config.Pr
 		projects: projects,
 		cors:     newCORS(settings.AllowedOrigins),
 		now:      time.Now,
-		reading:  newReadBudget(MaxReadingBytes),
+		reading:  newReadBudget(MaxReadingBytes, MaxProjectReadingBytes),
 		dropped:  newDropCounter(logger),
 	}
 

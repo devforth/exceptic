@@ -19,9 +19,35 @@ import (
 // never dropped, after credentials are removed, so no secret is stored cut
 // in half.
 
-// limitLog cuts a log's body and attributes to their limits.
+// A log's ids (32 and 16 hex characters as SDKs send them), its attribute
+// names and types are cut to these.
+const (
+	maxLogIDBytes            = 64
+	maxLogAttributeNameBytes = 256
+	maxLogAttributeTypeBytes = 32
+)
+
+// limitLog cuts a log's body, ids and attributes to their limits.
 func limitLog(record *sentry.Log) {
 	record.Body = textutil.ShortenBytes(record.Body, config.MaxLogBodyBytes)
+	record.TraceID = textutil.ShortenBytes(record.TraceID, maxLogIDBytes)
+	record.SpanID = textutil.ShortenBytes(record.SpanID, maxLogIDBytes)
+
+	// Of names cut alike, the first by name stays.
+	for _, name := range slices.SortedFunc(maps.Keys(record.Attributes), compareAttributes) {
+		attribute := record.Attributes[name]
+		attribute.Type = textutil.ShortenBytes(attribute.Type, maxLogAttributeTypeBytes)
+
+		if len(name) > maxLogAttributeNameBytes {
+			delete(record.Attributes, name)
+
+			if name = textutil.ShortenBytes(name, maxLogAttributeNameBytes); hasAttribute(record, name) {
+				continue
+			}
+		}
+
+		record.Attributes[name] = attribute
+	}
 
 	if len(record.Attributes) > config.MaxLogAttributes {
 		for _, name := range slices.SortedFunc(maps.Keys(record.Attributes), compareAttributes)[config.MaxLogAttributes:] {
@@ -35,6 +61,12 @@ func limitLog(record *sentry.Log) {
 			record.Attributes[name] = limitAttribute(attribute)
 		}
 	}
+}
+
+func hasAttribute(record *sentry.Log, name string) bool {
+	_, ok := record.Attributes[name]
+
+	return ok
 }
 
 // compareAttributes orders what a capped log keeps: the parent span (logs tie
@@ -91,7 +123,8 @@ func limitAttribute(attribute sentry.Attribute) sentry.Attribute {
 
 // The cuts of an event, in the order they are tried: cutStrings always,
 // then one more of the others while the event is over config.MaxEventBytes,
-// least useful first. cutOther keeps only store.ErrorFields and contexts.
+// least useful first. cutOther keeps only store.ErrorFields and contexts;
+// cutSize, the last resort, leaves out of those what does not fit (fitted).
 const (
 	cutStrings = iota
 	cutBreadcrumbs
@@ -101,11 +134,12 @@ const (
 	cutFrameVars
 	cutFrameContext
 	cutOther
+	cutSize
 	cutCount
 )
 
 // cutNames are what sentry.TruncatedField lists (docs/configuration.md).
-var cutNames = [cutCount]string{"strings", "breadcrumbs", "extra", "request.data", "contexts", "frame_vars", "frame_context", "other"}
+var cutNames = [cutCount]string{"strings", "breadcrumbs", "extra", "request.data", "contexts", "frame_vars", "frame_context", "other", "size"}
 
 // keptContexts are the contexts cutContexts keeps: the runtime and where the
 // event happened in a trace.
@@ -141,6 +175,16 @@ func truncateEvent(event []byte, earlier []string) []byte {
 			return event
 		}
 
+		cut := bytes.TrimRight(output.Bytes(), "\n")
+		last := level == cutCount-1
+
+		if budget := config.MaxEventBytes - truncatedRoom; last && len(cut) > budget {
+			if fit, ok := fitted(cut, budget, maxFitDepth); ok {
+				cut = fit
+				cutter.done[cutSize] = true
+			}
+		}
+
 		var names []string
 
 		for step, done := range cutter.done {
@@ -148,8 +192,6 @@ func truncateEvent(event []byte, earlier []string) []byte {
 				names = append(names, cutNames[step])
 			}
 		}
-
-		last := level == cutCount-1
 
 		if len(names) == 0 {
 			if len(event) <= config.MaxEventBytes || last {
@@ -159,12 +201,131 @@ func truncateEvent(event []byte, earlier []string) []byte {
 			continue
 		}
 
-		if cut := withTruncated(bytes.TrimRight(output.Bytes(), "\n"), slices.Concat(earlier, names)); len(cut) <= config.MaxEventBytes || last {
-			return cut
+		if result := withTruncated(cut, slices.Concat(earlier, names)); len(result) <= config.MaxEventBytes || last {
+			return result
 		}
 	}
 
 	return unchanged()
+}
+
+// truncatedRoom is more than sentry.TruncatedField with every cut takes.
+const truncatedRoom = 1 << 10
+
+// maxFitDepth: how deep fitted cuts into a value that does not fit whole;
+// deeper ones that do not fit are left out.
+const maxFitDepth = 8
+
+// fitted is a JSON value in at most budget bytes, false when nothing of it
+// fits: an object keeps whole the members that fit, smallest first, then a
+// cut of the others; a list its newest elements that fit whole, or a cut of
+// the newest when none does.
+func fitted(value jsontext.Value, budget, depth int) (jsontext.Value, bool) {
+	if len(value) <= budget {
+		return value, true
+	}
+
+	if depth == 0 || budget < len("{}") {
+		return nil, false
+	}
+
+	switch value.Kind() {
+	case '{':
+		return fittedObject(value, budget, depth)
+	case '[':
+		return fittedList(value, budget, depth)
+	}
+
+	return nil, false
+}
+
+func fittedObject(value jsontext.Value, budget, depth int) (jsontext.Value, bool) {
+	decoder := newTokenDecoder(value)
+
+	if _, err := decoder.ReadToken(); err != nil {
+		return nil, false
+	}
+
+	var members [][2]jsontext.Value
+
+	for decoder.PeekKind() == '"' {
+		name, err := decoder.ReadValue()
+
+		if err != nil {
+			return nil, false
+		}
+
+		name = name.Clone() // a read value is valid only until the next read
+		member, err := decoder.ReadValue()
+
+		if err != nil {
+			return nil, false
+		}
+
+		members = append(members, [2]jsontext.Value{name, member.Clone()})
+	}
+
+	slices.SortStableFunc(members, func(first, second [2]jsontext.Value) int {
+		return cmp.Compare(len(first[0])+len(first[1]), len(second[0])+len(second[1]))
+	})
+
+	output := jsontext.Value{'{'}
+
+	for _, whole := range []bool{true, false} {
+		for index, member := range members {
+			// Room for a comma, the colon and the closing brace.
+			room := budget - len(output) - len(member[0]) - 3
+
+			if member[0] == nil || whole && len(member[1]) > room {
+				continue
+			}
+
+			if part, ok := fitted(member[1], room, depth-1); ok {
+				if len(output) > 1 {
+					output = append(output, ',')
+				}
+
+				output = append(append(append(output, member[0]...), ':'), part...)
+			}
+
+			members[index][0] = nil
+		}
+	}
+
+	return append(output, '}'), true
+}
+
+func fittedList(value jsontext.Value, budget, depth int) (jsontext.Value, bool) {
+	items, err := elements(newTokenDecoder(value))
+
+	if err != nil {
+		return nil, false
+	}
+
+	var kept [][]byte
+
+	used := len("[]")
+
+	for index := len(items) - 1; index >= 0; index-- {
+		room := budget - used - 1
+
+		if len(kept) > 0 && len(items[index]) > room {
+			break
+		}
+
+		part, ok := fitted(items[index], room, depth-1)
+
+		if !ok {
+			break
+		}
+
+		kept = append(kept, part)
+		used += len(part) + 1
+	}
+
+	slices.Reverse(kept)
+
+	return slices.Concat([]byte{'['}, bytes.Join(kept, []byte{','}), []byte{']'}), true
 }
 
 // withTruncated adds sentry.TruncatedField with names to an event the encoder wrote.
@@ -192,27 +353,31 @@ func (cutter *eventCutter) skip(cut int, decoder *jsontext.Decoder) (bool, error
 	return true, decoder.SkipValue()
 }
 
+// topLevel cuts the event's fields, their names read in any case as the
+// event parser reads them; contexts are a map, named exactly.
 func (cutter *eventCutter) topLevel(name string, decoder *jsontext.Decoder, encoder *jsontext.Encoder) (bool, error) {
-	if cutter.level >= cutOther && !store.ErrorFields[name] && name != "contexts" {
+	field := sentry.FoldedName(name)
+
+	if cutter.level >= cutOther && !store.ErrorFields[field] && field != "contexts" {
 		return cutter.skip(cutOther, decoder)
 	}
 
 	switch {
-	case name == "breadcrumbs" && cutter.level >= cutBreadcrumbs:
+	case field == "breadcrumbs" && cutter.level >= cutBreadcrumbs:
 		return true, member(name, decoder, encoder, cutter.breadcrumbs)
-	case name == "extra" && cutter.level >= cutExtra:
+	case field == "extra" && cutter.level >= cutExtra:
 		return cutter.skip(cutExtra, decoder)
-	case name == "request" && cutter.level >= cutRequestData && decoder.PeekKind() == '{':
+	case field == "request" && cutter.level >= cutRequestData && decoder.PeekKind() == '{':
 		return true, member(name, decoder, encoder, func(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 			return cutter.object(decoder, encoder, func(name string, decoder *jsontext.Decoder, _ *jsontext.Encoder) (bool, error) {
-				if name == "data" {
+				if sentry.FoldedName(name) == "data" {
 					return cutter.skip(cutRequestData, decoder)
 				}
 
 				return false, nil
 			})
 		})
-	case name == "contexts" && cutter.level >= cutContexts && decoder.PeekKind() == '{':
+	case field == "contexts" && cutter.level >= cutContexts && decoder.PeekKind() == '{':
 		return true, member(name, decoder, encoder, func(decoder *jsontext.Decoder, encoder *jsontext.Encoder) error {
 			return cutter.object(decoder, encoder, func(name string, decoder *jsontext.Decoder, _ *jsontext.Encoder) (bool, error) {
 				if !keptContexts[name] {
@@ -222,7 +387,7 @@ func (cutter *eventCutter) topLevel(name string, decoder *jsontext.Decoder, enco
 				return false, nil
 			})
 		})
-	case (name == "exception" || name == "threads" || name == "stacktrace") && cutter.level >= cutFrameVars:
+	case (field == "exception" || field == "threads" || field == "stacktrace") && cutter.level >= cutFrameVars:
 		return true, member(name, decoder, encoder, cutter.stack)
 	}
 
@@ -253,7 +418,7 @@ func (cutter *eventCutter) breadcrumbs(decoder *jsontext.Decoder, encoder *jsont
 		return newest(decoder, encoder)
 	case '{':
 		return cutter.object(decoder, encoder, func(name string, decoder *jsontext.Decoder, encoder *jsontext.Encoder) (bool, error) {
-			if name != "values" || decoder.PeekKind() != '[' {
+			if sentry.FoldedName(name) != "values" || decoder.PeekKind() != '[' {
 				return false, nil
 			}
 
@@ -270,7 +435,7 @@ func (cutter *eventCutter) stack(decoder *jsontext.Decoder, encoder *jsontext.En
 	switch decoder.PeekKind() {
 	case '{':
 		return cutter.object(decoder, encoder, func(name string, decoder *jsontext.Decoder, encoder *jsontext.Encoder) (bool, error) {
-			if cut, ok := frameCuts[name]; ok && cutter.level >= cut {
+			if cut, ok := frameCuts[sentry.FoldedName(name)]; ok && cutter.level >= cut {
 				return cutter.skip(cut, decoder)
 			}
 

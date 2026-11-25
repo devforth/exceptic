@@ -250,3 +250,27 @@ func TestFrameCapKeepsGrouping(t *testing.T) {
 		}
 	}
 }
+
+// The event parser reads field names in any case, and so do the caps.
+func TestCompactReadsNamesInAnyCase(t *testing.T) {
+	frames := strings.Repeat(`{"function":"f","in_app":true,"vars":{"a":1}},`, 400) + `{"function":"last","in_app":true}`
+	breadcrumbs := strings.Repeat(`{"message":"step"},`, 100) + `{"message":"last"}`
+	payload := `{"Exception":{"VALUES":[{"type":"E","Stacktrace":{"Frames":[` + frames + `]}}]},"Breadcrumbs":{"Values":[` + breadcrumbs + `]}}`
+	event, err := sentry.ParseEvent(prepareEvent([]byte(payload)), "", time.Now())
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(event.Exception) != 1 || event.Exception[0].Stacktrace == nil {
+		t.Fatalf("exception not read: %+v", event.Exception)
+	}
+
+	if count := len(event.Exception[0].Stacktrace.Frames); count != oldestFrames+newestFrames {
+		t.Errorf("%d frames kept", count)
+	}
+
+	if count := len(event.Breadcrumbs); count != maxBreadcrumbs {
+		t.Errorf("%d breadcrumbs kept", count)
+	}
+}

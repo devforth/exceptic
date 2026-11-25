@@ -25,9 +25,14 @@ const MaxBodyBytes = 20 << 20
 // MaxHeaderBytes caps the envelope header line, read before the key is known.
 const MaxHeaderBytes = 64 << 10
 
-// MaxReadingBytes caps the memory of all request bodies being read at once;
-// the bodies of one project may take half of it.
+// MaxReadingBytes caps the memory of all request bodies being read at once.
 const MaxReadingBytes = 4 * MaxBodyBytes
+
+// MaxProjectReadingBytes caps the bodies of one project: half of
+// MaxReadingBytes, or the most one body holds while it is read when more
+// (a brotli body read whole, its window and its output), so any envelope
+// within the size limit can be read.
+const MaxProjectReadingBytes = max(MaxReadingBytes/2, 2*(MaxBodyBytes+1)+maxBrotliWindow)
 
 // BodyReadTimeout bounds reading a body, so a client that stops sending
 // does not keep its part of the budget.
@@ -111,8 +116,11 @@ func (body *requestBody) brotli(stream io.Reader, budget *readBudget, projectID 
 	return brotli.NewReader(bytes.NewReader(compressed)), nil
 }
 
+// maxBrotliWindow is the largest window a brotli stream declares.
+const maxBrotliWindow = 1 << 24
+
 // brotliWindow is the window size a brotli stream declares in its first byte
-// (RFC 7932, section 9.1), at most 16 MB.
+// (RFC 7932, section 9.1), at most maxBrotliWindow.
 func brotliWindow(first byte) int {
 	if first&1 == 0 {
 		return 1 << 16
@@ -241,8 +249,8 @@ type readBudget struct {
 	usedBy       map[int]int64
 }
 
-func newReadBudget(limit int64) *readBudget {
-	return &readBudget{limit: limit, projectLimit: limit / 2, usedBy: map[int]int64{}}
+func newReadBudget(limit, projectLimit int64) *readBudget {
+	return &readBudget{limit: limit, projectLimit: projectLimit, usedBy: map[int]int64{}}
 }
 
 func (budget *readBudget) reserve(projectID int, size int64) bool {

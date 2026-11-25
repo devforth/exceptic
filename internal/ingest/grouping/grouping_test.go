@@ -1,7 +1,12 @@
 package grouping
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -733,4 +738,138 @@ func TestExceptionGroups(t *testing.T) {
 				"stacktrace":{"frames":[{"filename":"jobs.py","function":"run_one","in_app":true,"context_line":"raise ValueError()"}]}}]}}`),
 		}},
 	})
+}
+
+// allocated is the bytes run allocates.
+func allocated(run func()) uint64 {
+	var before, after runtime.MemStats
+
+	runtime.ReadMemStats(&before)
+	run()
+	runtime.ReadMemStats(&after)
+
+	return after.TotalAlloc - before.TotalAlloc
+}
+
+// A deep exception group costs memory in proportion to its size, not its square.
+func TestDeepExceptionGroupStaysSmall(t *testing.T) {
+	values := make([]string, 2000)
+
+	for index := range values {
+		values[len(values)-1-index] = fmt.Sprintf(`{"type":"E","value":"v","mechanism":{"is_exception_group":%t,"exception_id":%d,"parent_id":%d}}`,
+			index == 0, index, index-1)
+	}
+
+	event := parse(t, `{"exception":{"values":[`+strings.Join(values, ",")+`]}}`)
+
+	if bytes := allocated(func() { Fingerprint(event) }); bytes > 32<<20 {
+		t.Errorf("a group 2000 deep allocated %d MB", bytes>>20)
+	}
+}
+
+// Each "{{ default }}" stands for the default components, which are not
+// built again for every one of them.
+func TestRepeatedDefaultStaysSmall(t *testing.T) {
+	exceptions := make([]string, 2000)
+
+	for index := range exceptions {
+		exceptions[index] = fmt.Sprintf(`{"type":"E","value":"v%d"}`, index)
+	}
+
+	defaults, _ := json.Marshal(slices.Repeat([]string{"{{ default }}"}, 5000))
+	event := parse(t, `{"fingerprint":`+string(defaults)+`,"exception":{"values":[`+strings.Join(exceptions, ",")+`]}}`)
+
+	if bytes := allocated(func() { Fingerprint(event) }); bytes > 32<<20 {
+		t.Errorf("5000 defaults allocated %d MB", bytes>>20)
+	}
+}
+
+// Fingerprint values are compared with the errors' texts in time that does
+// not grow with both counts at once.
+func TestManyFingerprintValuesStayFast(t *testing.T) {
+	values, _ := json.Marshal(slices.Repeat([]string{"a"}, 20000))
+	exceptions := strings.Repeat(`{"type":"E","value":"b"},`, 50000)
+	few := parse(t, `{"fingerprint":`+string(values)+`,"exception":{"values":[{"type":"E","value":"b"}]}}`)
+	many := parse(t, `{"fingerprint":`+string(values)+`,"exception":{"values":[`+exceptions+`{"type":"E","value":"b"}]}}`)
+
+	started := time.Now()
+
+	Fingerprint(few)
+
+	single := time.Since(started)
+	started = time.Now()
+
+	Fingerprint(many)
+
+	if took := time.Since(started); took > 10*single+50*time.Millisecond {
+		t.Errorf("50000 errors: %s, one error %s", took, single)
+	}
+}
+
+// Stripping a bundle hash takes time in proportion to the name's length,
+// however many dots it has.
+func TestRollupHashStaysLinear(t *testing.T) {
+	short := strings.Repeat("a.", 1000) + "js"
+	long := strings.Repeat("a.", 8000) + "js"
+	started := time.Now()
+
+	normalizeFilename(short)
+
+	single := time.Since(started)
+	started = time.Now()
+
+	normalizeFilename(long)
+
+	if took := time.Since(started); took > 20*single+10*time.Millisecond {
+		t.Errorf("8000 dots: %s, 1000 dots %s", took, single)
+	}
+}
+
+// stripRollupHash strips what the two regexps it replaced stripped.
+func TestRollupHashMatchesTheRegexps(t *testing.T) {
+	rollupHash := regexp.MustCompile(`[.-]([A-Za-z0-9_-]{8})$`)
+	extension := regexp.MustCompile(`\.[A-Za-z0-9]+$`)
+	reference := func(filename string) string {
+		end := len(filename)
+
+		for {
+			head := filename[:end]
+
+			if match := rollupHash.FindStringSubmatchIndex(head); match != nil && looksLikeHash(head[match[2]:match[3]]) {
+				return head[:match[0]] + filename[end:]
+			}
+
+			found := extension.FindStringIndex(head)
+
+			if found == nil {
+				return filename
+			}
+
+			end = found[0]
+		}
+	}
+
+	for _, filename := range []string{
+		"", ".", "..", "a.", ".js", "index-BbtQ7Ui0.js", "index-BbtQ7Ui0", "x.BbtQ7Ui0.min.js", "a-BbtQ7Ui0.js.map",
+		"-BbtQ7Ui0", "aBbtQ7Ui0.js", "a_BbtQ7Ui0.js", "a.Bbt-Q7U_.js", "a.b.c", "a.é.js", "a-BbtQ7Ui0.é.js",
+		"a-BbtQ7Ui0.j_s", "a-BbtQ7Ui0..js", "a--BbtQ7Ui0.js", "dist.routes:index-Settings", "a.12345678.js",
+	} {
+		if got, want := stripRollupHash(filename), reference(filename); got != want {
+			t.Errorf("stripRollupHash(%q) = %q, want %q", filename, got, want)
+		}
+	}
+}
+
+// The fingerprint is the hash of the components joined by newlines, empty ones too.
+func TestFingerprintHashesTheComponents(t *testing.T) {
+	for _, event := range []*sentry.Event{
+		parse(t, `{"fingerprint":["","{{ default }}",""],"message":"hi"}`),
+		fixtureEvent(t, "node-event-message"),
+	} {
+		sum := sha256.Sum256([]byte(strings.Join(Components(event), "\n")))
+
+		if got, want := Fingerprint(event), hex.EncodeToString(sum[:16]); got != want {
+			t.Errorf("fingerprint %s, want %s for %q", got, want, Components(event))
+		}
+	}
 }
