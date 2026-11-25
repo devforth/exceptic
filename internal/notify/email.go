@@ -35,6 +35,7 @@ var emailTemplates = template.Must(template.New("email.html").Funcs(template.Fun
 	"projectColor": projectColor,
 	"levelStyle":   levelStyle,
 	"excerpt":      func(text string) string { return textutil.Shorten(text, exceptionLength) },
+	"link":         func(url, text string) emailLink { return emailLink{URL: url, Text: text} },
 }).ParseFS(emailTemplateFiles, "templates/email.html"))
 
 // levelStyles color level badges in an email, by config.ShownLevel.
@@ -83,8 +84,46 @@ const (
 
 type fact struct {
 	Name, Value string
-	Badge       bool // the value is a level, shown as its badge
+	Show        string // "level" or "project": the value shown as its badge
 }
+
+// emailLink is a button of an email.
+type emailLink struct{ URL, Text string }
+
+// emailFrame is what marks an email around its content: the tag over the
+// card, the color of the tag and of the card's top, the card's width.
+type emailFrame struct {
+	Label             string
+	Color, Background string
+	Width             int
+}
+
+// emailTones are the colors of a frame by tone.
+var emailTones = map[string][2]string{
+	"error":   {"#dc2626", "#fdecec"},
+	"warning": {"#d97706", "#fdf3e1"},
+	"success": {"#16a34a", "#e8f6ed"},
+	"info":    {"#4f46e5", "#eef0ff"},
+}
+
+// Widths of the card: an issue shows code, the others a short text.
+const (
+	issueEmailWidth = 720
+	shortEmailWidth = 600
+)
+
+func frame(label, tone string, width int) emailFrame {
+	colors, ok := emailTones[tone]
+
+	if !ok {
+		colors = emailTones["info"]
+	}
+
+	return emailFrame{Label: label, Color: colors[0], Background: colors[1], Width: width}
+}
+
+// IsNumeric says whether a column holds numbers, aligned right.
+func (table NoticeTable) IsNumeric(column int) bool { return slices.Contains(table.Numeric, column) }
 
 type breadcrumbLine struct{ Time, Category, Message string }
 
@@ -95,6 +134,8 @@ type emailView struct {
 	Event        *sentry.Event
 	Facts        []fact
 	Breadcrumbs  []breadcrumbLine
+	Frame        emailFrame
+	To           string // set by send
 	Heading      string
 	Summary      Summary
 	Notice       Notice
@@ -179,11 +220,12 @@ func (emailView) Tags(tags sentry.Tags) []fact {
 }
 
 func (email Email) Send(ctx context.Context, notification Notification) error {
-	view := emailView{Kind: notification.Kind.label(), Notification: notification, Event: notification.Event}
+	tone := map[Kind]string{NewIssue: "error", Regression: "warning"}[notification.Kind]
+	view := emailView{Kind: notification.Kind.label(), Notification: notification, Event: notification.Event, Frame: frame(notification.Kind.label(), tone, issueEmailWidth)}
 
 	for _, item := range []fact{
-		{Name: "Project", Value: notification.Project},
-		{Name: "Level", Value: notification.Level, Badge: true},
+		{Name: "Project", Value: notification.Project, Show: "project"},
+		{Name: "Level", Value: notification.Level, Show: "level"},
 		{Name: "Environment", Value: notification.Environment},
 		{Name: "Release", Value: notification.Release},
 		{Name: "Time", Value: notification.Time.UTC().Format("2006-01-02 15:04:05 UTC")},
@@ -229,7 +271,7 @@ func (email Email) Send(ctx context.Context, notification Notification) error {
 }
 
 func (email Email) SendSummary(ctx context.Context, summary Summary) error {
-	view := emailView{Heading: summary.heading(), Summary: summary, Note: summary.note()}
+	view := emailView{Heading: summary.heading(), Summary: summary, Note: summary.note(), Frame: frame("Summary", "info", shortEmailWidth)}
 
 	var text strings.Builder
 
@@ -259,7 +301,7 @@ func (email Email) SendNotice(ctx context.Context, notice Notice) error {
 		text += "\n" + notice.URL + "\n"
 	}
 
-	return email.send(ctx, "["+appNameOr(email.AppName)+"] "+notice.Heading, text, "notice", emailView{Heading: notice.Heading, Notice: notice})
+	return email.send(ctx, "["+appNameOr(email.AppName)+"] "+notice.Heading, text, "notice", emailView{Heading: notice.Heading, Notice: notice, Frame: frame(cmp.Or(notice.Label, "Notice"), notice.Tone, shortEmailWidth)})
 }
 
 // plainText is the text/plain part for clients that do not show HTML.
@@ -309,7 +351,7 @@ type attachment struct {
 func (email Email) send(ctx context.Context, subject, text, templateName string, view emailView, attachments ...attachment) error {
 	var htmlBody bytes.Buffer
 
-	view.AppName = appNameOr(email.AppName)
+	view.AppName, view.To = appNameOr(email.AppName), email.To
 
 	if err := emailTemplates.ExecuteTemplate(&htmlBody, templateName, view); err != nil {
 		return fmt.Errorf("email template: %w", err)
@@ -333,7 +375,7 @@ func (email Email) SendVerificationCode(ctx context.Context, code string, validF
 		"Enter it in %s within %s. If you did not add this address, ignore this email.\n",
 		code, appNameOr(email.AppName), config.HumanDuration(validFor.Round(time.Minute)))
 
-	view := emailView{Code: code, ValidFor: config.HumanDuration(validFor.Round(time.Minute))}
+	view := emailView{Code: code, ValidFor: config.HumanDuration(validFor.Round(time.Minute)), Frame: frame("Confirm address", "info", shortEmailWidth)}
 
 	return email.send(ctx, subject, text, "verification", view)
 }

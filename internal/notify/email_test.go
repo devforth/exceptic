@@ -409,3 +409,35 @@ func TestEveryLevelHasStyle(t *testing.T) {
 		}
 	}
 }
+
+// A cleanup notice mails a table: steps with their short names, projects as
+// badges in their colors, counts right-aligned; under a card tagged with its
+// label and the address it went to.
+func TestNoticeEmail(t *testing.T) {
+	settings, sessions := fixtures.FakeSMTP(t)
+	run := store.CleanupRun{SizeBefore: 2 << 30, SizeAfter: 3 << 29, Limit: 2 << 30, Duration: 29 * time.Second,
+		Steps: []store.CleanupStep{{Number: 5, Projects: map[int]*store.CleanupCounts{2: {Logs: 25458}}}}}
+	notice := CleanupNotice(run, map[int]config.Project{2: {ID: 2, Name: "frontend", Color: "#db2777"}}, map[int]string{5: "Logs below error"},
+		"all projects", "https://errors.example.com/projects/cleanups")
+
+	if err := (Email{SMTP: settings, To: "ops@example.com", AppName: "Exceptic"}).SendNotice(context.Background(), notice); err != nil {
+		t.Fatal(err)
+	}
+
+	subject, text, htmlPart := fixtures.ParseEmail(t, (<-sessions).Data)
+
+	if subject != "[Exceptic] Cleanup done: all projects" {
+		t.Errorf("subject %q", subject)
+	}
+
+	for _, want := range []string{">Cleanup done</span>", "Logs below error", "border:1px solid #db2777", ">frontend</span>", `align="right"`, ">25,458 logs</td>",
+		">2.0 GB</div>", "https://errors.example.com/projects/cleanups", "Sent by Exceptic to ops@example.com."} {
+		if !strings.Contains(htmlPart, want) {
+			t.Errorf("the HTML lacks %q", want)
+		}
+	}
+
+	if !strings.Contains(text, "5     frontend  25,458 logs") {
+		t.Errorf("the text part:\n%s", text)
+	}
+}

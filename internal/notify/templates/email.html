@@ -1,88 +1,99 @@
-{{/* Email clients ignore <style> blocks and classes, so every style is inline. */}}
+{{/* Email clients ignore <style> blocks and classes, so every style is inline; the layout is tables, which every client lays out. */}}
 
-{{define "level"}}<span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:12px;font-weight:600;{{levelStyle .}}">{{.}}</span>{{end}}
+{{define "level"}}<span style="display:inline-block;padding:1px 7px;border-radius:4px;font-size:12px;font-weight:600;line-height:18px;{{levelStyle .}}">{{.}}</span>{{end}}
 
 {{/* The project as an outlined badge in its color, like in the UI. */}}
-{{define "project"}}{{$color := projectColor .ProjectColor}}<span style="display:inline-block;padding:0 7px;border:1px solid {{$color}};border-radius:10px;font-size:11px;font-weight:600;text-transform:capitalize;letter-spacing:0;white-space:nowrap;color:{{$color}}">{{.Project}}</span>{{end}}
+{{define "project"}}{{$color := projectColor .ProjectColor}}<span style="display:inline-block;padding:1px 8px;border:1px solid {{$color}};border-radius:10px;font-size:12px;font-weight:600;line-height:18px;white-space:nowrap;color:{{$color}}">{{.Project}}</span>{{end}}
 
-{{define "notification"}}<!doctype html>
-<html><body style="margin:0;padding:24px;background:#f7f7f8;font:14px/1.5 -apple-system,'Segoe UI',sans-serif;color:#1d1d22">
-<div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid #e3e3e8;border-radius:8px;padding:24px">
-  <p style="margin:0 0 4px;color:#6b6b76;font-size:12px;text-transform:uppercase;letter-spacing:.04em">{{.Kind}} · {{template "project" .Notification}} · {{template "level" .Notification.Level}}</p>
-  <h1 style="margin:0 0 6px;font-size:18px;word-break:break-word">{{.Notification.Title}}</h1>
-  {{with .Notification.Culprit}}<p style="margin:0 0 16px;color:#6b6b76">{{.}}</p>{{end}}
+{{define "button"}}<table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0 0"><tr><td style="border-radius:6px;background:#4f46e5"><a href="{{.URL}}" style="display:inline-block;padding:10px 18px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none">{{.Text}}</a></td></tr></table>{{end}}
 
-  {{with $.Reference .Notification}}<p style="margin:12px 0 20px"><code style="padding:6px 10px;background:#f1f1f4;border-radius:4px;word-break:break-word;user-select:all">{{.}}</code></p>{{end}}
+{{define "heading"}}<h2 style="margin:28px 0 0;font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#64646f">{{.}}</h2>{{end}}
 
-  {{with .Notification.IssueURL}}<p style="margin:0 0 20px"><a href="{{.}}" style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;padding:8px 14px;border-radius:6px">Open issue</a></p>{{end}}
+{{/* The page around every email: short ones stand in the middle of the screen where the client allows it. */}}
+{{define "open"}}<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"></head>
+<body style="margin:0;padding:0;background:#eeeef3;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1d1d22;-webkit-text-size-adjust:100%">
+<table role="presentation" width="100%" height="100%" cellpadding="0" cellspacing="0" style="width:100%;height:100%;min-height:100vh;background:#eeeef3"><tr><td align="center" valign="middle" style="padding:32px 16px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;max-width:{{.Frame.Width}}px">
+<tr><td style="padding:0 4px 12px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+<td style="font-size:14px;font-weight:700;color:#1d1d22"><span style="display:inline-block;width:10px;height:10px;margin-right:7px;border-radius:3px;background:#4f46e5"></span>{{.AppName}}</td>
+<td align="right"><span style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:12px;font-weight:600;color:{{.Frame.Color}};background:{{.Frame.Background}}">{{.Frame.Label}}</span></td></tr></table></td></tr>
+<tr><td style="background:#ffffff;border:1px solid #e4e4ea;border-top:4px solid {{.Frame.Color}};border-radius:10px;padding:28px 28px 30px">{{end}}
 
-  {{with .PromptFile}}<p style="margin:0 0 20px;padding:8px 12px;background:#eef2ff;border-radius:6px;color:#3730a3;font-size:13px">A prompt for a coding agent is attached: <b>{{.}}</b>. Paste it into your agent: it reproduces and explains the error without changing code, so you can check it before asking for a fix.</p>{{end}}
-
-  <table style="border-collapse:collapse;margin:0 0 20px;font-size:13px">
-    {{range .Facts}}<tr><td style="padding:2px 16px 2px 0;color:#6b6b76;white-space:nowrap">{{.Name}}</td><td style="padding:2px 0;word-break:break-word">{{if .Badge}}{{template "level" .Value}}{{else}}{{.Value}}{{end}}</td></tr>{{end}}
-  </table>
-
-  {{with .Event}}
-  {{range $index, $exception := $.Exceptions .Exception}}
-  <h2 style="margin:20px 0 6px;font-size:15px">{{if gt $index 0}}<span style="color:#6b6b76">Caused by</span> {{end}}<span style="color:#c62828">{{or .Type "Error"}}</span></h2>
-  {{with .Value}}<p style="margin:0 0 8px;font-family:Menlo,Consolas,monospace;font-size:13px;white-space:pre-wrap;word-break:break-word">{{.}}</p>{{end}}
-  {{range $.InAppFrames .Stacktrace}}
-  <div style="margin:0 0 8px">
-    <div style="font-family:Menlo,Consolas,monospace;font-size:12px"><b>{{or .Function "<anonymous>"}}</b> <span style="color:#6b6b76">{{or .Filename .Module}}{{if .Lineno}}:{{.Lineno}}{{end}}</span></div>
-    {{with .SourceLines}}<pre style="margin:4px 0 0;padding:6px 0;background:#f1f1f4;border-radius:4px;font-size:12px;overflow:auto">{{range .}}<span style="display:block;padding:0 8px;{{if .Current}}background:#fff3c4;{{end}}"><span style="color:#9a9aa6">{{printf "%4d" .Number}}</span>  {{.Text}}</span>{{end}}</pre>{{end}}
-  </div>
-  {{end}}
-  {{end}}
-
-  {{if and (not .Exception) .Message}}<pre style="padding:10px;background:#f1f1f4;border-radius:4px;white-space:pre-wrap">{{excerpt (print .Message)}}</pre>{{end}}
-
-  {{with $.Breadcrumbs}}
-  <h2 style="margin:20px 0 6px;font-size:15px">Last breadcrumbs</h2>
-  <table style="border-collapse:collapse;width:100%;font-size:12px">
-    {{range .}}<tr><td style="padding:2px 10px 2px 0;color:#6b6b76;white-space:nowrap;vertical-align:top">{{.Time}}</td><td style="padding:2px 10px 2px 0;white-space:nowrap;vertical-align:top">{{.Category}}</td><td style="padding:2px 0;font-family:Menlo,Consolas,monospace;word-break:break-word">{{.Message}}</td></tr>{{end}}
-  </table>
-  {{end}}
-
-  {{with $.Tags .Tags}}
-  <h2 style="margin:20px 0 6px;font-size:15px">Tags</h2>
-  <p style="margin:0">{{range .}}<span style="display:inline-block;margin:0 6px 6px 0;padding:1px 8px;border:1px solid #e3e3e8;border-radius:10px;font-size:12px">{{.Name}}: <b>{{.Value}}</b></span>{{end}}</p>
-  {{end}}
-  {{end}}
-
-
-  <p style="margin:24px 0 0;color:#9a9aa6;font-size:12px">Sent by {{.AppName}} to a notification connection of this address.</p>
-</div>
+{{define "close"}}</td></tr>
+<tr><td style="padding:14px 4px 0;font-size:12px;line-height:1.5;color:#9a9aa6;text-align:center">Sent by {{.AppName}} to {{.To}}.{{if not .Code}}<br>Change what it sends on the Notifications page.{{end}}</td></tr>
+</table>
+</td></tr></table>
 </body></html>{{end}}
 
-{{define "summary"}}<!doctype html>
-<html><body style="margin:0;padding:24px;background:#f7f7f8;font:14px/1.5 -apple-system,'Segoe UI',sans-serif;color:#1d1d22">
-<div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid #e3e3e8;border-radius:8px;padding:24px">
-  <h1 style="margin:0 0 12px;font-size:18px">{{.Heading}}</h1>
-  <ul style="margin:0 0 12px;padding-left:20px">
-    {{range .Summary.Items}}<li style="margin:0 0 8px">{{template "project" .}} {{if .IssueURL}}<a href="{{.IssueURL}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}{{with $.Reference .}}<br><code style="font-size:12px;word-break:break-word;user-select:all">{{.}}</code>{{end}}</li>{{end}}
-  </ul>
-  <p style="margin:0;color:#6b6b76">{{.Note}}</p>
-</div>
-</body></html>{{end}}
+{{define "notification"}}{{template "open" .}}
+<h1 style="margin:0;font-size:21px;line-height:1.3;font-weight:650;word-break:break-word">{{.Notification.Title}}</h1>
+{{with .Notification.Culprit}}<p style="margin:6px 0 0;font-size:14px;line-height:1.5;color:#64646f;word-break:break-word">{{.}}</p>{{end}}
 
-{{define "notice"}}<!doctype html>
-<html><body style="margin:0;padding:24px;background:#f7f7f8;font:14px/1.5 -apple-system,'Segoe UI',sans-serif;color:#1d1d22">
-<div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid #e3e3e8;border-radius:8px;padding:24px">
-  <h1 style="margin:0 0 12px;font-size:18px">{{.Heading}}</h1>
-  {{range .Notice.Lines}}<p style="margin:0 0 8px">{{.}}</p>{{end}}
-  {{with .Notice.Table}}<table style="border-collapse:collapse;margin:8px 0 0;font-size:13px">
-    <tr>{{range .Columns}}<th style="text-align:left;padding:4px 16px 4px 0;border-bottom:1px solid #e3e3e8;color:#6b6b76;font-weight:600">{{.}}</th>{{end}}</tr>
-    {{range .Rows}}<tr>{{range .}}<td style="padding:4px 16px 4px 0;border-bottom:1px solid #f1f1f4;vertical-align:top">{{.}}</td>{{end}}</tr>{{end}}
-  </table>{{end}}
-  {{with .Notice.URL}}<p style="margin:16px 0 0"><a href="{{.}}" style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;padding:8px 14px;border-radius:6px">{{$.Notice.LinkText}}</a></p>{{end}}
-</div>
-</body></html>{{end}}
+{{with $.Reference .Notification}}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;margin:20px 0 0;border:1px solid #e4e4ea;border-radius:8px;border-collapse:separate;border-spacing:0;background:#f6f6f9"><tr><td style="padding:10px 12px;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-all;user-select:all">{{.}}</td></tr></table>{{end}}
+{{with .PromptFile}}<p style="margin:8px 0 0;font-size:12px;line-height:1.5;color:#64646f">Paste it into your coding agent, or open the attached <b>{{.}}</b>: a prompt that reproduces and explains the error without changing code, so you can check it before asking for a fix.</p>{{end}}
+{{with .Notification.IssueURL}}{{template "button" (link . "Open issue")}}{{end}}
 
-{{define "verification"}}<!doctype html>
-<html><body style="margin:0;padding:24px;background:#f7f7f8;font:14px/1.5 -apple-system,'Segoe UI',sans-serif;color:#1d1d22">
-<div style="max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e3e3e8;border-radius:8px;padding:24px">
-  <p style="margin:0 0 12px">Your code to confirm notifications to this address:</p>
-  <p style="margin:0 0 16px;font:700 28px/1.2 Menlo,Consolas,monospace;letter-spacing:.2em">{{.Code}}</p>
-  <p style="margin:0;color:#6b6b76">Enter it in {{.AppName}} within {{.ValidFor}}. If you did not add this address, ignore this email.</p>
-</div>
-</body></html>{{end}}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;margin:20px 0 0;border:1px solid #e4e4ea;border-radius:8px;border-collapse:separate;border-spacing:0">
+{{range $index, $fact := .Facts}}<tr><td width="140" style="padding:7px 12px;{{if $index}}border-top:1px solid #e4e4ea;{{end}}color:#64646f;font-size:13px;white-space:nowrap;vertical-align:top">{{.Name}}</td><td style="padding:7px 12px;{{if $index}}border-top:1px solid #e4e4ea;{{end}}font-size:14px;word-break:break-word">{{if eq .Show "level"}}{{template "level" .Value}}{{else if eq .Show "project"}}{{template "project" $.Notification}}{{else}}{{.Value}}{{end}}</td></tr>{{end}}
+</table>
+
+{{with .Event}}
+{{with $.Exceptions .Exception}}{{template "heading" "Exception"}}{{end}}
+{{range $index, $exception := $.Exceptions .Exception}}
+<div style="margin:20px 0 0;font-size:15px;font-weight:600">{{if gt $index 0}}<span style="color:#64646f;font-weight:400">Caused by</span> {{end}}<span style="color:#c62828">{{or .Type "Error"}}</span></div>
+{{with .Value}}<div style="margin:4px 0 0;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-word">{{.}}</div>{{end}}
+{{range $.InAppFrames .Stacktrace}}
+<div style="margin:10px 0 0;font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-word"><b>{{or .Function "<anonymous>"}}</b> <span style="color:#64646f">{{or .Filename .Module}}{{if .Lineno}}:{{.Lineno}}{{end}}</span></div>
+{{with .SourceLines}}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;margin:8px 0 0;border:1px solid #e4e4ea;border-radius:8px;border-collapse:separate;border-spacing:0;background:#f6f6f9"><tr><td style="padding:8px 0"><table role="presentation" cellpadding="0" cellspacing="0">{{range .}}<tr><td align="right" style="padding:1px 10px 1px 12px;color:#9a9aa6;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:nowrap;{{if .Current}}background:#fff3c4;{{end}}">{{.Number}}</td><td style="padding:1px 12px 1px 0;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre;{{if .Current}}background:#fff3c4;{{end}}">{{.Text}}</td></tr>{{end}}</table></td></tr></table>{{end}}
+{{end}}
+{{end}}
+
+{{if and (not .Exception) .Message}}{{template "heading" "Message"}}<div style="margin:8px 0 0;padding:10px 12px;border:1px solid #e4e4ea;border-radius:8px;background:#f6f6f9;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-word">{{excerpt (print .Message)}}</div>{{end}}
+
+{{with $.Breadcrumbs}}
+{{template "heading" "Last breadcrumbs"}}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;margin:12px 0 0;border:1px solid #e4e4ea;border-radius:8px;border-collapse:separate;border-spacing:0">
+<tr><th align="left" style="padding:8px 12px;background:#f6f6f9;border-bottom:1px solid #e4e4ea;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#64646f">Time</th><th align="left" style="padding:8px 12px;background:#f6f6f9;border-bottom:1px solid #e4e4ea;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#64646f">Category</th><th align="left" style="padding:8px 12px;background:#f6f6f9;border-bottom:1px solid #e4e4ea;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#64646f">Message</th></tr>
+{{range $index, $line := .}}<tr><td style="padding:7px 12px;{{if $index}}border-top:1px solid #e4e4ea;{{end}}color:#64646f;font-size:13px;white-space:nowrap;vertical-align:top">{{.Time}}</td><td style="padding:7px 12px;{{if $index}}border-top:1px solid #e4e4ea;{{end}}font-size:13px;white-space:nowrap;vertical-align:top">{{.Category}}</td><td style="padding:7px 12px;{{if $index}}border-top:1px solid #e4e4ea;{{end}}font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-word">{{.Message}}</td></tr>{{end}}
+</table>
+{{end}}
+
+{{with $.Tags .Tags}}
+{{template "heading" "Tags"}}
+<p style="margin:10px 0 0">{{range .}}<span style="display:inline-block;margin:0 6px 6px 0;padding:2px 9px;border:1px solid #e4e4ea;border-radius:10px;font-size:12px">{{.Name}}: <b>{{.Value}}</b></span>{{end}}</p>
+{{end}}
+{{end}}
+{{template "close" .}}{{end}}
+
+{{define "summary"}}{{template "open" .}}
+<h1 style="margin:0;font-size:21px;line-height:1.3;font-weight:650">{{.Heading}}</h1>
+<p style="margin:6px 0 0;font-size:14px;line-height:1.5;color:#64646f">{{.Note}}</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;margin:20px 0 0;border:1px solid #e4e4ea;border-radius:8px;border-collapse:separate;border-spacing:0">
+<tr><th align="left" style="padding:8px 12px;background:#f6f6f9;border-bottom:1px solid #e4e4ea;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#64646f">Project</th><th align="left" style="padding:8px 12px;background:#f6f6f9;border-bottom:1px solid #e4e4ea;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#64646f">Issue</th><th align="left" style="padding:8px 12px;background:#f6f6f9;border-bottom:1px solid #e4e4ea;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#64646f">Level</th></tr>
+{{range $index, $item := .Summary.Items}}<tr><td style="padding:9px 12px;{{if $index}}border-top:1px solid #e4e4ea;{{end}}vertical-align:top">{{template "project" .}}</td><td style="padding:9px 12px;{{if $index}}border-top:1px solid #e4e4ea;{{end}}font-size:14px;vertical-align:top;word-break:break-word">{{if .IssueURL}}<a href="{{.IssueURL}}" style="color:#4f46e5;text-decoration:none;font-weight:600">{{.Title}}</a>{{else}}{{.Title}}{{end}}{{with $.Reference .}}<div style="margin:4px 0 0;font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#64646f;word-break:break-all;user-select:all">{{.}}</div>{{end}}</td><td style="padding:9px 12px;{{if $index}}border-top:1px solid #e4e4ea;{{end}}vertical-align:top">{{template "level" .Level}}</td></tr>{{end}}
+</table>
+{{template "close" .}}{{end}}
+
+{{define "notice"}}{{template "open" .}}
+<h1 style="margin:0;font-size:21px;line-height:1.3;font-weight:650;word-break:break-word">{{.Notice.Heading}}</h1>
+{{if .Notice.Stats}}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;margin:20px 0 0;border:1px solid #e4e4ea;border-radius:8px;border-collapse:separate;border-spacing:0;background:#f6f6f9"><tr>
+{{range $index, $stat := .Notice.Stats}}<td style="padding:12px 14px;{{if $index}}border-left:1px solid #e4e4ea;{{end}}vertical-align:top"><div style="font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#64646f">{{.Name}}</div><div style="margin-top:2px;font-size:18px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap">{{.Value}}</div></td>{{end}}
+</tr></table>
+{{else}}{{range .Notice.Lines}}<p style="margin:6px 0 0;font-size:14px;line-height:1.5;color:#64646f">{{.}}</p>{{end}}{{end}}
+{{with .Notice.Table}}{{$table := .}}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;margin:20px 0 0;border:1px solid #e4e4ea;border-radius:8px;border-collapse:separate;border-spacing:0">
+<tr>{{range $column, $name := .Columns}}<th align="{{if $table.IsNumeric $column}}right{{else}}left{{end}}" style="padding:8px 12px;background:#f6f6f9;border-bottom:1px solid #e4e4ea;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#64646f">{{$name}}</th>{{end}}</tr>
+{{range $index, $row := .Rows}}<tr>{{range $column, $cell := $row}}<td align="{{if $table.IsNumeric $column}}right{{else}}left{{end}}" style="padding:9px 12px;{{if $index}}border-top:1px solid #e4e4ea;{{end}}font-size:14px;vertical-align:top;{{if $table.IsNumeric $column}}white-space:nowrap;font-variant-numeric:tabular-nums;{{end}}">{{if .Color}}{{$color := projectColor .Color}}<span style="display:inline-block;padding:1px 8px;border:1px solid {{$color}};border-radius:10px;font-size:12px;font-weight:600;line-height:18px;white-space:nowrap;color:{{$color}}">{{.Text}}</span>{{else if .Detail}}<span style="display:inline-block;min-width:18px;color:#9a9aa6;font-variant-numeric:tabular-nums">{{.Text}}</span> {{.Detail}}{{else}}{{.Text}}{{end}}</td>{{end}}</tr>{{end}}
+</table>
+{{end}}
+{{with .Notice.URL}}{{template "button" (link . $.Notice.LinkText)}}{{end}}
+{{template "close" .}}{{end}}
+
+{{define "verification"}}{{template "open" .}}
+<h1 style="margin:0;font-size:21px;line-height:1.3;font-weight:650">Confirm notifications to this address</h1>
+<p style="margin:6px 0 0;font-size:14px;line-height:1.5;color:#64646f">Enter this code in {{.AppName}} within {{.ValidFor}}.</p>
+<div style="margin:24px 0 0;padding:18px;border:1px solid #e4e4ea;border-radius:8px;background:#f6f6f9;text-align:center;font:700 32px/1.2 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.3em">{{.Code}}</div>
+<p style="margin:16px 0 0;font-size:13px;line-height:1.5;color:#64646f">If you did not add this address, ignore this email: nothing is sent here until it is confirmed.</p>
+{{template "close" .}}{{end}}

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
@@ -76,7 +77,8 @@ func TestNoticeTexts(t *testing.T) {
 			{Number: 6, Name: "events below error but the latest of their issue", Projects: map[int]*store.CleanupCounts{1: {Events: 1302}, 2: {Events: 231}}},
 		},
 	}
-	notice := CleanupNotice(run, map[int]string{1: "backend", 2: "frontend"}, "all projects", "https://errors.example.com/projects/cleanups")
+	projects := map[int]config.Project{1: {ID: 1, Name: "backend", Color: "#2563eb"}, 2: {ID: 2, Name: "frontend", Color: "#db2777"}}
+	notice := CleanupNotice(run, projects, map[int]string{5: "Logs below error", 6: "Events below error"}, "all projects", "https://errors.example.com/projects/cleanups")
 	text := notice.Heading + "\n" + strings.Join(notice.Lines, "\n") + "\n" + notice.Table.text(chatTableWidth)
 	want := `Cleanup done: all projects
 2.0 GB → 1.5 GB of 2.0 GB, 29s
@@ -93,7 +95,7 @@ Step  Project   Deleted
 		t.Errorf("run projects %v", projects)
 	}
 
-	dropped := DroppedNotice("frontend", "logs", "rate limit", 1200, "")
+	dropped := DroppedNotice(config.Project{ID: 2, Name: "frontend"}, "logs", "rate limit", 1200, "")
 
 	if dropped.Heading != "frontend: data dropped" || dropped.Table.text(chatTableWidth) != "What  Why         Count\nlogs  rate limit  1,200" {
 		t.Errorf("dropped notice %+v", dropped)
@@ -104,9 +106,9 @@ Step  Project   Deleted
 // cell onto more lines, the other columns padded alike; rows of several
 // lines are told apart by an empty line.
 func TestNoticeTableWraps(t *testing.T) {
-	table := NoticeTable{Columns: []string{"Step", "Project", "Deleted"}, Rows: [][]string{
-		{"5", "a project with a very long name", "25,458 logs"},
-		{"6", "backend", "1,302 events"},
+	table := NoticeTable{Columns: []string{"Step", "Project", "Deleted"}, Rows: [][]NoticeCell{
+		{{Text: "5"}, {Text: "a project with a very long name"}, {Text: "25,458 logs"}},
+		{{Text: "6"}, {Text: "backend"}, {Text: "1,302 events"}},
 	}}
 	want := `Step  Project               Deleted
 5     a project with a      25,458 logs

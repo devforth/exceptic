@@ -21,19 +21,37 @@ const kindNotice = "notice"
 // project's SDKs sent was dropped, or a cleanup run is done. It goes to the
 // connections that cover one of its projects, whatever their levels.
 type Notice struct {
+	// Label and Tone (success, warning) mark the email: its tag and the stripe of its card.
+	Label   string
+	Tone    string
 	Heading string
-	Lines   []string
-	// Table follows the lines: an HTML table in email, aligned columns in a code block in chats.
+	// Lines are the text of chats; the email shows them under its heading, or its Stats instead.
+	Lines []string
+	Stats []NoticeStat `json:",omitempty"`
+	// Table follows: an HTML table in email, aligned columns in a code block in chats.
 	Table *NoticeTable `json:",omitempty"`
 	// URL is the page of the web app that shows more; empty without PUBLIC_URL.
 	URL      string
 	LinkText string
 }
 
-// NoticeTable is a table of a notice: its column names and rows.
+// NoticeStat is a figure an email shows as a tile.
+type NoticeStat struct{ Name, Value string }
+
+// NoticeTable is a table of a notice: its column names, rows and the columns
+// of numbers, which the email aligns right.
 type NoticeTable struct {
 	Columns []string
-	Rows    [][]string
+	Rows    [][]NoticeCell
+	Numeric []int `json:",omitempty"`
+}
+
+// NoticeCell is a cell: its text, a detail the email shows after it (a
+// step's name), and a project's color, which makes it a badge in the email.
+type NoticeCell struct {
+	Text   string
+	Detail string `json:",omitempty"`
+	Color  string `json:",omitempty"`
 }
 
 // Widths of a table in plain text: chats are read on phones, the text part of an email on wider screens.
@@ -48,7 +66,18 @@ const (
 // characters wide: the widest columns narrow until it fits, and a cell longer
 // than its column wraps onto more lines of its row, padded like the others.
 func (table NoticeTable) text(width int) string {
-	all := append([][]string{table.Columns}, table.Rows...)
+	all := [][]string{table.Columns}
+
+	for _, row := range table.Rows {
+		texts := make([]string, len(row))
+
+		for index, cell := range row {
+			texts[index] = cell.Text
+		}
+
+		all = append(all, texts)
+	}
+
 	widths := make([]int, len(table.Columns))
 
 	for _, row := range all {
@@ -219,32 +248,47 @@ func coversAny(connection store.Connection, projectIDs []int) bool {
 
 // DroppedNotice tells that a project's data started being dropped: the
 // first drop in a day, its reason and kind; the Projects page has the rest.
-func DroppedNotice(project, kind, reason string, count int64, projectsURL string) Notice {
+func DroppedNotice(project config.Project, kind, reason string, count int64, projectsURL string) Notice {
 	return Notice{
-		Heading: fmt.Sprintf("%s: data dropped", project),
+		Label: "Data dropped", Tone: "warning",
+		Heading: fmt.Sprintf("%s: data dropped", project.Name),
 		Lines:   []string{"First drop in 24 hours; the Projects page counts the rest."},
-		Table:   &NoticeTable{Columns: []string{"What", "Why", "Count"}, Rows: [][]string{{kind, reason, formatCount(count)}}},
-		URL:     projectsURL, LinkText: "Open Projects",
+		Table: &NoticeTable{
+			Columns: []string{"What", "Why", "Count"},
+			Rows:    [][]NoticeCell{{{Text: kind}, {Text: reason}, {Text: formatCount(count)}}},
+			Numeric: []int{2},
+		},
+		URL: projectsURL, LinkText: "Open Projects",
 	}
 }
 
 // CleanupNotice tells that a cleanup run is done: its scope, the data held
 // before and after, and what each step deleted per project.
-func CleanupNotice(run store.CleanupRun, projectNames map[int]string, scope, historyURL string) Notice {
-	table := &NoticeTable{Columns: []string{"Step", "Project", "Deleted"}}
+// Projects are the projects by id (their shown color), stepNames each step's
+// short name by number: chats show the number only, the email both.
+func CleanupNotice(run store.CleanupRun, projects map[int]config.Project, stepNames map[int]string, scope, historyURL string) Notice {
+	table := &NoticeTable{Columns: []string{"Step", "Project", "Deleted"}, Numeric: []int{2}}
 
-	// The step by its number: the Cleanup history names it.
 	for _, step := range run.Steps {
 		for _, projectID := range slices.Sorted(maps.Keys(step.Projects)) {
 			if text := countsText(*step.Projects[projectID]); text != "" {
-				table.Rows = append(table.Rows, []string{strconv.Itoa(step.Number), cmp.Or(projectNames[projectID], "no project"), text})
+				project := projects[projectID]
+				table.Rows = append(table.Rows, []NoticeCell{
+					{Text: strconv.Itoa(step.Number), Detail: stepNames[step.Number]}, {Text: cmp.Or(project.Name, "no project"), Color: project.Color}, {Text: text},
+				})
 			}
 		}
 	}
 
-	line := fmt.Sprintf("%s → %s of %s, %s", config.FormatSize(run.SizeBefore), config.FormatSize(run.SizeAfter), config.FormatSize(run.Limit), run.Duration.Round(time.Second))
+	before, after, limit, took := config.FormatSize(run.SizeBefore), config.FormatSize(run.SizeAfter), config.FormatSize(run.Limit), run.Duration.Round(time.Second).String()
 
-	return Notice{Heading: "Cleanup done: " + scope, Lines: []string{line}, Table: table, URL: historyURL, LinkText: "Open Cleanup history"}
+	return Notice{
+		Label: "Cleanup done", Tone: "success",
+		Heading: "Cleanup done: " + scope,
+		Lines:   []string{fmt.Sprintf("%s → %s of %s, %s", before, after, limit, took)},
+		Stats:   []NoticeStat{{"Before", before}, {"After", after}, {"Limit", limit}, {"Took", took}},
+		Table:   table, URL: historyURL, LinkText: "Open Cleanup history",
+	}
 }
 
 // RunProjects are the projects a run deleted data of.

@@ -2,6 +2,7 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -142,23 +143,31 @@ func noticeStorage(db *database.Store, registry *projects.Registry, notifier *no
 			logger.Error("record the notice of dropped data", "project", project.Name, "err", err)
 		}
 
-		notifier.Notice([]int{project.ID}, notify.DroppedNotice(project.Name, kind, reason, count, page("/projects")))
+		project.Color = cmp.Or(project.Color, config.DefaultProjectColor(project.ID))
+		notifier.Notice([]int{project.ID}, notify.DroppedNotice(project, kind, reason, count, page("/projects")))
 	})
 
+	stepNames := map[int]string{}
+
+	for index, step := range database.CleanupSteps() {
+		stepNames[index+1] = step.Short
+	}
+
 	db.OnCleanupDone(func(run database.CleanupRun) {
-		names := map[int]string{}
+		byID := map[int]config.Project{}
 
 		for _, project := range registry.List() {
-			names[project.ID] = project.Name
+			project.Color = cmp.Or(project.Color, config.DefaultProjectColor(project.ID))
+			byID[project.ID] = project
 		}
 
 		scope := "all projects"
 
 		if run.Project != database.AllProjects {
-			scope = fmt.Sprintf("%s, down to its disk share of %d%%", names[run.Project], run.Share)
+			scope = fmt.Sprintf("%s, down to its disk share of %d%%", byID[run.Project].Name, run.Share)
 		}
 
-		notifier.Notice(notify.RunProjects(run), notify.CleanupNotice(run, names, scope, page("/projects/cleanups")))
+		notifier.Notice(notify.RunProjects(run), notify.CleanupNotice(run, byID, stepNames, scope, page("/projects/cleanups")))
 	})
 
 	return nil

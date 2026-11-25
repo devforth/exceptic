@@ -474,7 +474,8 @@ var (
 // under the write lock, so what arrives meanwhile is judged by its rule too.
 type cleanupStep struct {
 	name   string
-	always bool // runs in full; the others stop once the goal is reached
+	short  string // two or three words, for notices
+	always bool   // runs in full; the others stop once the goal is reached
 	batch  cleanupBatch
 }
 
@@ -512,31 +513,32 @@ func (database *Store) cleanupSteps(project int) []cleanupStep {
 	month, week := now.Add(-config.CleanupAge), now.Add(-config.CleanupRecentAge)
 
 	return []cleanupStep{
-		{"events and status changes of missing issues", true, scope.deleteOrphans()},
-		{"logs older than a month", true, scope.deleteLogs(allRanks, func() uint64 { return database.sequenceFrom(month) })},
+		{"events and status changes of missing issues", "Orphaned records", true, scope.deleteOrphans()},
+		{"logs older than a month", "Logs over a month", true, scope.deleteLogs(allRanks, func() uint64 { return database.sequenceFrom(month) })},
 		// By first seen: an issue first seen within the month has no older event, so the walk stops at the first one.
-		{"events older than a month beyond the newest of their issue", true, scope.trimIssues(config.OldEventsPerIssue, month, func(issue *issueRecord) bool {
+		{"events older than a month beyond the newest of their issue", "Old event copies", true, scope.trimIssues(config.OldEventsPerIssue, month, func(issue *issueRecord) bool {
 			return len(issue.EventDays) > 0 && issue.EventDays[0].Day <= dayOf(month)
 		}, issueWalk{index: "first", beyond: func(issue *issueRecord) bool { return dayOf(issue.FirstSeen) > dayOf(month) }})},
 		// Only the resolved and ignored issues (an ignore whose time passed reads unresolved).
-		{"events of resolved and ignored issues but the latest", true, scope.trimIssues(1, time.Time{}, func(issue *issueRecord) bool {
+		{"events of resolved and ignored issues but the latest", "Closed issues' events", true, scope.trimIssues(1, time.Time{}, func(issue *issueRecord) bool {
 			return issue.At(now).Status != store.StatusUnresolved
 		}, issueWalk{index: "seen", statuses: []string{store.StatusResolved, store.StatusIgnored}})},
-		{"logs below error, oldest first", false, scope.deleteOldestLogs(minorRanks)},
-		{"events below error but the latest of their issue", false, scope.deleteOldestEvents(time.Time{}, minorRanks)},
-		{"events beyond the newest of their issue", false, scope.trimCopies()},
-		{"error and fatal logs", false, scope.deleteOldestLogs(majorRanks)},
-		{"events older than a week", false, scope.deleteOldestEvents(week, allRanks)},
-		{"events of the last week", false, scope.deleteOldestEvents(time.Time{}, allRanks)},
-		{"latest events of issues not seen for a week", false, scope.deleteUnseen(week, false)},
-		{"whole issues", false, scope.deleteUnseen(time.Time{}, true)},
+		{"logs below error, oldest first", "Logs below error", false, scope.deleteOldestLogs(minorRanks)},
+		{"events below error but the latest of their issue", "Events below error", false, scope.deleteOldestEvents(time.Time{}, minorRanks)},
+		{"events beyond the newest of their issue", "Extra copies", false, scope.trimCopies()},
+		{"error and fatal logs", "Error logs", false, scope.deleteOldestLogs(majorRanks)},
+		{"events older than a week", "Events over a week", false, scope.deleteOldestEvents(week, allRanks)},
+		{"events of the last week", "Recent events", false, scope.deleteOldestEvents(time.Time{}, allRanks)},
+		{"latest events of issues not seen for a week", "Stale issues' events", false, scope.deleteUnseen(week, false)},
+		{"whole issues", "Whole issues", false, scope.deleteUnseen(time.Time{}, true)},
 	}
 }
 
 // CleanupStepName is a step of the cleanup as the web app lists it.
 type CleanupStepName struct {
 	Name   string
-	Always bool // runs in full; the others only while needed
+	Short  string // two or three words, for notices
+	Always bool   // runs in full; the others only while needed
 }
 
 // CleanupSteps are the names of the cleanup's steps, in order.
@@ -544,7 +546,7 @@ func CleanupSteps() []CleanupStepName {
 	var names []CleanupStepName
 
 	for _, step := range (&Store{now: time.Now}).cleanupSteps(AllProjects) {
-		names = append(names, CleanupStepName{step.name, step.always})
+		names = append(names, CleanupStepName{step.name, step.short, step.always})
 	}
 
 	return names
@@ -678,7 +680,7 @@ func (scope cleanupScope) has(issue *issueRecord) bool {
 
 // agingSteps thin the events older than a month as they age, in the background; they delete nothing.
 func (database *Store) agingSteps() []cleanupStep {
-	return []cleanupStep{{"details of events older than a month", true, database.thinBefore(database.now().Add(-config.CleanupAge))}}
+	return []cleanupStep{{"details of events older than a month", "Old event details", true, database.thinBefore(database.now().Add(-config.CleanupAge))}}
 }
 
 // ReduceAging runs agingSteps to the end and says what they did; only what
