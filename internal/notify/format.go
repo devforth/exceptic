@@ -64,7 +64,13 @@ func (summary Summary) heading() string {
 		issues = "issue"
 	}
 
-	return fmt.Sprintf("%d more %s in the last %s", summary.Count, issues, config.HumanDuration(summary.Window.Round(time.Second)))
+	heading := fmt.Sprintf("%d more %s in the last %s", summary.Count, issues, config.HumanDuration(summary.Window.Round(time.Second)))
+
+	if summary.Project != "" {
+		heading = summary.Project + ": " + heading
+	}
+
+	return heading
 }
 
 // note explains why the issues were not sent one by one.
@@ -91,7 +97,7 @@ const (
 
 // Description is what the delivery log shows of an outbox message.
 type Description struct {
-	Label   string // "New issue", "Regression", "Test message" or "Summary"
+	Label   string // "New issue", "Regression", "Test message", "Summary" or a notice's label
 	Project string
 	Title   string // the issue; for a summary, how many issues it covers
 	IssueID string
@@ -99,9 +105,17 @@ type Description struct {
 	More    int           // issues of a summary not in Items
 }
 
-// Describe reads an outbox message (kind "notification" or "summary") for
-// display. A payload that does not parse gives what could be read.
+// Describe reads an outbox message (kind "notification", "summary" or
+// "notice") for display. A payload that does not parse gives what could be read.
 func Describe(kind string, payload []byte) Description {
+	if kind == kindNotice {
+		var notice Notice
+
+		_ = json.Unmarshal(payload, &notice)
+
+		return Description{Label: notice.Label, Title: notice.Heading}
+	}
+
 	if kind == kindSummary {
 		var summary Summary
 

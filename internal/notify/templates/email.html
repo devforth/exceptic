@@ -1,13 +1,13 @@
 {{/* Email clients ignore <style> blocks and classes, so every style is inline; the layout is tables, which every client lays out. */}}
 
-{{define "level"}}<span style="display:inline-block;padding:1px 7px;border-radius:4px;font-size:12px;font-weight:600;line-height:18px;{{levelStyle .}}">{{.}}</span>{{end}}
+{{define "level"}}<span class="x-lv-{{shownLevel .}}" style="display:inline-block;padding:1px 7px;border-radius:4px;font-size:12px;font-weight:600;line-height:18px;{{levelStyle .}}">{{.}}</span>{{end}}
 
 {{/* The project as an outlined badge in its color, like in the UI. */}}
-{{define "project"}}{{$color := projectColor .ProjectColor}}<span style="display:inline-block;padding:1px 8px;border:1px solid {{$color}};border-radius:10px;font-size:12px;font-weight:600;line-height:18px;white-space:nowrap;color:{{$color}}">{{.Project}}</span>{{end}}
+{{define "project"}}<span class="{{.Class}}" style="display:inline-block;padding:1px 8px;border:1px solid {{.Color}};border-radius:10px;font-size:12px;font-weight:600;line-height:18px;white-space:nowrap;color:{{.Color}}">{{.Name}}</span>{{end}}
 
-{{define "button"}}<table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0 0"><tr><td style="border-radius:6px;background:#4f46e5"><a href="{{.URL}}" style="display:inline-block;padding:10px 18px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none">{{.Text}}</a></td></tr></table>{{end}}
+{{define "button"}}<table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0 0"><tr><td class="x-button" style="border-radius:6px;background:#4f46e5"><a class="x-button" href="{{.URL}}" style="display:inline-block;padding:10px 18px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none">{{.Text}}</a></td></tr></table>{{end}}
 
-{{define "heading"}}<h2 class="x-muted" style="margin:28px 0 0;font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#64646f">{{.}}</h2>{{end}}
+{{define "heading"}}<h2 class="x-muted" style="margin:28px 0 0;font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#6b6b76">{{.}}</h2>{{end}}
 
 {{/* The page around every email: short ones stand in the middle of the screen where the client allows it. */}}
 {{define "open"}}<!doctype html>
@@ -16,90 +16,107 @@
 {{/* Mail clients that read <style> (Apple Mail, Outlook for Mac) show the dark design under a dark system theme; the rest keep the inline light one or invert it themselves. */}}
 :root { color-scheme: light dark; supported-color-schemes: light dark; }
 @media (prefers-color-scheme: dark) {
-  .x-page { background: #121216 !important; }
-  .x-card { background: #1c1c22 !important; border-left-color: #33333d !important; border-right-color: #33333d !important; border-bottom-color: #33333d !important; }
+  .x-page { background: #141418 !important; }
+  .x-card { background: #1c1c22 !important; border-left-color: #2e2e37 !important; border-right-color: #2e2e37 !important; border-bottom-color: #2e2e37 !important; }
   .x-soft { background: #24242c !important; }
-  .x-hl { background: #4a3f10 !important; }
+  .x-hl { background: #3d3517 !important; }
   .x-text { color: #e8e8ee !important; }
-  .x-muted { color: #a3a3ae !important; }
-  .x-faint { color: #7c7c88 !important; }
-  .x-line { border-color: #33333d !important; }
-}
+  .x-muted { color: #9a9aa6 !important; }
+  .x-faint { color: #9a9aa6 !important; }
+  .x-line { border-color: #2e2e37 !important; }
+  {{/* The web app's dark tokens (layout.css): links and buttons in its accent, levels and tones in theirs. */}}
+  .x-link { color: #8b85ff !important; }
+  .x-error { color: #ff8a80 !important; }
+  td.x-button { background: #8b85ff !important; }
+  a.x-button { color: #141418 !important; }
+  .x-lv-error { color: #ff8a80 !important; background: #3b1f1f !important; }
+  .x-lv-warning { color: #ffd166 !important; background: #3a3118 !important; }
+  .x-lv-info { color: #8ab4ff !important; background: #1d2a45 !important; }
+  .x-lv-debug { color: #b5b5c0 !important; background: #2a2a33 !important; }
+  .x-tag-info { color: #8b85ff !important; background: #262640 !important; }
+  .x-tag-error { color: #ff8a80 !important; background: #3b1f1f !important; }
+  .x-tag-warning { color: #ffd166 !important; background: #3a3118 !important; }
+  .x-tag-success { color: #7fd18b !important; background: #1d3323 !important; }
+  .x-stripe-info { border-top-color: #8b85ff !important; }
+  .x-stripe-error { border-top-color: #ff8a80 !important; }
+  .x-stripe-warning { border-top-color: #ffd166 !important; }
+  .x-stripe-success { border-top-color: #7fd18b !important; }
+{{.ProjectStyles}}}
 </style></head>
-<body class="x-page x-text" style="margin:0;padding:0;background:#eeeef3;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1d1d22;-webkit-text-size-adjust:100%">
-<table role="presentation" width="100%" height="100%" cellpadding="0" cellspacing="0" class="x-page" style="width:100%;height:100%;min-height:100vh;background:#eeeef3"><tr><td align="center" valign="middle" style="padding:32px 16px">
+<body class="x-page x-text" style="margin:0;padding:0;background:#f7f7f8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1d1d22;-webkit-text-size-adjust:100%">
+<table role="presentation" width="100%" height="100%" cellpadding="0" cellspacing="0" class="x-page" style="width:100%;height:100%;min-height:100vh;background:#f7f7f8"><tr><td align="center" valign="middle" style="padding:32px 16px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;max-width:{{.Frame.Width}}px">
 <tr><td style="padding:0 4px 12px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
 <td class="x-text" style="font-size:14px;font-weight:700;color:#1d1d22"><span style="display:inline-block;width:10px;height:10px;margin-right:7px;border-radius:3px;background:#4f46e5"></span>{{.AppName}}</td>
-<td align="right"><span style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:12px;font-weight:600;color:{{.Frame.Color}};background:{{.Frame.Background}}">{{.Frame.Label}}</span></td></tr></table></td></tr>
-<tr><td class="x-card" style="background:#ffffff;border:1px solid #e4e4ea;border-top:4px solid {{.Frame.Color}};border-radius:10px;padding:28px 28px 30px">{{end}}
+<td align="right"><span class="x-tag-{{.Frame.Tone}}" style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:12px;font-weight:600;color:{{.Frame.Color}};background:{{.Frame.Background}}">{{.Frame.Label}}</span></td></tr></table></td></tr>
+<tr><td class="x-card x-stripe-{{.Frame.Tone}}" style="background:#ffffff;border:1px solid #e3e3e8;border-top:4px solid {{.Frame.Color}};border-radius:10px;padding:28px 28px 30px">{{end}}
 
 {{define "close"}}</td></tr>
-<tr><td class="x-faint" style="padding:14px 4px 0;font-size:12px;line-height:1.5;color:#9a9aa6;text-align:center">Sent by {{.AppName}} to {{.To}}.{{if not .Code}}<br>Change what it sends on the Notifications page{{with .Unsubscribe}}, or <a href="{{.}}" class="x-muted" style="color:#64646f">stop these emails</a>{{end}}.{{end}}</td></tr>
+<tr><td class="x-faint" style="padding:14px 4px 0;font-size:12px;line-height:1.5;color:#6b6b76;text-align:center">Sent by {{.AppName}} to {{.To}}.{{if not .Code}}<br>Change what it sends on the Notifications page{{with .Unsubscribe}}, or <a href="{{.}}" class="x-muted" style="color:#6b6b76">stop these emails</a>{{end}}.{{end}}</td></tr>
 </table>
 </td></tr></table>
 </body></html>{{end}}
 
 {{define "notification"}}{{template "open" .}}
 <h1 style="margin:0;font-size:21px;line-height:1.3;font-weight:650;word-break:break-word">{{.Notification.Title}}</h1>
-{{with .Notification.Culprit}}<p class="x-muted" style="margin:6px 0 0;font-size:14px;line-height:1.5;color:#64646f;word-break:break-word">{{.}}</p>{{end}}
+{{with .Notification.Culprit}}<p class="x-muted" style="margin:6px 0 0;font-size:14px;line-height:1.5;color:#6b6b76;word-break:break-word">{{.}}</p>{{end}}
 
-{{with $.Reference .Notification}}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="x-soft x-line" style="width:100%;margin:20px 0 0;border:1px solid #e4e4ea;border-radius:8px;border-collapse:separate;border-spacing:0;background:#f6f6f9"><tr><td style="padding:10px 12px;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-all;user-select:all">{{.}}</td></tr></table>{{end}}
-{{with .PromptFile}}<p class="x-muted" style="margin:8px 0 0;font-size:12px;line-height:1.5;color:#64646f">Paste it into your coding agent, or open the attached <b>{{.}}</b>: a prompt that reproduces and explains the error without changing code, so you can check it before asking for a fix.</p>{{end}}
+{{with $.Reference .Notification}}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="x-soft x-line" style="width:100%;margin:20px 0 0;border:1px solid #e3e3e8;border-radius:8px;border-collapse:separate;border-spacing:0;background:#f1f1f4"><tr><td style="padding:10px 12px;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-all;user-select:all">{{.}}</td></tr></table>{{end}}
+{{with .PromptFile}}<p class="x-muted" style="margin:8px 0 0;font-size:12px;line-height:1.5;color:#6b6b76">Paste it into your coding agent, or open the attached <b>{{.}}</b>: a prompt that reproduces and explains the error without changing code, so you can check it before asking for a fix.</p>{{end}}
 {{with .Notification.IssueURL}}{{template "button" (link . "Open issue")}}{{end}}
 
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="x-line" style="width:100%;margin:20px 0 0;border:1px solid #e4e4ea;border-radius:8px;border-collapse:separate;border-spacing:0">
-{{range $index, $fact := .Facts}}<tr><td width="140" class="x-muted x-line" style="padding:7px 12px;{{if $index}}border-top:1px solid #e4e4ea;{{end}}color:#64646f;font-size:13px;white-space:nowrap;vertical-align:top">{{.Name}}</td><td class="x-line" style="padding:7px 12px;{{if $index}}border-top:1px solid #e4e4ea;{{end}}font-size:14px;word-break:break-word">{{if eq .Show "level"}}{{template "level" .Value}}{{else if eq .Show "project"}}{{template "project" $.Notification}}{{else}}{{.Value}}{{end}}</td></tr>{{end}}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="x-line" style="width:100%;margin:20px 0 0;border:1px solid #e3e3e8;border-radius:8px;border-collapse:separate;border-spacing:0">
+{{range $index, $fact := .Facts}}<tr><td width="140" class="x-muted x-line" style="padding:7px 12px;{{if $index}}border-top:1px solid #e3e3e8;{{end}}color:#6b6b76;font-size:13px;white-space:nowrap;vertical-align:top">{{.Name}}</td><td class="x-line" style="padding:7px 12px;{{if $index}}border-top:1px solid #e3e3e8;{{end}}font-size:14px;word-break:break-word">{{if eq .Show "level"}}{{template "level" .Value}}{{else if eq .Show "project"}}{{template "project" (projectBadge $.Notification.Project $.Notification.ProjectColor)}}{{else}}{{.Value}}{{end}}</td></tr>{{end}}
 </table>
 
 {{with .Event}}
 {{with $.Exceptions .Exception}}{{template "heading" "Exception"}}{{end}}
 {{range $index, $exception := $.Exceptions .Exception}}
-<div style="margin:20px 0 0;font-size:15px;font-weight:600">{{if gt $index 0}}<span class="x-muted" style="color:#64646f;font-weight:400">Caused by</span> {{end}}<span style="color:#c62828">{{or .Type "Error"}}</span></div>
+<div style="margin:20px 0 0;font-size:15px;font-weight:600">{{if gt $index 0}}<span class="x-muted" style="color:#6b6b76;font-weight:400">Caused by</span> {{end}}<span class="x-error" style="color:#c62828">{{or .Type "Error"}}</span></div>
 {{with .Value}}<div style="margin:4px 0 0;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-word">{{.}}</div>{{end}}
 {{range $.InAppFrames .Stacktrace}}
-<div style="margin:10px 0 0;font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-word"><b>{{or .Function "<anonymous>"}}</b> <span class="x-muted" style="color:#64646f">{{or .Filename .Module}}{{if .Lineno}}:{{.Lineno}}{{end}}</span></div>
-{{with .SourceLines}}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="x-soft x-line" style="width:100%;margin:8px 0 0;border:1px solid #e4e4ea;border-radius:8px;border-collapse:separate;border-spacing:0;background:#f6f6f9"><tr><td style="padding:8px 0"><table role="presentation" cellpadding="0" cellspacing="0">{{range .}}<tr><td align="right" class="x-hl x-faint" style="padding:1px 10px 1px 12px;color:#9a9aa6;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:nowrap;{{if .Current}}background:#fff3c4;{{end}}">{{.Number}}</td><td class="x-hl" style="padding:1px 12px 1px 0;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre;{{if .Current}}background:#fff3c4;{{end}}">{{.Text}}</td></tr>{{end}}</table></td></tr></table>{{end}}
+<div style="margin:10px 0 0;font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-word"><b>{{or .Function "<anonymous>"}}</b> <span class="x-muted" style="color:#6b6b76">{{or .Filename .Module}}{{if .Lineno}}:{{.Lineno}}{{end}}</span></div>
+{{with .SourceLines}}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="x-soft x-line" style="width:100%;margin:8px 0 0;border:1px solid #e3e3e8;border-radius:8px;border-collapse:separate;border-spacing:0;background:#f1f1f4"><tr><td style="padding:8px 0"><table role="presentation" cellpadding="0" cellspacing="0">{{range .}}<tr><td align="right" class="{{if .Current}}x-hl {{end}}x-faint" style="padding:1px 10px 1px 12px;color:#6b6b76;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:nowrap;{{if .Current}}background:#fff3c4;{{end}}">{{.Number}}</td><td{{if .Current}} class="x-hl"{{end}} style="padding:1px 12px 1px 0;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre;{{if .Current}}background:#fff3c4;{{end}}">{{.Text}}</td></tr>{{end}}</table></td></tr></table>{{end}}
 {{end}}
 {{end}}
 
-{{if and (not .Exception) .Message}}{{template "heading" "Message"}}<div class="x-soft x-line" style="margin:8px 0 0;padding:10px 12px;border:1px solid #e4e4ea;border-radius:8px;background:#f6f6f9;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-word">{{excerpt (print .Message)}}</div>{{end}}
+{{if and (not .Exception) .Message}}{{template "heading" "Message"}}<div class="x-soft x-line" style="margin:8px 0 0;padding:10px 12px;border:1px solid #e3e3e8;border-radius:8px;background:#f1f1f4;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-word">{{excerpt (print .Message)}}</div>{{end}}
 
 {{with $.Breadcrumbs}}
 {{template "heading" "Last breadcrumbs"}}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="x-line" style="width:100%;margin:12px 0 0;border:1px solid #e4e4ea;border-radius:8px;border-collapse:separate;border-spacing:0">
-<tr><th align="left" class="x-soft x-muted x-line" style="padding:8px 12px;background:#f6f6f9;border-bottom:1px solid #e4e4ea;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#64646f">Time</th><th align="left" class="x-soft x-muted x-line" style="padding:8px 12px;background:#f6f6f9;border-bottom:1px solid #e4e4ea;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#64646f">Category</th><th align="left" class="x-soft x-muted x-line" style="padding:8px 12px;background:#f6f6f9;border-bottom:1px solid #e4e4ea;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#64646f">Message</th></tr>
-{{range $index, $line := .}}<tr><td class="x-muted x-line" style="padding:7px 12px;{{if $index}}border-top:1px solid #e4e4ea;{{end}}color:#64646f;font-size:13px;white-space:nowrap;vertical-align:top">{{.Time}}</td><td class="x-line" style="padding:7px 12px;{{if $index}}border-top:1px solid #e4e4ea;{{end}}font-size:13px;white-space:nowrap;vertical-align:top">{{.Category}}</td><td class="x-line" style="padding:7px 12px;{{if $index}}border-top:1px solid #e4e4ea;{{end}}font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-word">{{.Message}}</td></tr>{{end}}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="x-line" style="width:100%;margin:12px 0 0;border:1px solid #e3e3e8;border-radius:8px;border-collapse:separate;border-spacing:0">
+<tr><th align="left" class="x-soft x-muted x-line" style="padding:8px 12px;background:#f1f1f4;border-bottom:1px solid #e3e3e8;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#6b6b76">Time</th><th align="left" class="x-soft x-muted x-line" style="padding:8px 12px;background:#f1f1f4;border-bottom:1px solid #e3e3e8;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#6b6b76">Category</th><th align="left" class="x-soft x-muted x-line" style="padding:8px 12px;background:#f1f1f4;border-bottom:1px solid #e3e3e8;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#6b6b76">Message</th></tr>
+{{range $index, $line := .}}<tr><td class="x-muted x-line" style="padding:7px 12px;{{if $index}}border-top:1px solid #e3e3e8;{{end}}color:#6b6b76;font-size:13px;white-space:nowrap;vertical-align:top">{{.Time}}</td><td class="x-line" style="padding:7px 12px;{{if $index}}border-top:1px solid #e3e3e8;{{end}}font-size:13px;white-space:nowrap;vertical-align:top">{{.Category}}</td><td class="x-line" style="padding:7px 12px;{{if $index}}border-top:1px solid #e3e3e8;{{end}}font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-word">{{.Message}}</td></tr>{{end}}
 </table>
 {{end}}
 
 {{with $.Tags .Tags}}
 {{template "heading" "Tags"}}
-<p style="margin:10px 0 0">{{range .}}<span class="x-line" style="display:inline-block;margin:0 6px 6px 0;padding:2px 9px;border:1px solid #e4e4ea;border-radius:10px;font-size:12px">{{.Name}}: <b>{{.Value}}</b></span>{{end}}</p>
+<p style="margin:10px 0 0">{{range .}}<span class="x-line" style="display:inline-block;margin:0 6px 6px 0;padding:2px 9px;border:1px solid #e3e3e8;border-radius:10px;font-size:12px">{{.Name}}: <b>{{.Value}}</b></span>{{end}}</p>
 {{end}}
 {{end}}
 {{template "close" .}}{{end}}
 
 {{define "summary"}}{{template "open" .}}
 <h1 style="margin:0;font-size:21px;line-height:1.3;font-weight:650">{{.Heading}}</h1>
-<p class="x-muted" style="margin:6px 0 0;font-size:14px;line-height:1.5;color:#64646f">{{.Note}}</p>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="x-line" style="width:100%;margin:20px 0 0;border:1px solid #e4e4ea;border-radius:8px;border-collapse:separate;border-spacing:0">
-<tr><th align="left" class="x-soft x-muted x-line" style="padding:8px 12px;background:#f6f6f9;border-bottom:1px solid #e4e4ea;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#64646f">Project</th><th align="left" class="x-soft x-muted x-line" style="padding:8px 12px;background:#f6f6f9;border-bottom:1px solid #e4e4ea;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#64646f">Issue</th><th align="left" class="x-soft x-muted x-line" style="padding:8px 12px;background:#f6f6f9;border-bottom:1px solid #e4e4ea;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#64646f">Level</th></tr>
-{{range $index, $item := .Summary.Items}}<tr><td class="x-line" style="padding:9px 12px;{{if $index}}border-top:1px solid #e4e4ea;{{end}}vertical-align:top">{{template "project" .}}</td><td class="x-line" style="padding:9px 12px;{{if $index}}border-top:1px solid #e4e4ea;{{end}}font-size:14px;vertical-align:top;word-break:break-word">{{if .IssueURL}}<a href="{{.IssueURL}}" style="color:#4f46e5;text-decoration:none;font-weight:600">{{.Title}}</a>{{else}}{{.Title}}{{end}}{{with $.Reference .}}<div class="x-muted" style="margin:4px 0 0;font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#64646f;word-break:break-all;user-select:all">{{.}}</div>{{end}}</td><td class="x-line" style="padding:9px 12px;{{if $index}}border-top:1px solid #e4e4ea;{{end}}vertical-align:top">{{template "level" .Level}}</td></tr>{{end}}
+<p class="x-muted" style="margin:6px 0 0;font-size:14px;line-height:1.5;color:#6b6b76">{{.Note}}</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="x-line" style="width:100%;margin:20px 0 0;border:1px solid #e3e3e8;border-radius:8px;border-collapse:separate;border-spacing:0">
+<tr><th align="left" class="x-soft x-muted x-line" style="padding:8px 12px;background:#f1f1f4;border-bottom:1px solid #e3e3e8;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#6b6b76">Project</th><th align="left" class="x-soft x-muted x-line" style="padding:8px 12px;background:#f1f1f4;border-bottom:1px solid #e3e3e8;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#6b6b76">Issue</th><th align="left" class="x-soft x-muted x-line" style="padding:8px 12px;background:#f1f1f4;border-bottom:1px solid #e3e3e8;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#6b6b76">Level</th></tr>
+{{range $index, $item := .Summary.Items}}<tr><td class="x-line" style="padding:9px 12px;{{if $index}}border-top:1px solid #e3e3e8;{{end}}vertical-align:top">{{template "project" (projectBadge .Project .ProjectColor)}}</td><td class="x-line" style="padding:9px 12px;{{if $index}}border-top:1px solid #e3e3e8;{{end}}font-size:14px;vertical-align:top;word-break:break-word">{{if .IssueURL}}<a class="x-link" href="{{.IssueURL}}" style="color:#4f46e5;text-decoration:none;font-weight:600">{{.Title}}</a>{{else}}{{.Title}}{{end}}{{with $.Reference .}}<div class="x-muted" style="margin:4px 0 0;font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#6b6b76;word-break:break-all;user-select:all">{{.}}</div>{{end}}</td><td class="x-line" style="padding:9px 12px;{{if $index}}border-top:1px solid #e3e3e8;{{end}}vertical-align:top">{{template "level" .Level}}</td></tr>{{end}}
 </table>
 {{template "close" .}}{{end}}
 
 {{define "notice"}}{{template "open" .}}
 <h1 style="margin:0;font-size:21px;line-height:1.3;font-weight:650;word-break:break-word">{{.Notice.Heading}}</h1>
 {{if .Notice.Stats}}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="x-soft x-line" style="width:100%;margin:20px 0 0;border:1px solid #e4e4ea;border-radius:8px;border-collapse:separate;border-spacing:0;background:#f6f6f9"><tr>
-{{range $index, $stat := .Notice.Stats}}<td class="x-line" style="padding:12px 14px;{{if $index}}border-left:1px solid #e4e4ea;{{end}}vertical-align:top"><div class="x-muted" style="font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#64646f">{{.Name}}</div><div style="margin-top:2px;font-size:18px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap">{{.Value}}</div></td>{{end}}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="x-soft x-line" style="width:100%;margin:20px 0 0;border:1px solid #e3e3e8;border-radius:8px;border-collapse:separate;border-spacing:0;background:#f1f1f4"><tr>
+{{range $index, $stat := .Notice.Stats}}<td class="x-line" style="padding:12px 14px;{{if $index}}border-left:1px solid #e3e3e8;{{end}}vertical-align:top"><div class="x-muted" style="font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#6b6b76">{{.Name}}</div><div style="margin-top:2px;font-size:18px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap">{{.Value}}</div></td>{{end}}
 </tr></table>
-{{else}}{{range .Notice.Lines}}<p class="x-muted" style="margin:6px 0 0;font-size:14px;line-height:1.5;color:#64646f">{{.}}</p>{{end}}{{end}}
+{{else}}{{range .Notice.Lines}}<p class="x-muted" style="margin:6px 0 0;font-size:14px;line-height:1.5;color:#6b6b76">{{.}}</p>{{end}}{{end}}
 {{with .Notice.Table}}{{$table := .}}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="x-line" style="width:100%;margin:20px 0 0;border:1px solid #e4e4ea;border-radius:8px;border-collapse:separate;border-spacing:0">
-<tr>{{range $column, $name := .Columns}}<th align="{{if $table.IsNumeric $column}}right{{else}}left{{end}}" class="x-soft x-muted x-line" style="padding:8px 12px;background:#f6f6f9;border-bottom:1px solid #e4e4ea;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#64646f">{{$name}}</th>{{end}}</tr>
-{{range $index, $row := .Rows}}<tr>{{range $column, $cell := $row}}<td align="{{if $table.IsNumeric $column}}right{{else}}left{{end}}" class="x-line" style="padding:9px 12px;{{if $index}}border-top:1px solid #e4e4ea;{{end}}font-size:14px;vertical-align:top;{{if $table.IsNumeric $column}}white-space:nowrap;font-variant-numeric:tabular-nums;{{end}}">{{if .Color}}{{$color := projectColor .Color}}<span style="display:inline-block;padding:1px 8px;border:1px solid {{$color}};border-radius:10px;font-size:12px;font-weight:600;line-height:18px;white-space:nowrap;color:{{$color}}">{{.Text}}</span>{{else if .Detail}}<span class="x-faint" style="display:inline-block;min-width:18px;color:#9a9aa6;font-variant-numeric:tabular-nums">{{.Text}}</span> {{.Detail}}{{else}}{{.Text}}{{end}}</td>{{end}}</tr>{{end}}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="x-line" style="width:100%;margin:20px 0 0;border:1px solid #e3e3e8;border-radius:8px;border-collapse:separate;border-spacing:0">
+<tr>{{range $column, $name := .Columns}}<th align="{{if $table.IsNumeric $column}}right{{else}}left{{end}}" class="x-soft x-muted x-line" style="padding:8px 12px;background:#f1f1f4;border-bottom:1px solid #e3e3e8;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#6b6b76">{{$name}}</th>{{end}}</tr>
+{{range $index, $row := .Rows}}<tr>{{range $column, $cell := $row}}<td align="{{if $table.IsNumeric $column}}right{{else}}left{{end}}" class="x-line" style="padding:9px 12px;{{if $index}}border-top:1px solid #e3e3e8;{{end}}font-size:14px;vertical-align:top;{{if $table.IsNumeric $column}}white-space:nowrap;font-variant-numeric:tabular-nums;{{end}}">{{if .Color}}{{template "project" (projectBadge .Text .Color)}}{{else if .Detail}}<span class="x-faint" style="display:inline-block;min-width:18px;color:#6b6b76;font-variant-numeric:tabular-nums">{{.Text}}</span> {{.Detail}}{{else}}{{.Text}}{{end}}</td>{{end}}</tr>{{end}}
 </table>
 {{end}}
 {{with .Notice.URL}}{{template "button" (link . $.Notice.LinkText)}}{{end}}
@@ -107,7 +124,7 @@
 
 {{define "verification"}}{{template "open" .}}
 <h1 style="margin:0;font-size:21px;line-height:1.3;font-weight:650">Confirm notifications to this address</h1>
-<p class="x-muted" style="margin:6px 0 0;font-size:14px;line-height:1.5;color:#64646f">Enter this code in {{.AppName}} within {{.ValidFor}}.</p>
-<div class="x-soft x-line" style="margin:24px 0 0;padding:18px;border:1px solid #e4e4ea;border-radius:8px;background:#f6f6f9;text-align:center;font:700 32px/1.2 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.3em">{{.Code}}</div>
-<p class="x-muted" style="margin:16px 0 0;font-size:13px;line-height:1.5;color:#64646f">If you did not add this address, ignore this email: nothing is sent here until it is confirmed.</p>
+<p class="x-muted" style="margin:6px 0 0;font-size:14px;line-height:1.5;color:#6b6b76">Enter this code in {{.AppName}} within {{.ValidFor}}.</p>
+<div class="x-soft x-line" style="margin:24px 0 0;padding:18px;border:1px solid #e3e3e8;border-radius:8px;background:#f1f1f4;text-align:center;font:700 32px/1.2 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.3em">{{.Code}}</div>
+<p class="x-muted" style="margin:16px 0 0;font-size:13px;line-height:1.5;color:#6b6b76">If you did not add this address, ignore this email: nothing is sent here until it is confirmed.</p>
 {{template "close" .}}{{end}}

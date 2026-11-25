@@ -3,7 +3,6 @@ package notify
 import (
 	"cmp"
 	"fmt"
-	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -142,6 +141,24 @@ func (table NoticeTable) text(width int) string {
 	return strings.Join(lines, "\n")
 }
 
+// fitText is the table as text in at most room characters: the rows that
+// fit, then how many more were left out.
+func (table NoticeTable) fitText(width, room int) string {
+	for shown := len(table.Rows); ; shown-- {
+		cut := table
+		cut.Rows = table.Rows[:shown]
+		text := cut.text(width)
+
+		if more := len(table.Rows) - shown; more > 0 {
+			text += fmt.Sprintf("\n…and %d more rows", more)
+		}
+
+		if shown == 0 || utf8.RuneCountInString(text) <= room {
+			return text
+		}
+	}
+}
+
 func sum(values []int) int {
 	total := 0
 
@@ -186,10 +203,12 @@ func wrap(text string, width int) []string {
 	return lines
 }
 
-// noticeFor is a notice and the projects it is about, on its way to the dispatcher.
+// noticeFor is a notice and the projects it is about, on its way to the
+// dispatcher; build, when set, writes it for each connection (NoticeWithin).
 type noticeFor struct {
 	notice     Notice
 	projectIDs []int
+	build      func(store.Access) (Notice, bool)
 }
 
 // Notice queues a notice about projects (none: only the connections for all
@@ -206,15 +225,40 @@ func (notifier *Notifier) Notice(projectIDs []int, notice Notice) {
 		return
 	}
 
+	notifier.queueNotice(noticeFor{notice: notice, projectIDs: slices.Clone(projectIDs)})
+}
+
+// NoticeWithin queues a notice about projects that build writes for each
+// connection covering one of them, from the projects it covers as an access:
+// a connection gets nothing of the others (false: nothing at all).
+func (notifier *Notifier) NoticeWithin(projectIDs []int, build func(store.Access) (Notice, bool)) {
+	if notifier.options.Store == nil {
+		return
+	}
+
+	notifier.mutex.Lock()
+	defer notifier.mutex.Unlock()
+
+	if notifier.closed {
+		return
+	}
+
+	notifier.queueNotice(noticeFor{projectIDs: slices.Clone(projectIDs), build: build})
+}
+
+// queueNotice: under the mutex, with the notifier open.
+func (notifier *Notifier) queueNotice(notice noticeFor) {
 	select {
-	case notifier.queue <- queued{notice: &noticeFor{notice: notice, projectIDs: slices.Clone(projectIDs)}}:
+	case notifier.queue <- queued{notice: &notice}:
 	default:
-		notifier.options.Logger.Warn("notification queue full, dropping a notice", "heading", notice.Heading)
+		notifier.options.Logger.Warn("notification queue full, dropping a notice", "heading", notice.notice.Heading)
 	}
 }
 
 // routeNotice writes a notice for every connection that covers one of its
 // projects; notices are few (a day's first drop, a cleanup run), so no flood limit.
+// A notice built per access is built once for the connections that see the
+// same of its projects, and written for all of them in one batch.
 func (notifier *Notifier) routeNotice(notice noticeFor) {
 	connections, err := notifier.options.Store.ListConnections(notifier.ctx)
 
@@ -226,15 +270,63 @@ func (notifier *Notifier) routeNotice(notice noticeFor) {
 
 	var send []string
 
+	groups := map[string]*noticeGroup{}
+
 	for _, connection := range connections {
-		if coversAny(connection, notice.projectIDs) {
+		if !coversAny(connection, notice.projectIDs) {
+			continue
+		}
+
+		if notice.build == nil {
 			send = append(send, connection.ID)
+
+			continue
+		}
+
+		access := connectionAccess(connection)
+		covered := slices.DeleteFunc(slices.Clone(notice.projectIDs), func(id int) bool { return !access.Sees(id) })
+		// What a connection is shown depends only on this: all projects, or which of the notice's.
+		key := "all"
+
+		if !access.All() {
+			key = fmt.Sprint(covered)
+		}
+
+		group := groups[key]
+
+		if group == nil {
+			group = &noticeGroup{access: access, covered: covered}
+			groups[key] = group
+		}
+
+		group.connectionIDs = append(group.connectionIDs, connection.ID)
+	}
+
+	for _, group := range groups {
+		if shown, ok := notice.build(group.access); ok {
+			notifier.enqueue(group.connectionIDs, group.covered, kindNotice, shown)
 		}
 	}
 
 	if len(send) > 0 {
 		notifier.enqueue(send, notice.projectIDs, kindNotice, notice.notice)
 	}
+}
+
+// noticeGroup is the connections that see the same of a notice's projects.
+type noticeGroup struct {
+	access        store.Access
+	covered       []int
+	connectionIDs []string
+}
+
+// connectionAccess is the projects a connection covers, as a viewer's access.
+func connectionAccess(connection store.Connection) store.Access {
+	if connection.AllProjects {
+		return store.Access{}
+	}
+
+	return store.OnlyProjects(connection.ProjectIDs...)
 }
 
 // coversAny: the connection is active, verified and covers one of the projects.
@@ -270,11 +362,17 @@ func CleanupNotice(run store.CleanupRun, projects map[int]config.Project, stepNa
 	table := &NoticeTable{Columns: []string{"Step", "Project", "Deleted"}, Numeric: []int{2}}
 
 	for _, step := range run.Steps {
-		for _, projectID := range slices.Sorted(maps.Keys(step.Projects)) {
+		for _, projectID := range store.StepProjects(step.Projects) {
 			if text := countsText(*step.Projects[projectID]); text != "" {
 				project := projects[projectID]
+				name := cmp.Or(project.Name, "no project")
+
+				if projectID == store.OtherProjects {
+					name = "Other"
+				}
+
 				table.Rows = append(table.Rows, []NoticeCell{
-					{Text: strconv.Itoa(step.Number), Detail: stepNames[step.Number]}, {Text: cmp.Or(project.Name, "no project"), Color: project.Color}, {Text: text},
+					{Text: strconv.Itoa(step.Number), Detail: stepNames[step.Number]}, {Text: name, Color: project.Color}, {Text: text},
 				})
 			}
 		}

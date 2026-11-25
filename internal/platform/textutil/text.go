@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -176,8 +177,8 @@ func Shorten(text string, limit int) string {
 	return text
 }
 
-// TruncateBytes cuts text to at most limit bytes, where a character starts.
-func TruncateBytes(text string, limit int) string {
+// truncateBytes cuts text to at most limit bytes, where a character starts.
+func truncateBytes(text string, limit int) string {
 	if len(text) <= limit {
 		return text
 	}
@@ -199,7 +200,7 @@ func ShortenBytes(text string, limit int) string {
 		return text
 	}
 
-	return TruncateBytes(text, limit) + "…"
+	return truncateBytes(text, limit) + "…"
 }
 
 // Slug lowercases text and keeps Latin letters, digits and "_", turning every
@@ -319,3 +320,35 @@ func MaskSecret(secret string) string {
 }
 
 var slackTokenIDs = regexp.MustCompile(`^xox[a-z]-(?:[0-9]+-)*`)
+
+// UpperFirst is text with its first letter upper case, as the web app shows
+// a project's name (first-letter:uppercase).
+func UpperFirst(text string) string {
+	first, size := utf8.DecodeRuneInString(text)
+
+	if size == 0 {
+		return text
+	}
+
+	return string(unicode.ToUpper(first)) + text[size:]
+}
+
+// terminalCode is a terminal's escape sequence (colors, cursor moves), as a
+// program writing to a terminal sends them: ESC [ parameters letter.
+var terminalCode = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
+
+// StripTerminalCodes removes terminal escape sequences and the other control
+// characters but newlines and tabs, as the web app shows logs (LogBody).
+func StripTerminalCodes(text string) string {
+	if !strings.ContainsFunc(text, unicode.IsControl) {
+		return text
+	}
+
+	return strings.Map(func(char rune) rune {
+		if unicode.IsControl(char) && char != '\n' && char != '\t' {
+			return -1
+		}
+
+		return char
+	}, terminalCode.ReplaceAllString(text, ""))
+}

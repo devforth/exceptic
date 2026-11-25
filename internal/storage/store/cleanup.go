@@ -2,6 +2,8 @@ package store
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 )
@@ -138,6 +140,22 @@ type CleanupStep struct {
 	Freed    int64                  `json:"freed"`
 	Duration time.Duration          `json:"duration"`
 	Projects map[int]*CleanupCounts `json:"projects"`
+}
+
+// OtherProjects stands for the projects a viewer or a connection does not
+// see, in a step as it is shown to them: their counts in one "Other" row.
+const OtherProjects = -1
+
+// StepProjects are the projects of a step's counts in the order they are
+// shown: by id, OtherProjects last.
+func StepProjects(counts map[int]*CleanupCounts) []int {
+	ids := slices.Sorted(maps.Keys(counts))
+
+	if len(ids) > 0 && ids[0] == OtherProjects {
+		ids = append(ids[1:], OtherProjects)
+	}
+
+	return ids
 }
 
 // CleanupCounts is what a step did to one project.

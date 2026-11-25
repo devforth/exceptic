@@ -7,8 +7,20 @@ import (
 	"time"
 
 	"github.com/devforth/exceptic/internal/platform/config"
+	"github.com/devforth/exceptic/internal/services"
 	"github.com/devforth/exceptic/internal/storage/store"
 )
+
+// shownToAll are runs as a viewer of every project sees them.
+func shownToAll(runs ...store.CleanupRun) []services.ShownRun {
+	shown := make([]services.ShownRun, len(runs))
+
+	for index, run := range runs {
+		shown[index], _ = services.VisibleRun(store.Access{}, run)
+	}
+
+	return shown
+}
 
 func TestCleanupResult(t *testing.T) {
 	stop := config.CleanupStopPercent
@@ -50,7 +62,7 @@ func TestCleanupResult(t *testing.T) {
 		{"running", store.CleanupRun{Status: store.CleanupRunning, Reached: 3}, "running, at step 3"},
 		{"failed", started(store.CleanupRun{Status: store.CleanupFailed, Reached: 5, Error: "the limit changed"}), "failed in step 5"},
 	} {
-		if got := cleanupResult(test.run); got != test.want {
+		if got := cleanupResult(shownToAll(test.run)[0]); got != test.want {
 			t.Errorf("%s: %q, want %q", test.name, got, test.want)
 		}
 	}
@@ -69,7 +81,7 @@ func TestCleanupSizesFromTheStart(t *testing.T) {
 			SizeAfter: sizeNow, Reached: 6, Steps: []store.CleanupStep{{Number: 5, Freed: 300 * megabyte}, {Number: 6, Freed: 500 * megabyte}},
 		}
 	}
-	output := cleanups([]store.CleanupRun{run(1700 * megabyte), run(1605 * megabyte), {Status: store.CleanupDone, SizeBefore: 900, SizeAfter: 700, Reached: 6}}, func(id int) string { return fmt.Sprint(id) })
+	output := cleanups(shownToAll(run(1700*megabyte), run(1605*megabyte), store.CleanupRun{Status: store.CleanupDone, SizeBefore: 900, SizeAfter: 700, Reached: 6}), func(id int) string { return fmt.Sprint(id) })
 	flood, quiet, before := output.Runs[0], output.Runs[1], output.Runs[2]
 
 	if flood.SizeBefore != config.FormatSize(2000*megabyte) || flood.SizeAfter != config.FormatSize(1600*megabyte) || flood.Freed != config.FormatSize(400*megabyte) {
@@ -103,7 +115,7 @@ func TestCleanupsOutput(t *testing.T) {
 			{Number: 5, Projects: map[int]*store.CleanupCounts{2: {Logs: 1}, 1: {Events: 2}}},
 		},
 	}
-	output := cleanups([]store.CleanupRun{run}, func(id int) string { return fmt.Sprintf("p%d", id) })
+	output := cleanups(shownToAll(run), func(id int) string { return fmt.Sprintf("p%d", id) })
 	got := output.Runs[0]
 
 	if got.DeletedSteps != "1, 3–5" || got.Took != "12s" || got.Steps[0].Took != "1.235s" || got.Stop != config.FormatSize(800) || got.Needed != config.FormatSize(100) {
@@ -124,7 +136,7 @@ func TestCleanupsCompactionOutput(t *testing.T) {
 		{Sequence: 2, Status: store.CleanupDone, Compaction: &store.CleanupCompaction{Status: store.CompactionPending}},
 		{Sequence: 1, Status: store.CleanupDone},
 	}
-	output := cleanups(runs, func(id int) string { return fmt.Sprint(id) })
+	output := cleanups(shownToAll(runs...), func(id int) string { return fmt.Sprint(id) })
 	done, pending, none := output.Runs[0].Compaction, output.Runs[2].Compaction, output.Runs[3].Compaction
 
 	if done == nil || done.Status != store.CompactionDone || done.Freed != config.FormatSize(2000) || done.FilesBefore != config.FormatSize(3000) ||

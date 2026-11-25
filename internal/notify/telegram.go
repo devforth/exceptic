@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/platform/textutil"
@@ -96,15 +97,25 @@ func (telegram Telegram) SendSummary(ctx context.Context, summary Summary) error
 	return telegram.send(ctx, strings.Join(lines, "\n"))
 }
 
+// telegramTextLimit is the characters a message holds once its HTML is parsed.
+const telegramTextLimit = 4096
+
 func (telegram Telegram) SendNotice(ctx context.Context, notice Notice) error {
-	lines := []string{"ℹ️ <b>" + html.EscapeString(notice.Heading) + "</b>"}
+	heading := "ℹ️ " + notice.Heading
+	lines := []string{"<b>" + html.EscapeString(heading) + "</b>"}
+	used := utf8.RuneCountInString(heading)
 
 	for _, line := range notice.Lines {
 		lines = append(lines, html.EscapeString(line))
+		used += 1 + utf8.RuneCountInString(line)
+	}
+
+	if notice.URL != "" {
+		used += 1 + utf8.RuneCountInString(notice.LinkText)
 	}
 
 	if notice.Table != nil {
-		lines = append(lines, "<pre>"+html.EscapeString(notice.Table.text(chatTableWidth))+"</pre>")
+		lines = append(lines, "<pre>"+html.EscapeString(notice.Table.fitText(chatTableWidth, telegramTextLimit-used-1))+"</pre>")
 	}
 
 	if notice.URL != "" {

@@ -32,8 +32,9 @@ import (
 var emailTemplateFiles embed.FS
 
 var emailTemplates = template.Must(template.New("email.html").Funcs(template.FuncMap{
-	"projectColor": projectColor,
+	"projectBadge": newProjectBadge,
 	"levelStyle":   levelStyle,
+	"shownLevel":   config.ShownLevel,
 	"excerpt":      func(text string) string { return textutil.Shorten(text, exceptionLength) },
 	"link":         func(url, text string) emailLink { return emailLink{URL: url, Text: text} },
 }).ParseFS(emailTemplateFiles, "templates/email.html"))
@@ -58,6 +59,70 @@ func projectColor(color string) string {
 	}
 
 	return "#555560"
+}
+
+// projectBadge is a project as the web app shows it: its name with a capital
+// first letter, outlined in its color, lightened under a dark theme.
+type projectBadge struct{ Name, Color string }
+
+func newProjectBadge(name, color string) projectBadge {
+	return projectBadge{Name: textutil.UpperFirst(name), Color: projectColor(color)}
+}
+
+// Class names the badge's color for the dark theme's rule (ProjectStyles).
+func (badge projectBadge) Class() string { return "x-p-" + strings.TrimPrefix(badge.Color, "#") }
+
+// darkProjectColor is a project color as the web app shows it on dark: 60% of
+// it and 40% white (layout.css, --project-text-share).
+func darkProjectColor(color string) string {
+	var red, green, blue int
+
+	if _, err := fmt.Sscanf(color, "#%02x%02x%02x", &red, &green, &blue); err != nil {
+		return color
+	}
+
+	mix := func(part int) int { return (part*60 + 255*40) / 100 }
+
+	return fmt.Sprintf("#%02x%02x%02x", mix(red), mix(green), mix(blue))
+}
+
+// ProjectStyles are the dark theme's colors of the project badges in the
+// email, one rule per color (inline styles cannot follow the theme).
+func (view emailView) ProjectStyles() template.CSS {
+	colors := []string{view.Notification.ProjectColor}
+
+	for _, item := range view.Summary.Items {
+		colors = append(colors, item.ProjectColor)
+	}
+
+	if view.Notice.Table != nil {
+		for _, row := range view.Notice.Table.Rows {
+			for _, cell := range row {
+				if cell.Color != "" {
+					colors = append(colors, cell.Color)
+				}
+			}
+		}
+	}
+
+	var rules strings.Builder
+
+	seen := map[string]bool{}
+
+	for _, color := range colors {
+		badge := newProjectBadge("", color)
+
+		if seen[badge.Color] {
+			continue
+		}
+
+		seen[badge.Color] = true
+		dark := darkProjectColor(badge.Color)
+		fmt.Fprintf(&rules, "  .%s { color: %s !important; border-color: %s !important; }\n", badge.Class(), dark, dark)
+	}
+
+	// Every color is "#rrggbb" (projectColor), so the rules hold nothing else.
+	return template.CSS(rules.String()) //nolint:gosec // only validated hex colors
 }
 
 // Email sends the long format, with the stack trace and context, through any
@@ -97,15 +162,17 @@ type emailLink struct{ URL, Text string }
 // card, the color of the tag and of the card's top, the card's width.
 type emailFrame struct {
 	Label             string
+	Tone              string // the class of its dark colors: x-tone-<tone>
 	Color, Background string
 	Width             int
 }
 
-// emailTones are the colors of a frame by tone.
+// emailTones are the colors of a frame by tone, the design system's tokens
+// (error, warning, success; info is the accent on --selected).
 var emailTones = map[string][2]string{
-	"error":   {"#dc2626", "#fdecec"},
-	"warning": {"#d97706", "#fdf3e1"},
-	"success": {"#16a34a", "#e8f6ed"},
+	"error":   {"#c62828", "#fdecea"},
+	"warning": {"#9a6700", "#fff4d6"},
+	"success": {"#2e7d32", "#e8f5e9"},
 	"info":    {"#4f46e5", "#eef0ff"},
 }
 
@@ -119,10 +186,10 @@ func frame(label, tone string, width int) emailFrame {
 	colors, ok := emailTones[tone]
 
 	if !ok {
-		colors = emailTones["info"]
+		tone, colors = "info", emailTones["info"]
 	}
 
-	return emailFrame{Label: label, Color: colors[0], Background: colors[1], Width: width}
+	return emailFrame{Label: label, Tone: tone, Color: colors[0], Background: colors[1], Width: width}
 }
 
 // IsNumeric says whether a column holds numbers, aligned right.
@@ -247,7 +314,7 @@ func (email Email) Send(ctx context.Context, notification Notification) error {
 		breadcrumbs := event.Breadcrumbs[max(0, len(event.Breadcrumbs)-maxEmailBreadcrumbs):]
 
 		for _, breadcrumb := range breadcrumbs {
-			line := breadcrumbLine{Category: textutil.Shorten(breadcrumb.Category, fieldLength), Message: textutil.Shorten(breadcrumb.Message, breadcrumbLength)}
+			line := breadcrumbLine{Category: textutil.Shorten(breadcrumb.Category, fieldLength), Message: textutil.Shorten(textutil.StripTerminalCodes(breadcrumb.Message), breadcrumbLength)}
 
 			if !breadcrumb.Timestamp.IsZero() {
 				line.Time = breadcrumb.Timestamp.UTC().Format("15:04:05")
@@ -291,7 +358,14 @@ func (email Email) SendSummary(ctx context.Context, summary Summary) error {
 
 	text.WriteString("\n" + summary.note() + "\n")
 
-	return email.send(ctx, "["+appNameOr(email.AppName)+"] "+summary.heading(), text.String(), "summary", view)
+	// Like a notification's subject: the project in brackets.
+	subject := "[" + appNameOr(email.AppName) + "] " + summary.heading()
+
+	if summary.Project != "" {
+		subject = "[" + summary.Project + "] " + strings.TrimPrefix(summary.heading(), summary.Project+": ")
+	}
+
+	return email.send(ctx, subject, text.String(), "summary", view)
 }
 
 func (email Email) SendNotice(ctx context.Context, notice Notice) error {

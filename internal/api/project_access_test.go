@@ -438,8 +438,9 @@ func TestProjectAccessCleanups(t *testing.T) {
 		t.Fatalf("every project: %v", got)
 	}
 
-	if got := projectsOf(scoped); len(scoped.Runs) != 1 || !slices.Equal(got, []string{"backend"}) {
-		t.Errorf("backend only: %d runs, %v", len(scoped.Runs), got)
+	// frontend's counts only as Other, by no name; its own run not at all.
+	if got := projectsOf(scoped); len(scoped.Runs) != 1 || !slices.Equal(got, []string{"Other", "backend"}) {
+		t.Errorf("backend and Other: %d runs, %v", len(scoped.Runs), got)
 	}
 }
 

@@ -3,13 +3,12 @@ package api
 import (
 	"context"
 	"fmt"
-	"maps"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/devforth/exceptic/internal/platform/config"
+	"github.com/devforth/exceptic/internal/services"
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
@@ -109,24 +108,25 @@ func (handler *handlers) listCleanups(ctx context.Context, call Call, _ noInput)
 }
 
 // cleanups shows the runs; projectName names a project by id, a deleted one too.
-func cleanups(runs []store.CleanupRun, projectName func(id int) string) cleanupsOutput {
+func cleanups(runs []services.ShownRun, projectName func(id int) string) cleanupsOutput {
 	output := cleanupsOutput{
 		StartPercent: config.CleanupStartPercent, StopPercent: config.CleanupStopPercent, FilesPercent: config.CleanupFilesPercent,
 		StalePercent: config.StalePercent, CompactionAttempts: store.CompactionAttempts, Kept: store.CleanupRunsKept, Runs: []cleanupRun{},
 	}
 
-	for _, run := range runs {
+	for _, shown := range runs {
+		run := shown.Run
 		stop := run.Limit * config.CleanupStopPercent / 100
 		view := cleanupRun{
 			ID: run.Sequence, StartedAt: run.StartedAt, Status: run.Status, Error: run.Error,
 			Limit: config.FormatSize(run.Limit), SizeBefore: config.FormatSize(run.SizeBefore),
 			Compacted: config.FormatSize(run.Compacted),
 			Stop:      config.FormatSize(stop), Needed: config.FormatSize(run.Need(config.CleanupStopPercent)),
-			DeletedSteps: stepNumbers(run.Steps), Result: cleanupResult(run), Took: tookText(run.Duration),
+			DeletedSteps: stepNumbers(run.Steps), Result: cleanupResult(shown), Took: tookText(run.Duration),
 			Steps: []cleanupStep{},
 		}
 
-		view.SizeAfter, view.Freed, view.Arrived, view.SizeNow = cleanupSizes(run)
+		view.SizeAfter, view.Freed, view.Arrived, view.SizeNow = cleanupSizes(shown)
 		view.BeforeFiles = run.Ratio == 0 && run.Reached > 0
 
 		if run.Files > 0 {
@@ -151,7 +151,7 @@ func cleanups(runs []store.CleanupRun, projectName func(id int) string) cleanups
 		for _, step := range run.Steps {
 			stepView := cleanupStep{Number: step.Number, Name: step.Name, Freed: config.FormatSize(step.Freed), Took: tookText(step.Duration), Projects: []cleanupDeleted{}}
 
-			for _, id := range slices.Sorted(maps.Keys(step.Projects)) {
+			for _, id := range store.StepProjects(step.Projects) {
 				stepView.Projects = append(stepView.Projects, cleanupDeleted{Project: projectName(id), Deleted: step.Projects[id].String()})
 			}
 
@@ -170,8 +170,8 @@ const arrivedPercent = 1
 // cleanupSizes reads a run from the data it started with: after, what it
 // freed, and the data that arrived meanwhile with the data held at the end
 // once sizable. A run stored before Ratio measured the files, so it has none.
-func cleanupSizes(run store.CleanupRun) (after, freed, arrived, now string) {
-	left, known := run.Left()
+func cleanupSizes(shown services.ShownRun) (after, freed, arrived, now string) {
+	run, left, known := shown.Run, shown.Left, shown.Known
 
 	if !known {
 		if run.Reached == 0 {
@@ -201,7 +201,8 @@ func tookText(took time.Duration) string {
 
 // cleanupResult says why a run stopped, of the data it started with: data
 // arriving meanwhile is no part of what it set out to free.
-func cleanupResult(run store.CleanupRun) string {
+func cleanupResult(shown services.ShownRun) string {
+	run := shown.Run
 	stop := config.CleanupStopPercent
 	data := "the data it started with"
 
@@ -215,7 +216,7 @@ func cleanupResult(run store.CleanupRun) string {
 		goal += fmt.Sprintf(" and the files (%s after compacting, over %d%% of the limit) under the limit", config.FormatSize(run.Files), config.CleanupFilesPercent)
 	}
 
-	switch short := shortOf(run); {
+	switch short := shortOf(shown); {
 	case run.Status == store.CleanupRunning:
 		return fmt.Sprintf("running, at step %d", run.Reached)
 	case run.Status == store.CleanupFailed:
@@ -247,8 +248,8 @@ const othersFreed = "other deletes meanwhile freed the rest of what was needed"
 // shortOf says the run freed less than it needed: it ran out of steps, or
 // deletes beside it (a purged project, deleted issues or logs) brought the
 // data down and it stopped early. The slack covers the goal's rounding.
-func shortOf(run store.CleanupRun) bool {
-	left, known := run.Left()
+func shortOf(shown services.ShownRun) bool {
+	run, left, known := shown.Run, shown.Left, shown.Known
 	need := run.Need(config.CleanupStopPercent)
 
 	return known && run.Compacted-left < need-need/1000-int64(run.Ratio)-2

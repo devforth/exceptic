@@ -2,14 +2,13 @@ package notify
 
 import (
 	"encoding/json"
-	"slices"
 	"time"
 
 	"github.com/devforth/exceptic/internal/platform/logging"
 )
 
 // dispatch routes notifications to connections, applies the flood limit per
-// connection and writes messages to the outbox.
+// connection and project and writes messages to the outbox.
 func (notifier *Notifier) dispatch() {
 	windowEnds := notifier.options.windowEnds
 
@@ -21,13 +20,13 @@ func (notifier *Notifier) dispatch() {
 		windowEnds = ticker.C
 	}
 
-	windows := map[string]*window{}
+	windows := map[windowKey]*window{}
 
 	flush := func() {
-		for connectionID, current := range windows {
+		for key, current := range windows {
 			if current.held > 0 {
-				summary := Summary{Count: current.held, Window: notifier.options.Window, Items: current.examples}
-				notifier.enqueue([]string{connectionID}, current.projects, kindSummary, summary)
+				summary := Summary{Project: current.project, Count: current.held, Window: notifier.options.Window, Items: current.examples}
+				notifier.enqueue([]string{key.connectionID}, []int{key.projectID}, kindSummary, summary)
 			}
 		}
 
@@ -57,7 +56,7 @@ func (notifier *Notifier) dispatch() {
 }
 
 // routeOrDrop routes a notification; a panic loses only that one, not the dispatcher.
-func (notifier *Notifier) routeOrDrop(notification Notification, windows map[string]*window) {
+func (notifier *Notifier) routeOrDrop(notification Notification, windows map[windowKey]*window) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			notifier.options.Logger.Error("notification dropped: routing it panicked", "issue_id", notification.IssueID, "err", logging.PanicError(recovered))
@@ -67,7 +66,7 @@ func (notifier *Notifier) routeOrDrop(notification Notification, windows map[str
 	notifier.route(notification, windows)
 }
 
-func (notifier *Notifier) route(notification Notification, windows map[string]*window) {
+func (notifier *Notifier) route(notification Notification, windows map[windowKey]*window) {
 	if !notifier.inBurst {
 		connections, err := notifier.options.Store.ListConnections(notifier.ctx)
 
@@ -89,11 +88,12 @@ func (notifier *Notifier) route(notification Notification, windows map[string]*w
 			continue
 		}
 
-		current := windows[connection.ID]
+		key := windowKey{connectionID: connection.ID, projectID: notification.ProjectID}
+		current := windows[key]
 
 		if current == nil {
-			current = &window{}
-			windows[connection.ID] = current
+			current = &window{project: notification.Project}
+			windows[key] = current
 		}
 
 		if current.sent < notifier.options.MaxPerWindow {
@@ -101,10 +101,6 @@ func (notifier *Notifier) route(notification Notification, windows map[string]*w
 			current.sent++
 		} else {
 			current.held++
-
-			if !slices.Contains(current.projects, notification.ProjectID) {
-				current.projects = append(current.projects, notification.ProjectID)
-			}
 
 			if len(current.examples) < maxSummaryItems {
 				current.examples = append(current.examples, notification)

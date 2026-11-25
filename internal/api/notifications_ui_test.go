@@ -954,7 +954,8 @@ func TestUnsubscribeLink(t *testing.T) {
 		return response.Code, response.Body.String()
 	}
 
-	if status, body := open(http.MethodGet, path); status != http.StatusOK || !strings.Contains(body, "<button type=\"submit\">Stop these emails</button>") {
+	// Opening the link changes nothing, and the page does not say it did.
+	if status, body := open(http.MethodGet, path); status != http.StatusOK || !strings.Contains(body, "<button type=\"submit\">Stop these emails</button>") || strings.Contains(body, "are paused") {
 		t.Fatalf("GET: %d %s", status, body)
 	}
 

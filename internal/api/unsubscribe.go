@@ -74,7 +74,7 @@ func (handler Unsubscribe) serve(w http.ResponseWriter, r *http.Request) {
 	case !store.ValidID(destination) || !handler.Unsubscriber.Valid(destination, r.URL.Query().Get("token")):
 		status, view.Heading, view.Text = http.StatusNotFound, "This link does not work", "It may have been cut by your mail client. Open it again from the email, or change the connection on the Notifications page."
 	case r.Method == http.MethodGet:
-		view.Heading, view.Text, view.Confirm = "Stop these emails?", "Notifications to this address are paused. An admin can resume them on the Notifications page.", true
+		view.Heading, view.Text, view.Confirm = "Stop these emails?", "The button pauses every notification to this address. An admin can resume them on the Notifications page.", true
 	default:
 		address, paused, err := handler.Connections.Unsubscribe(r.Context(), destination)
 

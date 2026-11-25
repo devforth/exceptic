@@ -20,6 +20,7 @@ import (
 	"github.com/devforth/exceptic/internal/session"
 	"github.com/devforth/exceptic/internal/storage/database"
 	"github.com/devforth/exceptic/internal/storage/projects"
+	"github.com/devforth/exceptic/internal/storage/store"
 	"github.com/devforth/exceptic/web"
 )
 
@@ -155,21 +156,35 @@ func noticeStorage(db *database.Store, registry *projects.Registry, notifier *no
 	}
 
 	db.OnCleanupDone(func(run database.CleanupRun) {
-		byID := map[int]config.Project{}
-
-		for _, project := range registry.List() {
-			project.Color = cmp.Or(project.Color, config.DefaultProjectColor(project.ID))
-			byID[project.ID] = project
-		}
-
-		scope := "all projects"
-
-		if run.Project != database.AllProjects {
-			scope = fmt.Sprintf("%s, down to its disk share of %d%%", byID[run.Project].Name, run.Share)
-		}
-
-		notifier.Notice(notify.RunProjects(run), notify.CleanupNotice(run, byID, stepNames, scope, page("/projects/cleanups")))
+		notifier.NoticeWithin(notify.RunProjects(run), cleanupNotice(run, registry.List(), stepNames, page("/projects/cleanups")))
 	})
 
 	return nil
+}
+
+// cleanupNotice writes the notice of a run as an access sees it, the way the
+// Cleanup history shows it (services.VisibleRun): only the rows of its projects.
+func cleanupNotice(run database.CleanupRun, projectList config.Projects, stepNames map[int]string, historyURL string) func(store.Access) (notify.Notice, bool) {
+	byID := map[int]config.Project{}
+
+	for _, project := range projectList {
+		project.Color = cmp.Or(project.Color, config.DefaultProjectColor(project.ID))
+		byID[project.ID] = project
+	}
+
+	scope := "all projects"
+
+	if run.Project != database.AllProjects {
+		scope = fmt.Sprintf("%s, down to its disk share of %d%%", byID[run.Project].Name, run.Share)
+	}
+
+	return func(access store.Access) (notify.Notice, bool) {
+		shown, ok := services.VisibleRun(access, run)
+
+		if !ok {
+			return notify.Notice{}, false
+		}
+
+		return notify.CleanupNotice(shown.Run, byID, stepNames, scope, historyURL), true
+	}
 }

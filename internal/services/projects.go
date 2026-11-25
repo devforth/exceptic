@@ -159,6 +159,10 @@ func (service *Projects) Delete(ctx context.Context, access store.Access, id int
 
 // Name labels data of a deleted project by its ID.
 func (service *Projects) Name(projectID int) string {
+	if projectID == store.OtherProjects {
+		return "Other"
+	}
+
 	if project, ok := service.registry.List().ByID(projectID); ok {
 		return project.Name
 	}
@@ -319,13 +323,13 @@ func (service *Projects) Contact(ctx context.Context, access store.Access, proje
 }
 
 // Cleanups are the runs of the cleanup by size the store keeps, newest
-// first, as access shows them (visibleRun).
-func (service *Projects) Cleanups(ctx context.Context, access store.Access) ([]store.CleanupRun, error) {
+// first, as access shows them (VisibleRun).
+func (service *Projects) Cleanups(ctx context.Context, access store.Access) ([]ShownRun, error) {
 	runs, err := service.store.CleanupHistory(ctx, store.CleanupRunsKept)
-	shown := []store.CleanupRun{}
+	shown := []ShownRun{}
 
 	for _, run := range runs {
-		if run, ok := visibleRun(access, run); ok {
+		if run, ok := VisibleRun(access, run); ok {
 			shown = append(shown, run)
 		}
 	}
@@ -333,34 +337,59 @@ func (service *Projects) Cleanups(ctx context.Context, access store.Access) ([]s
 	return shown, err
 }
 
-// visibleRun is a run as access shows it: none of a project outside it; a
-// run over the database with only the counts of the projects within it,
-// without the steps that deleted only in others (its sizes and the freed
-// bytes of the steps shown stay: they are the database's).
-func visibleRun(access store.Access, run store.CleanupRun) (store.CleanupRun, bool) {
+// ShownRun is a cleanup run as access shows it. Its sizes are the
+// database's, so Left (store.CleanupRun.Left) is read from every step,
+// those left out included.
+type ShownRun struct {
+	Run   store.CleanupRun
+	Left  int64
+	Known bool // false for a run stored before CleanupRun.Ratio
+}
+
+// VisibleRun is a run as access shows it, in the Cleanup history and in the
+// notice a connection gets: none of a project outside it; a run over the
+// database with the counts of the projects within it by name and the others'
+// as one store.OtherProjects, as the Projects page shows the rest of the
+// database; its sizes are the database's.
+func VisibleRun(access store.Access, run store.CleanupRun) (ShownRun, bool) {
+	shown := ShownRun{Run: run}
+	shown.Left, shown.Known = run.Left()
+
 	if access.All() {
-		return run, true
+		return shown, true
 	}
 
 	if run.Project != 0 && !access.Sees(run.Project) {
-		return run, false
+		return shown, false
 	}
 
 	steps := make([]store.CleanupStep, 0, len(run.Steps))
 
 	for _, step := range run.Steps {
-		deleted := len(step.Projects) > 0
-		step.Projects = maps.Clone(step.Projects)
-		maps.DeleteFunc(step.Projects, func(id int, _ *store.CleanupCounts) bool { return !access.Sees(id) })
+		projects := make(map[int]*store.CleanupCounts, len(step.Projects))
 
-		if deleted && len(step.Projects) == 0 {
-			continue // it deleted only in hidden projects
+		for id, counts := range step.Projects {
+			if access.Sees(id) {
+				projects[id] = counts
+
+				continue
+			}
+
+			other := projects[store.OtherProjects]
+
+			if other == nil {
+				other = &store.CleanupCounts{}
+				projects[store.OtherProjects] = other
+			}
+
+			other.Add(*counts)
 		}
 
+		step.Projects = projects
 		steps = append(steps, step)
 	}
 
-	run.Steps = steps
+	shown.Run.Steps = steps
 
-	return run, true
+	return shown, true
 }

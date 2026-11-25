@@ -430,10 +430,12 @@ func TestNoticeEmail(t *testing.T) {
 		t.Errorf("subject %q", subject)
 	}
 
-	for _, want := range []string{">Cleanup done</span>", "Logs below error", "border:1px solid #db2777", ">frontend</span>", `align="right"`, ">25,458 logs</td>",
+	for _, want := range []string{">Cleanup done</span>", "Logs below error", "border:1px solid #db2777", ">Frontend</span>", `align="right"`, ">25,458 logs</td>",
 		">2.0 GB</div>", "https://errors.example.com/projects/cleanups", "Sent by Exceptic to ops@example.com.",
-		// A dark theme for the clients that read <style>; the card keeps its stripe.
-		"@media (prefers-color-scheme: dark)", `<td class="x-card" style="background:#ffffff;border:1px solid #e4e4ea;border-top:4px solid #16a34a`} {
+		// A dark theme for the clients that read <style>, in the web app's dark colors: the card keeps its stripe
+		// in the tone's, the project its color lightened as the web app shows it (#db2777 -> #e97dad).
+		"@media (prefers-color-scheme: dark)", `<td class="x-card x-stripe-success" style="background:#ffffff;border:1px solid #e3e3e8;border-top:4px solid #2e7d32`,
+		".x-stripe-success { border-top-color: #7fd18b !important; }", `class="x-p-db2777"`, ".x-p-db2777 { color: #e97dad !important; border-color: #e97dad !important; }"} {
 		if !strings.Contains(htmlPart, want) {
 			t.Errorf("the HTML lacks %q", want)
 		}

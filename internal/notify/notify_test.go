@@ -358,6 +358,38 @@ func TestFloodLimitPerConnection(t *testing.T) {
 	}
 }
 
+// Each project has its own limit and its own summary, so a flood of one
+// project neither holds back nor joins another's.
+func TestFloodLimitPerProject(t *testing.T) {
+	setup := newSetup(t)
+	channel := &fakeChannel{}
+	setup.connect(channel, nil)
+
+	notifier := setup.start(Options{MaxPerWindow: 3})
+
+	for id := range 10 {
+		notifier.Notify(issue(id, "error"))
+	}
+
+	frontend := issue(100, "error")
+	frontend.ProjectID, frontend.Project = 2, "frontend"
+	notifier.Notify(frontend)
+
+	closeNotifier(t, notifier)
+
+	if len(channel.sent) != 4 || channel.sent[3].Project != "frontend" {
+		t.Fatalf("sent %s, want 3 of backend and frontend's", titles(channel.sent))
+	}
+
+	if len(channel.summaries) != 1 || channel.summaries[0].Project != "backend" || channel.summaries[0].Count != 7 {
+		t.Fatalf("summaries %+v, want one of backend's 7", channel.summaries)
+	}
+
+	if heading := channel.summaries[0].heading(); !strings.HasPrefix(heading, "backend: 7 more issues in the last ") {
+		t.Fatalf("heading %q", heading)
+	}
+}
+
 func TestFloodLimitResetsEveryWindow(t *testing.T) {
 	setup := newSetup(t)
 	channel := &fakeChannel{}
@@ -761,13 +793,14 @@ func TestFloodKeepsOnlySummaryExamples(t *testing.T) {
 		t.Fatalf("connections = %v, %v", connections, err)
 	}
 
-	windows := map[string]*window{connections[0].ID: {sent: 5}} // the direct quota is used up
+	key := windowKey{connectionID: connections[0].ID, projectID: issue(0, "error").ProjectID}
+	windows := map[windowKey]*window{key: {sent: 5}} // the direct quota is used up
 
 	for index := range 1000 {
 		notifier.route(issue(index, "error"), windows)
 	}
 
-	current := windows[connections[0].ID]
+	current := windows[key]
 
 	if current.held != 1000 || len(current.examples) != maxSummaryItems || current.examples[0].IssueID != issue(0, "error").IssueID {
 		t.Fatalf("held %d, kept %d examples", current.held, len(current.examples))

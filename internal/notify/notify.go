@@ -62,8 +62,11 @@ func (notification Notification) capped() Notification {
 
 // Summary stands for notifications held back by the flood limit.
 type Summary struct {
-	Count  int
-	Window time.Duration
+	// Project is the name of the project the held notifications are about
+	// (each project has its own window); empty in summaries queued before.
+	Project string `json:",omitempty"`
+	Count   int
+	Window  time.Duration
 	// Items are the first few held notifications, to show what they were about.
 	Items []Notification
 }
@@ -127,7 +130,7 @@ type Options struct {
 	Channels ChannelFactory
 	Logger   *slog.Logger
 
-	MaxPerWindow int // per connection
+	MaxPerWindow int // per connection and project
 	Window       time.Duration
 	QueueSize    int // in-memory notifications not yet in the outbox
 
@@ -206,14 +209,20 @@ type worker struct {
 }
 
 // window is the flood limit state of one connection.
+// windowKey: the flood limit counts per connection and project.
+type windowKey struct {
+	connectionID string
+	projectID    int
+}
+
 type window struct {
-	sent int
+	project string
+	sent    int
 	// held counts the notifications over the limit; examples keeps the first
 	// maxSummaryItems of them for the summary. Only those are kept: a flood of
 	// errors with large events must not pile up in memory until the window ends.
 	held     int
 	examples []Notification
-	projects []int // of every held notification
 }
 
 // New starts the goroutines. Without a store Notify does nothing.

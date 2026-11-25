@@ -64,8 +64,8 @@ func TestShortenBytes(t *testing.T) {
 		}
 	}
 
-	if got := TruncateBytes("привіт", 5); got != "пр" {
-		t.Errorf("TruncateBytes = %q", got)
+	if got := truncateBytes("привіт", 5); got != "пр" {
+		t.Errorf("truncateBytes = %q", got)
 	}
 }
 
@@ -124,6 +124,18 @@ func TestReplaceServiceTokens(t *testing.T) {
 	} {
 		if got := ReplaceServiceTokens(text, mark); got != text {
 			t.Errorf("ReplaceServiceTokens(%q) = %q, want it unchanged", text, got)
+		}
+	}
+}
+
+func TestStripTerminalCodes(t *testing.T) {
+	for _, test := range [][2]string{
+		{"\x1b[1m\x1b[32m🚀 AdminForth\x1b[0m  Bundling", "🚀 AdminForth  Bundling"},
+		{"line one\nline\ttwo\a", "line one\nline\ttwo"},
+		{"plain text", "plain text"},
+	} {
+		if got := StripTerminalCodes(test[0]); got != test[1] {
+			t.Errorf("StripTerminalCodes(%q) = %q, want %q", test[0], got, test[1])
 		}
 	}
 }
