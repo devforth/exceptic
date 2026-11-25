@@ -507,6 +507,20 @@ Every component with its variants, on sample data. Served only by the dev server
 				</Row>
 			</Card>
 			<Card>
+				<Row caption="truncate: a link on one line, cut with … in a narrow cell (the delivery log)">
+					<div class="flex w-64 min-w-0 items-center gap-2">
+						<span class="shrink-0 text-xs text-muted">New issue</span>
+						<Button
+							variant="link"
+							truncate
+							title="ManyError: ManyError ugmywuti backend wurmkgsh iyfd"
+						>
+							ManyError: ManyError ugmywuti backend wurmkgsh iyfd
+						</Button>
+					</div>
+				</Row>
+			</Card>
+			<Card>
 				<Row caption="size large: the one main action of a page">
 					<Button variant="primary" size="large">Add project</Button>
 				</Row>

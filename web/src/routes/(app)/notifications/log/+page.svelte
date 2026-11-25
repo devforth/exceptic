@@ -32,7 +32,7 @@
 	const columns: DeliveryColumn[] = [
 		{ key: 'queued', label: 'Queued' },
 		{ key: 'connection', label: 'Connection' },
-		{ key: 'message', label: 'Message' },
+		{ key: 'message', label: 'Message', fill: true },
 		{ key: 'status', label: 'Status' },
 		{ key: 'attempts', label: 'Attempts', number: true, wideOnly: true },
 		{ key: 'error', label: 'Error' }
@@ -94,14 +94,19 @@
 </FilterBar>
 
 {#snippet issue(item: Issue)}
-	<span class="text-xs text-muted">{item.message}</span>
+	<span class="shrink-0 text-xs text-muted">{item.message}</span>
 	{#if item.project}<Badge tone="project" label={item.project} />{/if}
 	{#if item.issue_id}
-		<Button variant="link" href={resolve('/(app)/issues/[id]', { id: item.issue_id })}>
+		<Button
+			variant="link"
+			truncate
+			title={item.title}
+			href={resolve('/(app)/issues/[id]', { id: item.issue_id })}
+		>
 			{item.title}
 		</Button>
 	{:else}
-		{item.title}
+		<span class="truncate" title={item.title}>{item.title}</span>
 	{/if}
 {/snippet}
 
@@ -125,14 +130,23 @@
 				{names.get(delivery.connection_id) ?? delivery.connection_id}
 			</Button>
 		{:else if column.key === 'message'}
-			{#if delivery.items?.length}
-				<span class="text-xs text-muted">{delivery.message}</span>
-				<Button variant="link" popup="dialog" onclick={() => openSummary(delivery)}>
-					{delivery.title}
-				</Button>
-			{:else}
-				{@render issue(delivery)}
-			{/if}
+			<!-- One line, the title cut with "…": the table never scrolls sideways. -->
+			<div class="flex min-w-0 items-center gap-2">
+				{#if delivery.items?.length}
+					<span class="shrink-0 text-xs text-muted">{delivery.message}</span>
+					<Button
+						variant="link"
+						truncate
+						title={delivery.title}
+						popup="dialog"
+						onclick={() => openSummary(delivery)}
+					>
+						{delivery.title}
+					</Button>
+				{:else}
+					{@render issue(delivery)}
+				{/if}
+			</div>
 		{:else if column.key === 'status'}
 			{@const status = deliveryStatus(delivery)}
 			<StatusText tone={status.tone}>{status.label}</StatusText>
@@ -144,7 +158,9 @@
 		{:else if column.key === 'attempts'}
 			{delivery.attempts}
 		{:else if delivery.last_error}
-			<span class="text-xs text-error">{delivery.last_error}</span>
+			<span class="block max-w-64 truncate text-xs text-error" title={delivery.last_error}>
+				{delivery.last_error}
+			</span>
 		{/if}
 	{/snippet}
 	{#snippet empty()}No messages{filtered ? ' match these filters' : ''}.{/snippet}

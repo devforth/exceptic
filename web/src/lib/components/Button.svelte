@@ -32,6 +32,8 @@ only its icon, and title names it (tooltip and aria-label).
 		unavailable?: string;
 		/** large: the one main action of a page (Add project), with larger corners. */
 		size?: 'default' | 'large';
+		/** Its text on one line, cut with "…" when its cell is narrower (a link in a fill column); title shows it whole. */
+		truncate?: boolean;
 		children?: Snippet;
 	};
 
@@ -50,6 +52,7 @@ only its icon, and title names it (tooltip and aria-label).
 		busy = false,
 		unavailable,
 		size = 'default',
+		truncate = false,
 		children
 	}: Props = $props();
 
@@ -120,13 +123,14 @@ only its icon, and title names it (tooltip and aria-label).
 		'disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
 		'forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-[Highlight]',
 		variants[variant],
+		truncate && 'max-w-full min-w-0',
 		!textual && boxClasses()
 	]);
 </script>
 
 {#snippet content()}
 	{#if icon}<Icon name={icon} />{/if}
-	{#if children}<span class={variant === 'title' ? 'truncate' : undefined}>
+	{#if children}<span class={variant === 'title' || truncate ? 'truncate' : undefined}>
 			{@render children()}
 		</span>{/if}
 {/snippet}
