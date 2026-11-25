@@ -74,12 +74,18 @@
 	const eventsCursor = $derived(more?.of === details ? more.cursor : details.events.next_cursor);
 
 	async function loadMore() {
+		// The page as asked: another issue, or the same one loaded again, drops the answer.
+		const from = details;
+		const rows = events;
+
 		loadingMore = true;
 
 		try {
 			const next = await get('list_issue_events', { issue_id: issue.id, cursor: eventsCursor });
 
-			more = { of: details, rows: [...events, ...(next.items ?? [])], cursor: next.next_cursor };
+			if (details !== from) return;
+
+			more = { of: from, rows: [...rows, ...(next.items ?? [])], cursor: next.next_cursor };
 		} catch (failure) {
 			toast.show(errorMessage(failure, 'Could not load more events.'), 'error');
 		} finally {
@@ -168,7 +174,7 @@
 </script>
 
 {#snippet pairs(rows: Pair[], label: string)}
-	<Table columns={pairColumns} {rows} {label} compact scroll headerless>
+	<Table columns={pairColumns} {rows} {label} compact flat headerless>
 		{#snippet cell(pair: Pair, column: PairColumn)}{pair[column.key]}{/snippet}
 	</Table>
 {/snippet}
@@ -311,9 +317,16 @@
 	{/if}
 
 	{#if history.length}
-		<Card title="Status history">
-			<StatusHistory issueId={issue.id} {history} />
-		</Card>
+		<!-- Closed: the latest change, who made it and when, is beside the title. -->
+		<Details title="Status history" count={history.length + 1}>
+			{#snippet summary()}
+				<span class="inline-flex items-center gap-2">
+					<StatusBadge status={history[0].to} />
+					<span>{changeAuthor(history[0])} · <Time at={history[0].created_at} /></span>
+				</span>
+			{/snippet}
+			<StatusHistory issueId={issue.id} {history} createdAt={issue.first_seen} />
+		</Details>
 	{/if}
 
 	{#if events.length}
@@ -326,7 +339,7 @@
 					rowKey={(row: EventRow) => row.event_id}
 					selectedKey={event?.event_id}
 					compact
-					scroll
+					flat
 				>
 					{#snippet cell(row: EventRow, column: EventColumn)}
 						{#if column.key === 'event'}
@@ -374,7 +387,7 @@
 					rows={event.related_logs ?? []}
 					label="Related logs"
 					compact
-					scroll
+					flat
 					headerless
 				>
 					{#snippet cell(log: Log, column: LogColumn)}
@@ -397,7 +410,7 @@
 					rows={event.breadcrumbs}
 					label="Breadcrumbs"
 					compact
-					scroll
+					flat
 				>
 					{#snippet cell(crumb: Breadcrumb, column: BreadcrumbColumn)}
 						{#if column.key === 'time'}

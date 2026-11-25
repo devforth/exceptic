@@ -916,7 +916,7 @@ Every component with its variants, on sample data. Served only by the dev server
 				rowKey={(row: Breadcrumb) => row.time}
 				label="Breadcrumbs"
 				compact
-				scroll
+				flat
 			>
 				{#snippet cell(row: Breadcrumb, column: BreadcrumbColumn)}{row[column.key]}{/snippet}
 			</Table>
@@ -1543,14 +1543,14 @@ Every component with its variants, on sample data. Served only by the dev server
 				{#snippet cell(row: Context, column: ContextColumn)}{row[column.key]}{/snippet}
 			</Table>
 		</Row>
-		<Row caption="compact, scroll (sticky header)" wide>
+		<Row caption="compact, flat (inside a card or a dialog)" wide>
 			<Table
 				columns={breadcrumbColumns}
 				rows={breadcrumbs}
 				rowKey={(row: Breadcrumb) => row.time}
 				label="Breadcrumbs"
 				compact
-				scroll
+				flat
 			>
 				{#snippet cell(row: Breadcrumb, column: BreadcrumbColumn)}{row[column.key]}{/snippet}
 			</Table>

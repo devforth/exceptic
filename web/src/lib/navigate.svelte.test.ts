@@ -93,6 +93,18 @@ describe('showChanged', () => {
 		expect(editing()).toBe(false);
 	});
 
+	it('drops its changes when the user went to another page with the same query', () => {
+		const url = at('/issues');
+
+		showChanged(url, { project: ['backend'] });
+		at('/logs');
+
+		expect(shown('project', [])).toEqual([]);
+		expect(editing()).toBe(false);
+		vi.advanceTimersByTime(editPause);
+		expect(navigation.goto).not.toHaveBeenCalled();
+	});
+
 	it('loads nothing when the changes come back to where the list is', () => {
 		const url = at('/logs?level=error');
 

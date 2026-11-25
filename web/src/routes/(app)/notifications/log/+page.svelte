@@ -117,7 +117,6 @@
 	rowKey={(delivery: Delivery) => delivery.id}
 	label="Messages"
 	compact
-	scroll
 >
 	{#snippet cell(delivery: Delivery, column: DeliveryColumn)}
 		{#if column.key === 'queued'}

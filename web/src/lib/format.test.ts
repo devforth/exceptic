@@ -3,6 +3,7 @@ import {
 	sharePercent,
 	cleanLog,
 	clockTime,
+	countOf,
 	exactTime,
 	formatSize,
 	readableLog,
@@ -74,5 +75,12 @@ describe('sharePercent', () => {
 
 	it('shows nothing without a whole', () => {
 		expect(sharePercent(10, 0)).toBe('');
+	});
+});
+
+describe('countOf', () => {
+	it('writes the count with the singular for one', () => {
+		expect(countOf(50000, 'logs')).toBe('50,000 logs');
+		expect(countOf(1, 'more events')).toBe('1 more event');
 	});
 });

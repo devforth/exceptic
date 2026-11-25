@@ -1,7 +1,7 @@
 // How an issue status looks (StatusBadge.svelte, the issue list's rows): its tone, its sign
 // and what it means, from the server's generated issueStatuses.
 import { issueStatuses } from '#lib/api/catalog.gen.ts';
-import { clockTime, shortDate } from '#lib/format.ts';
+import { clockTime, countOf, shortDate } from '#lib/format.ts';
 import type { RowTone } from './table.ts';
 
 export type IssueStatus = (typeof issueStatuses)[number]['name'];
@@ -64,7 +64,7 @@ export function ignoreBoundText(issue: IgnoreBounds): string | undefined {
 	if (issue.ignore_events_left) {
 		const left = issue.ignore_events_left;
 
-		parts.push(`for ${left.toLocaleString('en-US')} more ${left === 1 ? 'event' : 'events'}`);
+		parts.push(`for ${countOf(left, 'more events')}`);
 	}
 
 	return parts.length > 0 ? parts.join(' or ') : undefined;

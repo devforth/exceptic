@@ -108,3 +108,8 @@ export function sharePercent(part: number, whole: number): string {
 
 	return `${Math.round(exact)}%`;
 }
+
+/** A count of a kind, "50,000 logs" or "1 envelope". */
+export function countOf(count: number, kind: string): string {
+	return `${count.toLocaleString('en-US')} ${count === 1 ? kind.replace(/s$/, '') : kind}`;
+}

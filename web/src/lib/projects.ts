@@ -3,7 +3,7 @@ import { limits, projectPalette } from '#lib/api/catalog.gen.ts';
 import { post, type In, type Out } from '#lib/api/client.ts';
 import type { Confirmation } from '#lib/components/confirm.ts';
 import type { UsageSegment } from '#lib/components/usage.ts';
-import { shortDate } from '#lib/format.ts';
+import { countOf, shortDate } from '#lib/format.ts';
 import { toast } from '#lib/toast.svelte.ts';
 
 /** The question before deleting a project. */
@@ -135,11 +135,6 @@ export function usageSegments(
 }
 
 type Dropped = NonNullable<NonNullable<Out<'get_storage'>['projects']>[number]['dropped']>;
-
-/** A count of a kind, "50,000 logs" or "1 envelope". */
-export function countOf(count: number, kind: string): string {
-	return `${count.toLocaleString('en-US')} ${count === 1 ? kind.replace(/s$/, '') : kind}`;
-}
 
 /** What a project dropped in the last day, each kind in all: "Dropped in 24 h: 220,400 logs, 2,404 events". */
 export function droppedSummary(dropped: Dropped | null | undefined): string | undefined {

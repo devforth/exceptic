@@ -2,8 +2,8 @@
 @component
 A table of rows: the columns name what each shows, the cell snippet draws a row's cell.
 Every second row is shaded. Without rows it shows the empty snippet in an EmptyState.
-- `scroll` keeps it in a box of its own height with the header in view; `flat` has no box of
-  its own (inside a Card), only scrolls sideways; `compact` is denser.
+- Every table is as tall as its rows and scrolls only sideways; `flat` has no box of its own
+  (inside a Card or a Dialog); `compact` is denser.
 - `sort`: columns with a `sort` link their heading to the list sorted by them (aria-sort).
 - `selected` (bindable, needs rowKey): a checkbox per row and one for all (mixed when some are
   checked); it empties when the rows change.
@@ -16,7 +16,7 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 	import type { Snippet } from 'svelte';
 	import EmptyState from './EmptyState.svelte';
 	import { checkClasses } from './field.ts';
-	import { boxClasses, cardClasses } from './surface.ts';
+	import { cardClasses } from './surface.ts';
 	import Icon from './Icon.svelte';
 	import {
 		columnSort,
@@ -37,7 +37,6 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 		label?: string;
 		rowKey?: (row: Row) => RowKey;
 		compact?: boolean;
-		scroll?: boolean;
 		flat?: boolean;
 		headerless?: boolean;
 		sort?: TableSort;
@@ -58,7 +57,6 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 		label,
 		rowKey,
 		compact = false,
-		scroll = false,
 		flat = false,
 		headerless = false,
 		sort,
@@ -70,13 +68,7 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 		busy = false
 	}: Props = $props();
 
-	const box = $derived(
-		scroll
-			? `max-h-[420px] overflow-auto focus-ring ${boxClasses}`
-			: flat
-				? 'overflow-x-auto'
-				: `overflow-x-auto ${cardClasses}`
-	);
+	const box = $derived(flat ? 'overflow-x-auto' : `overflow-x-auto ${cardClasses}`);
 
 	const padding = $derived(compact ? 'px-2.5 py-1.5' : 'px-3 py-2.5');
 
@@ -93,8 +85,7 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 	}
 
 	const headingClasses = $derived([
-		'border-b border-border text-xs font-medium tracking-[.03em] text-muted uppercase',
-		scroll && 'sticky top-0 z-1 bg-surface shadow-[inset_0_-1px_0_var(--color-border)]'
+		'border-b border-border text-xs font-medium tracking-[.03em] text-muted uppercase'
 	]);
 
 	// Literal class names, so Tailwind builds them.
@@ -151,15 +142,7 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 {#if rows.length === 0 && empty}
 	<EmptyState>{@render empty()}</EmptyState>
 {:else}
-	<!-- A scroll box takes focus, so the keyboard can scroll a table without focusable cells. -->
-	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-	<div
-		class={[box, 'relative']}
-		aria-busy={busy || undefined}
-		tabindex={scroll ? 0 : undefined}
-		role={scroll ? 'region' : undefined}
-		aria-label={scroll ? label : undefined}
-	>
+	<div class={[box, 'relative']} aria-busy={busy || undefined}>
 		{#if busy}
 			<div class="absolute inset-x-0 top-0 z-10 h-0.5 overflow-hidden" aria-hidden="true">
 				<div class="h-full w-1/3 animate-loading-bar bg-accent motion-reduce:animate-none"></div>

@@ -15,11 +15,16 @@ type Options = {
 	now?: boolean;
 };
 
-let pending: { search: string; change: Change; typing: boolean } | undefined;
+type Address = { pathname: string; search: string };
+
+let pending: { address: string; change: Change; typing: boolean } | undefined;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let generation = 0;
-// The values of the controls changed and not loaded yet, so they answer at once.
+// The values of the controls changed and not loaded yet, so they answer at once, on their page only.
 const edits: Record<string, unknown> = $state({});
+let editsPath = '';
+
+const addressOf = (url: Address) => url.pathname + url.search;
 
 function forget() {
 	for (const name of Object.keys(edits)) delete edits[name];
@@ -32,8 +37,8 @@ function flush() {
 
 	pending = undefined;
 
-	// Another navigation (a filter chip, the back button) went first: it wins.
-	if (!edit || page.url.search !== edit.search) {
+	// Another navigation (a filter chip, the back button, another page) went first: it wins.
+	if (!edit || addressOf(page.url) !== edit.address) {
 		forget();
 
 		return;
@@ -41,7 +46,7 @@ function flush() {
 
 	const target = changed(page.url, edit.change);
 
-	if (target === page.url.pathname + page.url.search) {
+	if (target === addressOf(page.url)) {
 		forget();
 
 		return;
@@ -59,7 +64,7 @@ function flush() {
  * Changes the list's filters: the controls show the change at once, and the list loads once
  * nothing has changed for editPause, every change made meanwhile in the same request.
  */
-export function showChanged(url: { search: string }, change: Change, options: Options = {}): void {
+export function showChanged(url: Address, change: Change, options: Options = {}): void {
 	// Text goes trimmed; the field keeps what was typed, spaces included.
 	const trimmed = Object.fromEntries(
 		Object.entries(change).map(([name, value]) => [
@@ -69,11 +74,12 @@ export function showChanged(url: { search: string }, change: Change, options: Op
 	);
 
 	pending = {
-		search: pending?.search ?? url.search,
+		address: pending?.address ?? addressOf(url),
 		change: { ...pending?.change, ...trimmed },
 		typing: (options.typing ?? false) && (pending?.typing ?? true)
 	};
 	Object.assign(edits, options.shown ?? change);
+	editsPath = url.pathname;
 	clearTimeout(timer);
 
 	if (options.now) {
@@ -85,10 +91,10 @@ export function showChanged(url: { search: string }, change: Change, options: Op
 
 /** What a control shows: its change not loaded yet, else the list's value. */
 export function shown<T>(name: string, current: T): T {
-	return name in edits ? (edits[name] as T) : current;
+	return name in edits && page.url.pathname === editsPath ? (edits[name] as T) : current;
 }
 
 /** Whether changes wait to be loaded. */
 export function editing(): boolean {
-	return Object.keys(edits).length > 0;
+	return Object.keys(edits).length > 0 && page.url.pathname === editsPath;
 }

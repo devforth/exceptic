@@ -40,7 +40,7 @@
 		{ key: 'status', label: 'Status' },
 		{ key: 'limit', label: 'Limit', number: true, wideOnly: true },
 		{ key: 'before', label: 'Before', number: true, wideOnly: true },
-		{ key: 'after', label: 'After', number: true },
+		{ key: 'after', label: 'After' },
 		{ key: 'deleted', label: 'Deleted in steps', wideOnly: true },
 		{ key: 'result', label: 'Result' },
 		{ key: 'took', label: 'Took', number: true, wideOnly: true },
@@ -100,7 +100,6 @@
 	rowKey={(run: Run) => run.id}
 	label="Cleanup runs"
 	compact
-	scroll
 >
 	{#snippet cell(run: Run, column: RunColumn)}
 		{#if column.key === 'started'}
@@ -113,8 +112,11 @@
 			{run.size_before}
 			{#if run.before_files}<span class="text-xs text-muted">files</span>{/if}
 		{:else if column.key === 'after'}
-			{#if run.status === 'running'}…{:else if run.size_after}{run.size_after}
-				<span class="text-xs text-muted">−{run.freed}</span>{:else}—{/if}
+			{#if run.status === 'running'}…{:else if run.size_after}<span class="whitespace-nowrap">
+					{run.size_after}
+				</span><span class="block text-xs whitespace-nowrap text-muted">
+					−{run.freed}
+				</span>{:else}—{/if}
 		{:else if column.key === 'deleted'}
 			{run.deleted_steps || '—'}
 		{:else if column.key === 'result'}
@@ -158,7 +160,7 @@
 			rowKey={(step: Step) => step.number}
 			label="Steps"
 			compact
-			scroll
+			flat
 		>
 			{#snippet cell(step: Step, column: StepColumn)}
 				{#if column.key === 'number'}

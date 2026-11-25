@@ -2,6 +2,7 @@
 // status, what is said of an event that is not shown.
 import type { Out } from '#lib/api/client.ts';
 import { eventsPerIssuePerMinute } from '#lib/api/catalog.gen.ts';
+import { countOf } from '#lib/format.ts';
 
 export type IssueDetails = Out<'get_issue_details'>;
 export type EventDetails = NonNullable<IssueDetails['event']>;
@@ -45,7 +46,7 @@ export function changeAuthor(change: StatusChange): string {
 
 /** The events an issue counted without storing them, over its cap a minute. */
 export function notStoredText(count: number): string {
-	return `${count.toLocaleString('en-US')} ${count === 1 ? 'event' : 'events'} (over ${eventsPerIssuePerMinute} a minute)`;
+	return `${countOf(count, 'events')} (over ${eventsPerIssuePerMinute} a minute)`;
 }
 
 /** The rows of the events card against the events stored; nothing once all are shown. */
