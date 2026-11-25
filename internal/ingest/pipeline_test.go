@@ -215,25 +215,36 @@ func TestBurstWithCleanup(t *testing.T) {
 	event, logs := fixtures.Envelope(t, "node-event-unhandled"), fixtures.Envelope(t, "node-logs")
 
 	var (
-		sent   atomic.Int64
-		failed atomic.Int64
-		group  sync.WaitGroup
+		sent    atomic.Int64
+		failed  atomic.Int64
+		retried atomic.Int64
+		group   sync.WaitGroup
 	)
 
+	// A 429 while a compaction part holds ingest's writes is retried, as an
+	// SDK does after its Retry-After (here at once: the part is short).
 	send := func(project config.Project, body []byte) {
-		request := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/%d/envelope/?sentry_key=%s", project.ID, project.PublicKey), bytes.NewReader(body))
-		request.SetPathValue("projectID", strconv.Itoa(project.ID))
+		for {
+			request := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/%d/envelope/?sentry_key=%s", project.ID, project.PublicKey), bytes.NewReader(body))
+			request.SetPathValue("projectID", strconv.Itoa(project.ID))
 
-		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, request)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
 
-		if response.Code != http.StatusOK {
-			failed.Add(1)
+			switch {
+			case response.Code == http.StatusOK:
+				sent.Add(1)
+			case response.Code == http.StatusTooManyRequests && response.Header().Get("Retry-After") != "":
+				retried.Add(1)
+				time.Sleep(10 * time.Millisecond)
+
+				continue
+			default:
+				failed.Add(1)
+			}
 
 			return
 		}
-
-		sent.Add(1)
 	}
 
 	for _, project := range projects {
@@ -258,6 +269,10 @@ func TestBurstWithCleanup(t *testing.T) {
 	}
 
 	group.Wait()
+	// The burst is over: the cleanups ran during it. Run back to back with a
+	// 3 MB limit they would hold the writer's batches for most of the time.
+	stopCleanup()
+	<-cleanupDone
 
 	waitCtx, cancelWait := context.WithTimeout(context.Background(), 60*time.Second)
 
@@ -267,8 +282,6 @@ func TestBurstWithCleanup(t *testing.T) {
 		t.Fatalf("stored %d of %d, inbox %d bytes: %v", pipeline.stored.Load(), sent.Load(), db.InboxBytes(), err)
 	}
 
-	stopCleanup()
-	<-cleanupDone
 	cancel()
 	<-done
 
@@ -284,7 +297,7 @@ func TestBurstWithCleanup(t *testing.T) {
 		t.Fatalf("verify: %v %v", problems, err)
 	}
 
-	t.Logf("%d envelopes, %d cleanups that deleted something", sent.Load(), cleanups.Load())
+	t.Logf("%d envelopes (%d retried after a 429), %d cleanups that deleted something", sent.Load(), retried.Load(), cleanups.Load())
 }
 
 // Envelopes still in the fresh queue when a scan of the inbox stores them are
