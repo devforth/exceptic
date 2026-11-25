@@ -117,7 +117,6 @@
 		];
 
 		return [
-			{ label: 'ID', key: 'id' },
 			{ label: 'Time', key: 'time' },
 			...optional.filter(([, , value]) => value).map(([label, key]) => ({ label, key }))
 		];
@@ -189,7 +188,7 @@
 	{/snippet}
 </PageHeading>
 
-<Facts facts={issueFacts}>
+<Facts facts={issueFacts} columns>
 	{#snippet value(fact: Fact)}
 		{#if fact.key === 'id'}
 			{issue.id}
@@ -249,18 +248,17 @@
 
 <div class="flex flex-col gap-4">
 	{#if event}
-		<Card title="Event">
+		<section>
+			<h2 class="text-h2 font-bold">Event <code class="text-sm">{event.event_id}</code></h2>
 			{#if event.thinned}
 				<Notice tone="info">
 					Details of this old event (breadcrumbs, request, user, tags, contexts, extra, local
 					variables) were removed to save space; the error, its stack trace and message stay.
 				</Notice>
 			{/if}
-			<Facts facts={eventFacts(event)}>
+			<Facts facts={eventFacts(event)} columns>
 				{#snippet value(fact: Fact)}
-					{#if fact.key === 'id'}
-						<code>{event.event_id}</code>
-					{:else if fact.key === 'time'}
+					{#if fact.key === 'time'}
 						<Time at={event.timestamp} />
 						{#if event.clock_drift}
 							<span class="text-xs text-muted">
@@ -290,7 +288,7 @@
 					{/if}
 				{/snippet}
 			</Facts>
-		</Card>
+		</section>
 
 		{#if event.exceptions?.length}
 			<Card title="Exception">

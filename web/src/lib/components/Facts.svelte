@@ -1,7 +1,8 @@
 <!--
 @component
 Facts side by side: each a small muted label over its value, which the value snippet draws.
-`boxed`: in cells of a framed grid (what a setting keeps now). `title`: a heading above them,
+`boxed`: in cells of a framed grid (what a setting keeps now). `columns`: two to a row (an
+issue's and an event's facts). `title`: a heading above them,
 with its `hint`.
 -->
 <script lang="ts" generics="Fact extends { label: string }">
@@ -12,11 +13,12 @@ with its `hint`.
 		facts: Fact[];
 		value: Snippet<[Fact]>;
 		boxed?: boolean;
+		columns?: boolean;
 		title?: string;
 		hint?: string;
 	};
 
-	let { facts, value, boxed = false, title, hint }: Props = $props();
+	let { facts, value, boxed = false, columns = false, title, hint }: Props = $props();
 </script>
 
 {#if title}
@@ -29,7 +31,9 @@ with its `hint`.
 <dl
 	class={boxed
 		? 'my-1 grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-px overflow-hidden rounded-popup border border-border bg-border'
-		: 'my-3 flex flex-wrap gap-6'}
+		: columns
+			? 'my-3 grid grid-cols-[repeat(2,max-content)] gap-x-4 gap-y-2.5'
+			: 'my-3 flex flex-wrap gap-6'}
 >
 	{#each facts as fact (fact.label)}
 		<div class={boxed ? 'min-w-0 bg-surface px-3 py-2.5' : 'min-w-0'}>

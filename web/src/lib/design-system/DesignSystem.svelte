@@ -1125,6 +1125,13 @@ Every component with its variants, on sample data. Served only by the dev server
 				{/snippet}
 			</Facts>
 		</Row>
+		<Row caption="Facts in two columns: an issue's and an event's" wide>
+			<Facts facts={sampleEventFacts} columns>
+				{#snippet value(fact: EventFact)}
+					{#if fact.kind === 'time'}<Time at={fact.value} />{:else}{fact.value}{/if}
+				{/snippet}
+			</Facts>
+		</Row>
 		<Row caption="Facts boxed: cells of a framed grid" wide>
 			<Facts facts={sampleFacts} boxed>
 				{#snippet value(fact: SampleFact)}<b>{fact.value}</b>{/snippet}
