@@ -50,8 +50,11 @@ type Options struct {
 	OAuth Routes
 	// Web adds the web app (package web) at every other address, and UIAPI
 	// the requests it makes with its login; the server adds the IP allowlist.
-	Web            Routes
-	UIAPI          UIRoutes
+	Web   Routes
+	UIAPI UIRoutes
+	// Unsubscribe adds the links that stop emails: open to everyone like
+	// ingest (mail providers request them from their servers), signed.
+	Unsubscribe    interface{ Register(router *http.ServeMux) }
 	APIToken       string
 	AllowedIPs     []netip.Prefix
 	TrustedProxies []netip.Prefix
@@ -91,6 +94,10 @@ func (server *Server) Handler() http.Handler {
 
 	if server.UIAPI != nil {
 		server.UIAPI.Register(router, server.protectUI)
+	}
+
+	if server.Unsubscribe != nil {
+		server.Unsubscribe.Register(router)
 	}
 
 	router.Handle("/api/", server.unknownAPI())

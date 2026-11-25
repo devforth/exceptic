@@ -138,6 +138,44 @@ func (service *Connections) SetActive(ctx context.Context, connection store.Conn
 	return service.saved(ctx, connection)
 }
 
+// Unsubscribe pauses every connection sending to an email destination,
+// for its link in an email (notify.Unsubscriber, checked by the caller):
+// they stay listed, paused, so an admin can resume them. It returns the
+// address and how many it paused; an unknown destination is store.ErrNotFound.
+func (service *Connections) Unsubscribe(ctx context.Context, destinationID string) (address string, paused int, err error) {
+	connections, err := service.store.ListConnections(ctx)
+
+	if err != nil {
+		return "", 0, err
+	}
+
+	found := false
+
+	for _, connection := range connections {
+		if connection.DestinationID != destinationID || connection.Type != config.ChannelEmail {
+			continue
+		}
+
+		found, address = true, connection.Address
+
+		if !connection.Active {
+			continue
+		}
+
+		if err := service.SetActive(ctx, connection, false); err != nil {
+			return address, paused, err
+		}
+
+		paused++
+	}
+
+	if !found {
+		return "", 0, store.ErrNotFound
+	}
+
+	return address, paused, nil
+}
+
 // RetryNow makes the waiting messages of a connection within access due now.
 func (service *Connections) RetryNow(ctx context.Context, access store.Access, id string) error {
 	if _, err := service.Get(ctx, access, id); err != nil {

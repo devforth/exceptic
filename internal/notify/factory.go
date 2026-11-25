@@ -50,6 +50,9 @@ type Factory struct {
 	// TelegramURL replaces the Telegram API (tests point it to a fake
 	// server); empty means https://api.telegram.org.
 	TelegramURL string
+	// PublicURL and Unsubscribe give every email to a connection a link that stops them.
+	PublicURL   string
+	Unsubscribe Unsubscriber
 }
 
 // ErrNoSecretKey means the factory has no encryption key for chat secrets.
@@ -144,7 +147,10 @@ func (factory Factory) channel(connection store.Connection) (Channel, error) {
 			return nil, errors.New("SMTP is not configured")
 		}
 
-		return factory.Email(connection.Address), nil
+		email := factory.Email(connection.Address)
+		email.Unsubscribe = factory.Unsubscribe.URL(factory.PublicURL, connection.DestinationID)
+
+		return email, nil
 	case config.ChannelTelegram:
 		var tokens TelegramSecret
 

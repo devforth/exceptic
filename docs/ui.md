@@ -21,6 +21,8 @@ A connection sends new issues and issues that happen again after being resolved 
 
 It also sends notices about the storage of its projects, whatever its levels: when data a project sent is dropped for the first time in 24 hours (over a rate limit, the server busy, an SDK reporting what it held back; the next notice after a day without one, also across restarts; the Projects page counts every drop), and when a cleanup run that deleted data of the project is done, with the data held before and after and what each step deleted ([Retention](configuration.md#retention)). A connection for all projects also gets the notices of cleanups that deleted no project's data.
 
+With `PUBLIC_URL` set, every email has a link that stops it, and the headers mail providers show their own Unsubscribe button for (one click, RFC 8058): it pauses every connection that sends to that address, which stays listed, paused, so an admin can resume it here. The link in the email first asks to confirm, since mail scanners open links.
+
 | Field | |
 |---|---|
 | Type | Email needs a mail server (SMTP_HOST); Telegram and Slack need only the tokens entered below. |

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"path"
 	"regexp"
 	"slices"
@@ -69,7 +70,10 @@ func newNotificationsServer(t *testing.T, configure ...func(*config.Config)) *no
 	database := storetest.Open(t)
 	built, err := app.New(context.Background(), app.Options{
 		Settings: settings, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Store: database, Version: "test",
-		Factory: notify.Factory{SMTP: settings.Notifications.SMTP, Box: box, TelegramURL: telegram.URL},
+		Factory: notify.Factory{
+			SMTP: settings.Notifications.SMTP, Box: box, TelegramURL: telegram.URL,
+			PublicURL: settings.Notifications.PublicURL, Unsubscribe: notify.NewUnsubscriber(notificationsKey),
+		},
 	})
 
 	if err != nil {
@@ -910,5 +914,63 @@ func waitUntil(t *testing.T, what string, condition func() bool) {
 		}
 
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// The link in an email stops the emails to its address: GET asks first (mail
+// scanners open every link), POST, the button or a provider's one-click
+// request, pauses every connection sending there. It is open even behind
+// ALLOWED_IPS, since providers send it from their servers; a wrong token
+// changes nothing.
+func TestUnsubscribeLink(t *testing.T) {
+	server := newNotificationsServer(t, func(settings *config.Config) {
+		settings.Notifications.PublicURL = "https://errors.example.com"
+		settings.AllowedIPs = []netip.Prefix{netip.MustParsePrefix("192.0.2.0/24")} // httptest's peer: the admin
+	})
+
+	var step emailStep
+
+	server.must("start_email_verification", map[string]any{"email": "ops@example.com"}, &step)
+
+	code, _ := server.receiveCode()
+
+	server.must("confirm_email", map[string]any{"email": "ops@example.com", "code": code}, &step)
+
+	first := server.create(map[string]any{"type": "email", "email": "ops@example.com", "name": "Ops"})
+	connection, err := server.database.GetConnection(context.Background(), first)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	link := notify.NewUnsubscriber(notificationsKey).URL("https://errors.example.com", connection.DestinationID)
+	path := strings.TrimPrefix(link, "https://errors.example.com")
+	open := func(method, path string) (int, string) {
+		request := httptest.NewRequest(method, path, nil)
+		request.RemoteAddr = "203.0.113.5:40000" // a mail provider, outside ALLOWED_IPS
+		response := httptest.NewRecorder()
+		server.handler.ServeHTTP(response, request)
+
+		return response.Code, response.Body.String()
+	}
+
+	if status, body := open(http.MethodGet, path); status != http.StatusOK || !strings.Contains(body, "<button type=\"submit\">Stop these emails</button>") {
+		t.Fatalf("GET: %d %s", status, body)
+	}
+
+	if connection, _ := server.database.GetConnection(context.Background(), first); !connection.Active {
+		t.Fatal("opening the link paused the connection")
+	}
+
+	if status, _ := open(http.MethodPost, strings.Replace(path, "token=", "token=0", 1)); status != http.StatusNotFound {
+		t.Errorf("a wrong token: %d", status)
+	}
+
+	if status, body := open(http.MethodPost, path); status != http.StatusOK || !strings.Contains(body, "Notifications to ops@example.com are paused") {
+		t.Fatalf("POST: %d %s", status, body)
+	}
+
+	if connection, _ := server.database.GetConnection(context.Background(), first); connection.Active {
+		t.Error("the connection is still active")
 	}
 }

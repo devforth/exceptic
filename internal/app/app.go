@@ -113,6 +113,7 @@ func New(ctx context.Context, options Options) (*App, error) {
 		OAuth:          authorization,
 		Web:            spa,
 		UIAPI:          api.NewUI(logger, endpoints, plainRequests, auth, settings.Notifications.PublicURL, settings.TrustedProxies),
+		Unsubscribe:    api.Unsubscribe{Logger: logger, AppName: settings.AppName, Connections: all.Connections, Unsubscriber: options.Factory.Unsubscribe},
 		APIToken:       settings.APIToken,
 		AllowedIPs:     settings.AllowedIPs,
 		TrustedProxies: settings.TrustedProxies,

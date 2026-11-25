@@ -67,6 +67,9 @@ type Email struct {
 	SMTP    config.SMTP
 	To      string // the address of the connection
 	AppName string // APP_NAME: subjects and the footer say where mail comes from
+	// Unsubscribe is the link that stops the emails to To (Unsubscriber.URL);
+	// empty for a confirmation code and without PUBLIC_URL.
+	Unsubscribe string
 }
 
 func (email Email) Name() string { return config.ChannelEmail }
@@ -136,6 +139,7 @@ type emailView struct {
 	Breadcrumbs  []breadcrumbLine
 	Frame        emailFrame
 	To           string // set by send
+	Unsubscribe  string // set by send
 	Heading      string
 	Summary      Summary
 	Notice       Notice
@@ -351,13 +355,21 @@ type attachment struct {
 func (email Email) send(ctx context.Context, subject, text, templateName string, view emailView, attachments ...attachment) error {
 	var htmlBody bytes.Buffer
 
-	view.AppName, view.To = appNameOr(email.AppName), email.To
+	view.AppName, view.To, view.Unsubscribe = appNameOr(email.AppName), email.To, email.Unsubscribe
 
 	if err := emailTemplates.ExecuteTemplate(&htmlBody, templateName, view); err != nil {
 		return fmt.Errorf("email template: %w", err)
 	}
 
-	message, err := buildMessage(email.SMTP.From, []string{email.To}, subject, text, htmlBody.String(), attachments...)
+	var extra [][2]string
+
+	// One-click unsubscribing (RFC 8058): mail providers show their own button for it.
+	if email.Unsubscribe != "" {
+		extra = [][2]string{{"List-Unsubscribe", "<" + email.Unsubscribe + ">"}, {"List-Unsubscribe-Post", "List-Unsubscribe=One-Click"}}
+		text += "\nStop these emails: " + email.Unsubscribe + "\n"
+	}
+
+	message, err := buildMessage(email.SMTP.From, []string{email.To}, subject, text, htmlBody.String(), extra, attachments...)
 
 	if err != nil {
 		return err
@@ -382,7 +394,7 @@ func (email Email) SendVerificationCode(ctx context.Context, code string, validF
 
 // buildMessage assembles a multipart/alternative message (text and HTML),
 // wrapped in multipart/mixed when files are attached.
-func buildMessage(from string, to []string, subject, text, htmlBody string, attachments ...attachment) ([]byte, error) {
+func buildMessage(from string, to []string, subject, text, htmlBody string, extra [][2]string, attachments ...attachment) ([]byte, error) {
 	sender, err := mail.ParseAddress(from)
 
 	if err != nil {
@@ -409,6 +421,7 @@ func buildMessage(from string, to []string, subject, text, htmlBody string, atta
 		{"MIME-Version", "1.0"},
 		{"Content-Type", contentType},
 	}
+	headers = append(headers, extra...)
 
 	for _, header := range headers {
 		message.WriteString(header[0] + ": " + header[1] + "\r\n")

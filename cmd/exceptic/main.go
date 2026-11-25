@@ -208,7 +208,7 @@ func logRetention(logger *slog.Logger, settings config.Retention) {
 // notificationFactory builds channels for the connections set up in the UI.
 // It logs which connection types can be created with the current settings.
 func notificationFactory(logger *slog.Logger, appName string, settings config.Notifications) (notify.Factory, error) {
-	factory := notify.Factory{AppName: appName, SMTP: settings.SMTP}
+	factory := notify.Factory{AppName: appName, SMTP: settings.SMTP, PublicURL: settings.PublicURL, Unsubscribe: notify.NewUnsubscriber(settings.SecretKey)}
 
 	if settings.SecretKey != "" {
 		box, err := secret.New(settings.SecretKey)

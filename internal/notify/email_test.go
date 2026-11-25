@@ -443,3 +443,48 @@ func TestNoticeEmail(t *testing.T) {
 		t.Errorf("the text part:\n%s", text)
 	}
 }
+
+// An email to a connection carries the one-click unsubscribe of RFC 8058
+// and a link in its footer; a confirmation code carries neither.
+func TestEmailUnsubscribe(t *testing.T) {
+	settings, sessions := fixtures.FakeSMTP(t)
+	unsubscriber := NewUnsubscriber("0123456789abcdef0123456789abcdef")
+	link := unsubscriber.URL("https://errors.example.com", "dst12345")
+
+	if !strings.HasPrefix(link, "https://errors.example.com/unsubscribe/dst12345?token=") || NewUnsubscriber("").URL("https://errors.example.com", "dst12345") != "" ||
+		unsubscriber.URL("", "dst12345") != "" {
+		t.Fatalf("link %q", link)
+	}
+
+	token := link[strings.Index(link, "token=")+len("token="):]
+
+	if !unsubscriber.Valid("dst12345", token) || unsubscriber.Valid("dst12346", token) || unsubscriber.Valid("dst12345", "00"+token[2:]) ||
+		NewUnsubscriber("another key, another key, another").Valid("dst12345", token) {
+		t.Error("a token is valid for its destination and key only")
+	}
+
+	email := Email{SMTP: settings, To: "ops@example.com", AppName: "Exceptic", Unsubscribe: link}
+
+	if err := email.SendNotice(context.Background(), DroppedNotice(config.Project{ID: 2, Name: "frontend"}, "logs", "rate limit", 3, "")); err != nil {
+		t.Fatal(err)
+	}
+
+	raw := (<-sessions).Data
+	_, text, htmlPart := fixtures.ParseEmail(t, raw)
+
+	if !strings.Contains(raw, "List-Unsubscribe: <"+link+">\r\n") || !strings.Contains(raw, "List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n") {
+		t.Errorf("headers:\n%s", raw[:strings.Index(raw, "\r\n\r\n")])
+	}
+
+	if !strings.Contains(html.UnescapeString(htmlPart), `href="`+link+`"`) || !strings.Contains(text, "Stop these emails: "+link) {
+		t.Error("the footer lacks the link")
+	}
+
+	if err := (Email{SMTP: settings, To: "ops@example.com"}).SendVerificationCode(context.Background(), "123456", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+
+	if raw := (<-sessions).Data; strings.Contains(raw, "List-Unsubscribe") || strings.Contains(raw, "stop these emails") {
+		t.Error("a confirmation code offers to unsubscribe")
+	}
+}
