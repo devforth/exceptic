@@ -77,15 +77,16 @@ func TestNoticeTexts(t *testing.T) {
 		},
 	}
 	notice := CleanupNotice(run, map[int]string{1: "backend", 2: "frontend"}, "all projects", "https://errors.example.com/projects/cleanups")
-	text := notice.Heading + "\n" + strings.Join(notice.Lines, "\n")
+	text := notice.Heading + "\n" + strings.Join(notice.Lines, "\n") + "\n" + notice.Table.text()
+	want := `Cleanup done: all projects
+2.0 GB → 1.5 GB of 2.0 GB, 29s
+Step                                                 Project   Deleted
+5. logs below error, oldest first                    frontend  25,458 logs
+6. events below error but the latest of their issue  backend   1,302 events
+6. events below error but the latest of their issue  frontend  231 events`
 
-	for _, want := range []string{
-		"Cleanup done: all projects", "2.0 GB before, 1.5 GB after, limit 2.0 GB; took 29s",
-		"5. logs below error, oldest first: frontend 25,458 logs", "6. events below error but the latest of their issue: backend 1,302 events, frontend 231 events",
-	} {
-		if !strings.Contains(text, want) {
-			t.Errorf("cleanup notice lacks %q:\n%s", want, text)
-		}
+	if text != want {
+		t.Errorf("cleanup notice:\n%s\nwant:\n%s", text, want)
 	}
 
 	if projects := RunProjects(run); len(projects) != 2 || projects[0] != 1 || projects[1] != 2 {
@@ -94,7 +95,7 @@ func TestNoticeTexts(t *testing.T) {
 
 	dropped := DroppedNotice("frontend", "logs", "rate limit", 1200, "")
 
-	if dropped.Heading != "frontend: data dropped" || !strings.HasPrefix(dropped.Lines[0], "1,200 logs were not stored (rate limit).") {
+	if dropped.Heading != "frontend: data dropped" || dropped.Table.text() != "What  Why         Count\nlogs  rate limit  1,200" {
 		t.Errorf("dropped notice %+v", dropped)
 	}
 }

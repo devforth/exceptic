@@ -102,6 +102,10 @@ func (telegram Telegram) SendNotice(ctx context.Context, notice Notice) error {
 		lines = append(lines, html.EscapeString(line))
 	}
 
+	if notice.Table != nil {
+		lines = append(lines, "<pre>"+html.EscapeString(notice.Table.text())+"</pre>")
+	}
+
 	if notice.URL != "" {
 		lines = append(lines, telegramLink(notice.URL, notice.LinkText))
 	}

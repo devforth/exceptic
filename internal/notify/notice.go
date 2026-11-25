@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/storage/store"
@@ -21,9 +22,42 @@ const kindNotice = "notice"
 type Notice struct {
 	Heading string
 	Lines   []string
+	// Table follows the lines: an HTML table in email, aligned columns in a code block in chats.
+	Table *NoticeTable `json:",omitempty"`
 	// URL is the page of the web app that shows more; empty without PUBLIC_URL.
 	URL      string
 	LinkText string
+}
+
+// NoticeTable is a table of a notice: its column names and rows.
+type NoticeTable struct {
+	Columns []string
+	Rows    [][]string
+}
+
+// text is the table as aligned columns of plain text.
+func (table NoticeTable) text() string {
+	widths := make([]int, len(table.Columns))
+
+	for _, row := range append([][]string{table.Columns}, table.Rows...) {
+		for index, cell := range row {
+			widths[index] = max(widths[index], utf8.RuneCountInString(cell))
+		}
+	}
+
+	var lines []string
+
+	for _, row := range append([][]string{table.Columns}, table.Rows...) {
+		cells := make([]string, len(row))
+
+		for index, cell := range row {
+			cells[index] = cell + strings.Repeat(" ", widths[index]-utf8.RuneCountInString(cell))
+		}
+
+		lines = append(lines, strings.TrimRight(strings.Join(cells, "  "), " "))
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 // noticeFor is a notice and the projects it is about, on its way to the dispatcher.
@@ -91,35 +125,28 @@ func coversAny(connection store.Connection, projectIDs []int) bool {
 func DroppedNotice(project, kind, reason string, count int64, projectsURL string) Notice {
 	return Notice{
 		Heading: fmt.Sprintf("%s: data dropped", project),
-		Lines: []string{
-			fmt.Sprintf("%s %s were not stored (%s).", formatCount(count), kind, reason),
-			"This is the first drop of the project in 24 hours; the next notice comes after a day without drops. The Projects page counts every drop of the last 24 hours.",
-		},
-		URL: projectsURL, LinkText: "Open Projects",
+		Lines:   []string{"First drop in 24 hours; the Projects page counts the rest."},
+		Table:   &NoticeTable{Columns: []string{"What", "Why", "Count"}, Rows: [][]string{{kind, reason, formatCount(count)}}},
+		URL:     projectsURL, LinkText: "Open Projects",
 	}
 }
 
 // CleanupNotice tells that a cleanup run is done: its scope, the data held
 // before and after, and what each step deleted per project.
 func CleanupNotice(run store.CleanupRun, projectNames map[int]string, scope, historyURL string) Notice {
-	lines := []string{fmt.Sprintf("Data held: %s before, %s after, limit %s; took %s.",
-		config.FormatSize(run.SizeBefore), config.FormatSize(run.SizeAfter), config.FormatSize(run.Limit), run.Duration.Round(time.Second))}
+	table := &NoticeTable{Columns: []string{"Step", "Project", "Deleted"}}
 
 	for _, step := range run.Steps {
-		var parts []string
-
 		for _, projectID := range slices.Sorted(maps.Keys(step.Projects)) {
 			if text := countsText(*step.Projects[projectID]); text != "" {
-				parts = append(parts, cmp.Or(projectNames[projectID], "no project")+" "+text)
+				table.Rows = append(table.Rows, []string{fmt.Sprintf("%d. %s", step.Number, step.Name), cmp.Or(projectNames[projectID], "no project"), text})
 			}
-		}
-
-		if len(parts) > 0 {
-			lines = append(lines, fmt.Sprintf("%d. %s: %s", step.Number, step.Name, strings.Join(parts, ", ")))
 		}
 	}
 
-	return Notice{Heading: "Cleanup done: " + scope, Lines: lines, URL: historyURL, LinkText: "Open Cleanup history"}
+	line := fmt.Sprintf("%s → %s of %s, %s", config.FormatSize(run.SizeBefore), config.FormatSize(run.SizeAfter), config.FormatSize(run.Limit), run.Duration.Round(time.Second))
+
+	return Notice{Heading: "Cleanup done: " + scope, Lines: []string{line}, Table: table, URL: historyURL, LinkText: "Open Cleanup history"}
 }
 
 // RunProjects are the projects a run deleted data of.

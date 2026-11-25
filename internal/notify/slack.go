@@ -113,6 +113,10 @@ func (slack Slack) SendNotice(ctx context.Context, notice Notice) error {
 		lines = append(lines, slackEscape(line))
 	}
 
+	if notice.Table != nil {
+		lines = append(lines, "```"+slackEscape(strings.ReplaceAll(notice.Table.text(), "```", "ʼʼʼ"))+"```")
+	}
+
 	if notice.URL != "" {
 		lines = append(lines, slackLink(notice.URL, notice.LinkText))
 	}

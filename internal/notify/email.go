@@ -251,6 +251,10 @@ func (email Email) SendSummary(ctx context.Context, summary Summary) error {
 func (email Email) SendNotice(ctx context.Context, notice Notice) error {
 	text := notice.Heading + "\n\n" + strings.Join(notice.Lines, "\n") + "\n"
 
+	if notice.Table != nil {
+		text += "\n" + notice.Table.text() + "\n"
+	}
+
 	if notice.URL != "" {
 		text += "\n" + notice.URL + "\n"
 	}
