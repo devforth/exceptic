@@ -6,20 +6,18 @@ A JSON API under `/api/v1/` for scripts and integrations. It is closed until `AP
 curl -H "Authorization: Bearer $API_TOKEN" "https://errors.example.com/api/v1/list_issues?project=backend"
 ```
 
-The API and the [MCP tools](mcp.md) are the same endpoints with the same names, inputs and outputs, so anything an agent does can be scripted, and the other way round. A few endpoints are REST only (marked below); managing projects, notifications and users is for agents and the web interface only, since it acts as a user and the API has only a token. Status changes made through the API are recorded in the issue history as "API token". The token sees every project, whatever projects users are limited to.
+The API and the [MCP tools](mcp.md) are the same endpoints with the same names, inputs and outputs. A few endpoints are REST only (marked below); managing projects, notifications and users is for agents and the web interface only, since it acts as a user and the API has only a token. Status changes made through the API are recorded in the issue history as "API token". The token sees every project, whatever projects users are limited to, and runs every endpoint.
 
 ## Conventions
 
 - Each endpoint is `/api/v1/<name>`. `/api/ui/` is the web interface's own API (the endpoints below that the web app uses and its own, such as `get_issue_details`, plus its login), bound to its login session and same-origin checks; it is not for scripts. Endpoints that only read are `GET` with the input as query parameters (`?project=backend&limit=50`; a list takes repeated or comma-separated values: `issue_ids=k3x9q2mf,a7c2d4e9`). Endpoints that change data are `POST` with the input as a JSON object.
-- Errors: a status code with `{"error": "message"}` (a refused form also has `fields`, the problem of each input, and `duplicate`, the record that already does it):
+- Errors: a status code with `{"error": "message"}`:
   - 400: invalid input, unknown parameters too.
   - 401: no valid token.
-  - 403: an address outside `ALLOWED_IPS`. (The web interface and MCP also answer 403 for a record of a project outside the user's projects and for what the user's role may not do; the token has every project and endpoint.)
+  - 403: an address outside `ALLOWED_IPS`. (The web interface and MCP also answer 403 for a record of a project outside the user's projects and for what the user's role may not do.)
   - 404: a record that does not exist (`not found: issue k3x9q2mf`, `update_issue_status` with any such ID too), an unknown project, an unknown endpoint.
   - 405: a known endpoint with the other method, with `Allow`.
-  - 409: a stored record in the way: a name taken, a project from `PROJECTS` to delete, a connection that already sends there, an address not confirmed yet.
   - 413: a body over 64 KiB.
-  - 502: `send_test_message` not delivered by the destination.
   - 500: a server failure (logged; the answer says only `internal error`).
 - Lists return `{"items": [...], "next_cursor": "..."}`. Pass `cursor=<next_cursor>` for the next page; there is no `next_cursor` on the last one. `limit` is 1–100, default 20.
 - `project` takes project ids (`1`) or names (`backend`), `level` levels; each takes several values (`?project=backend&project=frontend`), and none means every one.

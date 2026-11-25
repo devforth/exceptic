@@ -1,6 +1,6 @@
 # Settings in the web UI
 
-What the fields of the settings pages mean. The UI shows the same text as hints (the question marks next to the fields), so this page is their source: change a hint here. Settings that come from the environment are in [Configuration](configuration.md).
+The fields of the settings pages. The UI shows these rows as the hints (?) next to the fields: change a hint here. Settings from the environment are in [Configuration](configuration.md).
 
 ## Projects
 
@@ -12,16 +12,16 @@ A project is one service (backend, frontend, worker) with its own DSN. Projects 
 | DSN | The address the app's Sentry SDK sends errors and logs to. The key in it only allows sending to this project, so it can be in browser code. |
 | Logs | Log levels to store; others are dropped when they arrive. Unchanged, the project follows RECORD_LOG_LEVELS. Errors and messages of every level are stored. |
 | Disk share | The part of MAX_DATABASE_SIZE the project may take. When it reaches 99% of it, even with the database under its limit, the cleanup deletes the project's own data in the usual order, down to 80% of its share, so a flood in one project does not push out the others. A ceiling, not a reservation: shares may add up to more than 100%. At 100% the project has no limit of its own. |
-| History kept | The oldest record of each kind still stored. When the database nears its limit, the cleanup deletes the oldest first: logs below error, then error logs, then errors. |
-| Dropped | What the project sent in the last 24 hours that was not stored: over its rate limit, refused while the server was busy, too large or broken, and what its SDK reports it held back. Resets on restart. |
+| History kept | The oldest record of each kind still stored; Errors counts events of every level. When the database nears its limit, the cleanup deletes logs older than a month and old event copies first, then logs below error, events below error and copies beyond an issue's newest 20, then error logs, then the remaining events, oldest first. |
+| Dropped | What the project sent in the last 24 hours that was not stored: over its rate limit, refused while the server was busy, too large, unreadable or not received whole, and what its SDK reports it held back. Resets on restart. |
 
 ## Notifications
 
 A connection sends new issues and issues that happen again after being resolved or once their ignore has ended to one place: an email address, a Telegram chat or a Slack channel.
 
-It also sends notices about the storage of its projects, whatever its levels: when data a project sent is dropped for the first time in 24 hours (over a rate limit, the server busy, an SDK reporting what it held back; the next notice after a day without one, also across restarts; the Projects page counts every drop), and when a cleanup run that deleted data of the project is done, with the data held before and after and what each step deleted ([Retention](configuration.md#retention)). A connection for all projects also gets the notices of cleanups that deleted no project's data.
+It also sends notices about the storage of its projects, whatever its levels: when data a project sent is dropped for the first time in 24 hours (for the reasons of Dropped under Projects; the next notice after a day without one, also across restarts; the Projects page counts every drop), and when a cleanup run that deleted data of the project is done, with the data held before and after and what each step deleted ([Retention](configuration.md#retention)). A connection for all projects also gets the notices of cleanups that deleted no project's data.
 
-With `PUBLIC_URL` set, every email has a link that stops it, and the headers mail providers show their own Unsubscribe button for (one click, RFC 8058): it pauses every connection that sends to that address, which stays listed, paused, so an admin can resume it here. The link in the email first asks to confirm, since mail scanners open links.
+With `PUBLIC_URL` set, every email has a link that stops it, and the headers mail providers show their own Unsubscribe button for (one click, RFC 8058): it pauses every connection that sends to that address; an admin can resume them here. The link in the email first asks to confirm, since mail scanners open links.
 
 | Field | |
 |---|---|
@@ -42,18 +42,16 @@ With `PUBLIC_URL` set, every email has a link that stops it, and the headers mai
 Who may change whom:
 
 - The superadmin changes every other user.
-- An admin changes users of the role user (never other admins or the superadmin), and only those whose projects he all has: he could otherwise reset their password, log in as them and see projects he does not have. He gives the role user only.
-- A user changes only himself, on the Account page; so does everyone for their own name and password.
+- An admin changes users of the role user (never other admins or the superadmin), and only those whose projects he all has: he could otherwise reset their password, log in as them and see projects he does not have.
+- A user changes no one. Everyone changes their own name and password only on the Account page.
 
-Changing means the name and role, resetting the password, deleting the user and disconnecting their coding agents. A user's projects are a separate field: an admin adds or removes his own projects for any user of the role user, and the user's other projects stay as they are.
+Changing means the name and role, resetting the password, deleting the user and disconnecting their coding agents. The Projects field is apart: an admin edits it for any user of the role user (see the table).
 
 For an admin with the projects backend and frontend, a user of the role user with:
 
 - backend, or backend and frontend: he changes everything.
 - backend and frontend 2: read-only; in the projects field he adds or removes backend and frontend, frontend 2 stays.
 - All projects: read-only, the projects field too.
-
-An admin with All projects changes every user of the role user.
 
 | Field | |
 |---|---|

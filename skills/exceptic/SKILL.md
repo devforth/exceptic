@@ -9,7 +9,7 @@ A self-hosted server (one Docker container with an embedded database) that accep
 
 ## Documentation
 
-Read the page for the task before acting; it has the exact commands and settings. Prefer these over memory: they match the server version.
+Read the page for the task before acting, rather than relying on memory: it matches the server version.
 
 | Task | Page |
 |---|---|
@@ -48,11 +48,11 @@ If the tools `list_projects`, `list_issues` and `get_issue` are already availabl
 2. Get the DSN from `list_projects` (each project has `dsn`), or ask the user to copy it from the Projects page. Use one project per service (backend, frontend, worker); if the right one is missing, ask the user to add it.
 3. Follow sdk.md for the platform: install the official SDK, initialize it as early as the platform requires, read the DSN from the app's env or config, turn on logs (`enableLogs` / `enable_logs`). Tracing (`tracesSampleRate`) links logs to the failing request; spans are not stored.
 4. Browser apps: the user's site must be in `ALLOWED_ORIGINS` (or it is `*`), and the server must be reachable from browsers.
-5. Verify: with the user's consent, trigger a test error (e.g. `Sentry.captureException(new Error("exceptic test"))`), then find it with `list_issues`. Events of every level are stored; a new notification connection sends only `fatal` and `error`, so an `info` test message shows up in `list_issues` but notifies nobody.
+5. Verify: with the user's consent, trigger a test error (e.g. `Sentry.captureException(new Error("exceptic test"))`), then find it with `list_issues`. Events of every level are stored; a new notification connection sends only `fatal` and `error`, so an `info` test message notifies nobody.
 
 ## Investigate errors
 
-Once connected, the MCP server's own instructions and `fetch_skill` cover finding, reading and resolving issues. In short: `get_issue {"issue_id": "<id>"}` gives the error with stack, request, breadcrumbs and related logs; explain the cause with evidence from the code before proposing a fix, and change an issue's status only when the user asks or confirms.
+Once connected, the MCP server's own instructions and `fetch_skill` cover finding, reading and resolving issues. `get_issue {"issue_id": "<id>"}` gives the error with stack, request, breadcrumbs and related logs; explain the cause with evidence from the code before proposing a fix, and change an issue's status only when the user asks or confirms.
 
 ## REST API
 

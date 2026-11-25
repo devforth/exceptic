@@ -129,7 +129,7 @@ func Endpoints(projects config.ProjectList, all *services.All) []Endpoint {
 		}, handler.applyIssueAction),
 		Define(Endpoint{
 			Name:                      "get_session",
-			Description:               "The logged-in user, the app name, the unresolved issue count and the project colors stylesheet.",
+			Description:               "The logged-in user, what they may do (administer, the roles they may give, every project or not), the app name, the unresolved issue count, the project colors by name and the user's theme.",
 			ReadOnly:                  true,
 			Transports:                TransportUI,
 			OpenWithTemporaryPassword: true,
@@ -149,11 +149,11 @@ func Endpoints(projects config.ProjectList, all *services.All) []Endpoint {
 			ReadOnly:    true,
 			Transports:  TransportUI,
 		}, handler.listLogLevels),
-		// The logs list: chosen lines (up to services.MaxActionLogs) or every
-		// copy of one message; not for agents, whose logs are for reading.
+		// The logs list: chosen lines (up to services.MaxActionLogs); not for
+		// agents, whose logs are for reading.
 		Define(Endpoint{
 			Name:        "delete_logs",
-			Description: "Delete the chosen logs, or every log of one log's project with the same message. Admins only.",
+			Description: "Delete the chosen logs; logs deleted meanwhile are skipped. Admins only.",
 			Transports:  TransportUI,
 			Destructive: true,
 			Admin:       true,

@@ -99,9 +99,8 @@ func (service *Projects) Find(access store.Access, nameOrID string) (config.Proj
 
 // Save applies the form to project and stores it as viewer: a new one when
 // its ID is 0 (it joins a limited viewer's access), the stored one
-// otherwise (ErrHidden outside viewer's access). A disk share changed
-// without every project is ErrForbidden, a taken name ErrConflict, each a
-// Refusal at its field.
+// otherwise (ErrHidden outside viewer's access). A taken name is
+// ErrConflict, a Refusal at its field.
 // It returns the project as read from the form (with its id once saved) and
 // the field errors when nothing was saved.
 func (service *Projects) Save(ctx context.Context, viewer store.User, form url.Values, project store.Project) (store.Project, Problems, error) {

@@ -51,25 +51,25 @@ The [exceptic skill](../skills/exceptic/SKILL.md) tells an agent how to do the r
 
 ## Tools
 
-An agent acts as the user who connected it and is offered only the tools of that user's role, and sees only that user's projects. The role and the projects are read at every request, so a change applies at once. The data tools are the endpoints of the [REST API](api.md) with the same names and inputs; the management tools are for agents and the web interface only, since the REST API has a token but no user.
+An agent is offered only the tools of its user's role and sees only that user's projects. The role and the projects are read at every request, so a change applies at once. The data tools are the endpoints of the [REST API](api.md) with the same names and inputs; the management tools are for agents and the web interface only, since the REST API has a token but no user.
 
 | Tool | Role | |
 |---|---|---|
 | `list_issues`, `get_issues` | all | Issues filtered by project, status, level, text and dates; several by ID. |
 | `get_issue`, `get_event` | all | An issue with its latest (or a given) event: exception, stack with source, request, breadcrumbs, related logs, the status, event count and first and last seen, written as a prompt for the agent. |
 | `list_issue_events`, `list_logs` | all | Events of an issue (with the time the server received each); logs filtered by project, level, text and trace; a search stops after 20 seconds with `stopped`, `searched_to` and a `next_cursor` that goes on with older logs. |
-| `list_projects` | all | Projects with their issue counts and DSNs, so an agent can connect an app itself. |
+| `list_projects` | all | Projects with their issue counts and DSNs. |
 | `update_issue_status` | all | Resolve, ignore (for good, for a time or until a number of events more) or reopen up to 100 issues at once. |
 | `get_account`, `update_account_name` | all | Who the agent acts for; change the display name. |
-| `list_agents`, `disconnect_agent` | all | Connected agents and personal tokens (admins: also of users whose projects they all have, listed in `owners`; `connected` is false for a personal token never used). |
+| `list_agents`, `disconnect_agent` | all | Connected agents and personal tokens (admins: also of the users they may take over, `can_take_over` in `list_users`, listed in `owners`; `connected` is false for a personal token never used). |
 | `delete_issue` | admin | Delete an issue with its events. |
 | `get_project`, `create_project`, `update_project`, `delete_project` | admin | Project settings: name, color (`shown_color` is the one it shows, its palette color when none is set), recorded log levels (`log_levels`; events of every level are stored), disk share (`disk_share`, 5 to 100 in steps of 5: the percent of `MAX_DATABASE_SIZE` the project may take before the cleanup deletes its own data first, [Retention](configuration.md#retention)). |
-| `list_users`, `create_user`, `update_user`, `reset_user_password`, `delete_user` | admin | Users, roles and projects; a new or reset password is temporary and returned once. A user is `{id, username, name, display_name, role, must_change_password, created_at, last_login_at, all_projects, project_ids, projects}`, its projects only those you see; `list_users` items are `{user, can_manage, can_take_over, take_over_reason, access_editable, access_reason}`, `can_manage` false for yourself and the superadmin, `can_take_over` (change the name or role, reset the password, delete) only when you have all the user's projects. `create_user` and `update_user` take `all_projects` and `projects` (names or IDs; a new user gets yours by default); `update_user` changes only the user's projects you see. |
+| `list_users`, `create_user`, `update_user`, `reset_user_password`, `delete_user` | admin | Users, roles and projects; a new or reset password is temporary and returned once. A user is `{id, username, name, display_name, role, must_change_password, created_at, last_login_at, all_projects, project_ids, projects}`, its projects only those you see; `list_users` items are `{user, can_manage, can_take_over, take_over_reason, access_editable, access_reason}`, `can_manage` false for yourself, the superadmin and, for an admin, other admins, `can_take_over` (change the name or role, reset the password, delete) only when you have all the user's projects. `create_user` and `update_user` take `all_projects` and `projects` (names or IDs; a new user gets yours by default); `update_user` changes only the user's projects you see. |
 | `list_connections`, `create_connection`, `update_connection`, `set_connection_active`, `send_test_message`, `retry_connection`, `delete_connection`, `list_deliveries` | admin | Notification connections and the delivery log. A connection has `destination` (the address, the chat or the Slack channel) and `delivery.failing`; `all_projects` true sends for every project, future ones included, false only for `projects` (names or IDs); an admin with only some projects sees and creates only connections for them; `set_connection_active` turns one on or off and changes nothing else (an unconfirmed address cannot be turned on). Delivery log rows have `retrying` and `updated_at`, a summary its `items` and `more`; an admin with only some projects sees the messages about them only (none stored before messages recorded their projects). |
 | `start_email_verification`, `confirm_email` | admin | Confirm an email address with the code its owner received: `state` (`code` or `verified`), `notice`, `verified_at`. |
 | `fetch_skill` | all | Detailed guidance for the agent on analyzing errors, fetching data and changing statuses. |
 
-A refused call is a tool error that starts with its kind, so an agent can tell a deleted issue from one it may not see:
+A refused call is a tool error that starts with its kind:
 
 | Kind | Meaning |
 |---|---|
@@ -77,7 +77,7 @@ A refused call is a tool error that starts with its kind, so an agent can tell a
 | `not found: …` | It does not exist: deleted, or never existed (`not found: issue k3x9q2mf`). |
 | `forbidden: …` | It exists in a project outside the user's, which the message lists (`forbidden: issue k3x9q2mf is not in your projects (frontend, test2)`), or the user's role may not do it (`forbidden: your role may not change this user`, or for a user with projects the admin lacks `forbidden: Only an admin with all of this user's projects can change it.`). |
 | `conflict: …` | A stored record is in the way: a name taken, a connection that already sends there, an address not confirmed yet. |
-| `unavailable: …` | A destination refused a test message. |
+| `unavailable: …` | A destination refused a test message, or the mail server a confirmation code. |
 | `internal error` | A server failure, logged on the server. |
 
 `get_issues` lists the IDs of other projects' issues in `forbidden_issue_ids`, apart from `missing_issue_ids`.
@@ -88,7 +88,7 @@ Notifications and the issue page carry the request for an agent, e.g. `Exceptic 
 
 ## What leaves the server
 
-Everything an agent reads is sent to its model provider. The server therefore never returns raw event payloads or log attributes, and in the text your apps send replaces IP addresses, hosts, email addresses, credentials (tokens in URL paths too, and a Slack webhook path or a Telegram bot token wherever it appears) and home directories with placeholders. A trace ID is shown only in its protocol form (32 hex characters). Source lines are included only for your own code. The management tools return usernames and notification addresses as stored.
+Everything an agent reads is sent to its model provider. The server never returns raw event payloads or log attributes, and in the text your apps send replaces IP addresses, hosts, email addresses, credentials (tokens in URL paths too, and a Slack or Discord webhook path or a Telegram bot token wherever it appears) and home directories with placeholders. A trace ID is shown only in its protocol form (32 hex characters). Source lines are included only for your own code, or for every frame of a stack where no frame is marked as your code. The management tools return usernames and notification addresses as stored.
 
 ## Security
 

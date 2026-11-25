@@ -2,7 +2,7 @@
 
 A lightweight, self-hosted service for monitoring application errors and logs.
 
-It collects exceptions and logs from your backend and frontend apps through the official Sentry SDKs: you point an SDK at it with a DSN, no other client library is needed. Repeated errors are grouped into issues, your team is notified when something breaks, and coding agents can read the errors over MCP to help explain them. Everything runs in one small container on your own server, so your data never leaves your infrastructure.
+It collects exceptions and logs from your backend and frontend apps through the official Sentry SDKs: you point an SDK at it with a DSN, no other client library is needed. It runs in one container on your own server, so your data never leaves your infrastructure.
 
 ## Features
 
@@ -14,7 +14,7 @@ It collects exceptions and logs from your backend and frontend apps through the 
 - **MCP server** for coding agents (Claude Code, Codex, …) with OAuth sign-in or a personal token.
 - **REST API** for scripts and integrations.
 - **Size-based cleanup**: under `MAX_DATABASE_SIZE`, logs and old repeated events go first, errors last; credentials are scrubbed from incoming data.
-- **Small:** one static binary with an embedded database, an image of about 20 MB, no external database.
+- **Small:** one static binary with an embedded database, an image of about 20 MB.
 
 Tracing spans, session replays and other Sentry item types are accepted and dropped.
 
@@ -47,7 +47,7 @@ More platforms, browser apps and what is stored: [Connecting apps](docs/sdk.md).
 
 ## Agent skill
 
-[skills/exceptic](skills/exceptic/SKILL.md) teaches a coding agent to deploy the server, connect itself over MCP, add the Sentry SDK to your apps and investigate errors, following these docs. Install it once for your user:
+[skills/exceptic](skills/exceptic/SKILL.md) teaches a coding agent to deploy the server, connect itself over MCP, add the Sentry SDK to your apps and investigate errors. Install it for your user:
 
 ```sh
 npx skills add devforth/exceptic -g
@@ -59,7 +59,7 @@ Or copy the folder to `~/.claude/skills/` (Claude Code) or `~/.agents/skills/` (
 
 - [Deployment](docs/deployment.md): Docker, reverse proxy and HTTPS, upgrades.
 - [Configuration](docs/configuration.md): every environment variable.
-- [Settings in the web UI](docs/ui.md): the fields of the Projects and Notifications pages.
+- [Settings in the web UI](docs/ui.md): the fields of the Projects, Notifications and Users pages.
 - [Connecting apps](docs/sdk.md): SDK setup, levels, logs, grouping.
 - [Coding agents (MCP)](docs/mcp.md): connecting Claude Code, Codex and other clients.
 - [REST API](docs/api.md).

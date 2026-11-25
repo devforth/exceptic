@@ -4,7 +4,7 @@ description: Filters, paging and level names for list_issues, list_issue_events 
 ---
 
 - Narrow on the server: project (a list of names or IDs), status (`unresolved` by default, `all` for every status), level (a list), query (text in the title or location), since/until (RFC 3339, e.g. 2026-11-11T10:00:00Z) and sort; each tool's schema lists the values it takes.
-- Level names differ on purpose: issues use `warning`, logs `warn`, and only logs have `trace`.
+- Level names differ: issues use `warning`, logs `warn`, and only logs have `trace`.
 - list_logs with trace_id returns the logs of one request or browser session; get_issue prints the trace ID of its event.
 - With next_cursor, more rows exist: say so instead of presenting the page as complete; the next page takes the same filters.
 - There is no aggregation tool. list_projects gives the unresolved issue count of each project; there are no other totals, so do not count or chart from a partial page.
