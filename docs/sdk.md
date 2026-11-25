@@ -125,7 +125,7 @@ Sentry.withScope((scope) => {
 });
 ```
 
-A fingerprint value may be one of the variables of Sentry's [Fingerprint Rules](https://docs.sentry.io/concepts/data-management/event-grouping/fingerprint-rules/#variables), filled in as Sentry fills them. Only a whole value is a variable: `"tenant-{{ tags.tenant }}"` stays as written.
+A fingerprint value may be one of the variables of Sentry's [Fingerprint Rules](https://docs.sentry.io/concepts/data-management/event-grouping/fingerprint-rules/#variables), filled in as Sentry fills them. Only a whole value is a variable: `"tenant-{{ tags.tenant }}"` stays as written. At most 64 values are read, and an exception group is grouped by its outermost 100 exceptions.
 
 | Variable | Value |
 |---|---|

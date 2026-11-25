@@ -17,9 +17,9 @@ A project is one service (backend, frontend, worker) with its own DSN. Projects 
 
 ## Notifications
 
-A connection sends new issues and issues that happen again after being resolved or once their ignore has ended to one place: an email address, a Telegram chat or a Slack channel.
+A connection sends new issues and issues that happen again after being resolved or once their ignore has ended to one place: an email address, a Telegram chat or a Slack channel. It sends at most 5 a minute for each project; the rest of that project's come once the minute ends as one summary ("backend: 120 more issues in the last 1 minute"), so a flood in one project neither holds back nor mixes with another's.
 
-It also sends notices about the storage of its projects, whatever its levels: when data a project sent is dropped for the first time in 24 hours (for the reasons of Dropped under Projects; the next notice after a day without one, also across restarts; the Projects page counts every drop), and when a cleanup run that deleted data of the project is done, with the data held before and after and what each step deleted ([Retention](configuration.md#retention)). A connection for all projects also gets the notices of cleanups that deleted no project's data.
+It also sends notices about the storage of its projects, whatever its levels: when data a project sent is dropped for the first time in 24 hours (for the reasons of Dropped under Projects; the next notice after a day without one, also across restarts; the Projects page counts every drop), and when a cleanup run that deleted data of the project is done, with the data held before and after and what each step deleted in its projects, other projects' as one Other row, as the Cleanup history shows it ([Retention](configuration.md#retention)). A connection for all projects also gets the notices of cleanups that deleted no project's data.
 
 With `PUBLIC_URL` set, every email has a link that stops it, and the headers mail providers show their own Unsubscribe button for (one click, RFC 8058): it pauses every connection that sends to that address; an admin can resume them here. The link in the email first asks to confirm, since mail scanners open links.
 
