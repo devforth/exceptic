@@ -202,6 +202,15 @@
 }
 
 @layer base {
+	/* A modal window scrolls on its own; the page under it stays where it is. */
+	html:has(dialog:modal) {
+		overflow: hidden;
+	}
+
+	dialog {
+		overscroll-behavior: contain;
+	}
+
 	body {
 		background-color: var(--color-bg);
 		color: var(--color-text);
