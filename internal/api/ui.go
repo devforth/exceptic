@@ -9,6 +9,7 @@ import (
 	"slices"
 
 	"github.com/devforth/exceptic/internal/server"
+	"github.com/devforth/exceptic/internal/session"
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
@@ -85,7 +86,7 @@ func (handler *UI) caller(w http.ResponseWriter, r *http.Request) (Call, bool) {
 	}
 
 	return Call{Transport: TransportUI, Viewer: viewer, Actor: viewer.Actor(store.SourceUI),
-		Address: server.PublicURL(r, handler.publicURL, handler.trustedProxies)}, true
+		Address: server.PublicURL(r, handler.publicURL, handler.trustedProxies), Session: store.SessionID(session.SessionHash(r))}, true
 }
 
 // sessionViewer is the user of the request's session: without one it

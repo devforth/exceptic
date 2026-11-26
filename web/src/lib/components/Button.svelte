@@ -14,6 +14,8 @@ only its icon, and title names it (tooltip and aria-label).
 		href?: string;
 		/** A link to another site: opened in a new tab, which gets no referrer and no opener. */
 		external?: boolean;
+		/** A link the server answers, not a page of the app (the Google sign-in): a full load. */
+		server?: boolean;
 		type?: 'button' | 'submit';
 		/** The id of the form a submit button sends, when it sits outside it (a dialog's footer). */
 		form?: string;
@@ -41,6 +43,7 @@ only its icon, and title names it (tooltip and aria-label).
 		variant = 'default',
 		href,
 		external = false,
+		server = false,
 		type = 'button',
 		form,
 		disabled = false,
@@ -141,6 +144,7 @@ only its icon, and title names it (tooltip and aria-label).
 		{href}
 		target={external ? '_blank' : undefined}
 		rel={external ? 'noopener noreferrer' : undefined}
+		data-sveltekit-reload={server || undefined}
 		class={classes}
 		{title}
 		aria-label={iconOnly ? title : undefined}

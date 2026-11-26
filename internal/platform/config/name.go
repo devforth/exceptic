@@ -12,7 +12,8 @@ import (
 // DefaultAppName names the server when APP_NAME is not set.
 const DefaultAppName = "Exceptic"
 
-const maxAppName = 60
+// MaxAppName is the longest APP_NAME, in characters.
+const MaxAppName = 60
 
 // parseAppName reads APP_NAME: the name shown in the sidebar, page titles,
 // emails and to coding agents.
@@ -23,8 +24,8 @@ func parseAppName(value string) (string, error) {
 		return DefaultAppName, nil
 	}
 
-	if utf8.RuneCountInString(name) > maxAppName {
-		return "", fmt.Errorf("APP_NAME: at most %d characters", maxAppName)
+	if utf8.RuneCountInString(name) > MaxAppName {
+		return "", fmt.Errorf("APP_NAME: at most %d characters", MaxAppName)
 	}
 
 	return name, nil

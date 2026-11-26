@@ -73,11 +73,21 @@ func (agents *Agents) Setup(ctx context.Context, viewer store.User, address *url
 
 	return AgentSetup{
 		URL: endpoint, ServerName: agents.serverName,
-		ClaudeCommand: "claude mcp add --transport http " + agents.serverName + " " + endpoint,
-		CodexCommand:  "codex mcp add " + agents.serverName + " --url " + endpoint,
+		ClaudeCommand: claudeCommand(agents.serverName, endpoint),
+		CodexCommand:  codexCommand(agents.serverName, endpoint),
 		ProjectConfig: projectConfig(agents.serverName, endpoint),
 		TokenSet:      tokenSet, Unencrypted: oauth.Unencrypted(address), IPsRestricted: agents.ipsRestricted,
 	}, err
+}
+
+// claudeCommand and codexCommand add the server to Claude Code and Codex
+// for a sign-in in the browser (docs/mcp.md shows them too).
+func claudeCommand(serverName, endpoint string) string {
+	return "claude mcp add --transport http " + serverName + " " + endpoint
+}
+
+func codexCommand(serverName, endpoint string) string {
+	return "codex mcp add " + serverName + " --url " + endpoint
 }
 
 // Page lists the agents of ownerID (the viewer's own when empty): a user

@@ -129,9 +129,30 @@ type Store interface {
 
 	// Sessions of the web UI (by the hash of the cookie).
 
-	CreateSession(ctx context.Context, tokenHash string, userID string, now, expiresAt time.Time) error
+	CreateSession(ctx context.Context, session NewSession) error
 	SessionUser(ctx context.Context, tokenHash string, now time.Time) (User, error)
 	DeleteSession(ctx context.Context, tokenHash string) error
+	// TouchSession records a session's activity at now (the caller writes it at most every SessionActiveEvery).
+	TouchSession(ctx context.Context, tokenHash string, now time.Time) error
+	// Sessions are a user's sessions that have not expired, newest first.
+	Sessions(ctx context.Context, userID string, now time.Time) ([]Session, error)
+	// EndUserSession ends a user's session by its ID; ErrNotFound for none of theirs.
+	EndUserSession(ctx context.Context, userID, sessionID string) error
+	// RecordSignIn adds an attempt to the user's sign-in log, keeping the newest SignInsKept.
+	RecordSignIn(ctx context.Context, signIn SignIn) error
+	// SignIns are a user's sign-in attempts, newest first.
+	SignIns(ctx context.Context, userID string) ([]SignIn, error)
+	// GoogleUser finds the user a Google account (its subject) is linked to.
+	GoogleUser(ctx context.Context, sub string) (User, error)
+	// LinkGoogle links a Google account to the user, checked in its batch: the
+	// user's email is still email (else ErrNotFound) and no other account is
+	// linked (ErrGoogleLinked) or Google unlinked (ErrGoogleOff);
+	// ErrGoogleTaken when another user has it.
+	LinkGoogle(ctx context.Context, userID, email, sub string, now time.Time) error
+	// UnlinkGoogle drops the user's Google account, keeps it from linking again
+	// by email until a password sign-in, and ends the sessions opened through
+	// Google but the one of ID keepSession.
+	UnlinkGoogle(ctx context.Context, userID, keepSession string) error
 
 	// Users.
 
@@ -151,5 +172,5 @@ type Store interface {
 	// SetPassword ends the user's other sessions.
 	SetPassword(ctx context.Context, id string, change PasswordChange) error
 	DeleteUser(ctx context.Context, id string) error
-	RecordLogin(ctx context.Context, id string, now time.Time) error
+	RecordLogin(ctx context.Context, id, method string, now time.Time) error
 }

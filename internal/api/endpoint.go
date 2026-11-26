@@ -102,6 +102,8 @@ type Call struct {
 	Actor store.Actor
 	// Address is the server as the client reached it (for DSNs).
 	Address *url.URL
+	// Session is the ID of the web app's session the request came with (store.SessionID); empty elsewhere.
+	Session string
 }
 
 // Access is the projects the call sees: every one for the REST API's

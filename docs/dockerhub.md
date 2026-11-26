@@ -6,25 +6,31 @@ Source and full documentation: https://github.com/devforth/exceptic
 
 ## Run it
 
+<!-- docker-run: copied from README.md by make api-types -->
 ```sh
 docker run -d --name exceptic -p 8000:8000 -v exceptic-data:/data \
   -e ADMIN_PASSWORD='<at least 12 characters>' \
   devforth/exceptic:latest
 ```
 
-Open http://localhost:8000, log in as `admin` with that password, add a project on the **Projects** page and give its DSN to your app.
+Open http://localhost:8000 and log in as `admin` with that password. On the **Projects** page add a project and copy its DSN.
+<!-- /docker-run -->
 
 For a server use Docker Compose behind HTTPS: [compose.yml](https://github.com/devforth/exceptic/blob/main/compose.yml) with an `.env` next to it:
 
+<!-- minimal-env: copied from docs/deployment.md by make api-types -->
 ```sh
 PUBLIC_URL=https://errors.example.com
 ADMIN_PASSWORD=<at least 12 characters>
-SECRET_KEY=<openssl rand -hex 32>
+SECRET_KEY=<openssl rand -hex 32>   # encrypts chat tokens; generated into /data when not set
 ```
+<!-- /minimal-env -->
 
 ## Tags
 
-`latest` (newest release), `X.Y` (newest patch of a minor version), `X.Y.Z`, for amd64 and arm64. Pin `X.Y` or `X.Y.Z` in production.
+<!-- image-tags: copied from docs/deployment.md by make api-types -->
+Image tags: `latest` (newest release), `X.Y` (newest patch of a minor version), `X.Y.Z`. Pin `X.Y` or `X.Y.Z` in production and upgrade on purpose.
+<!-- /image-tags -->
 
 ## Documentation
 

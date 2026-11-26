@@ -31,6 +31,21 @@ func (handler *handlers) management() []Endpoint {
 			Idempotent:  true, Transports: ActsAsUser,
 		}, handler.updateAccountName),
 		Define(Endpoint{
+			Name:        "get_activity",
+			Description: "How a user signs in: their sessions, their sign-in log and the Google account linked to them. Yourself without user_id, or a user you manage.",
+			ReadOnly:    true, Transports: TransportUI,
+		}, handler.getActivity),
+		Define(Endpoint{
+			Name:        "end_session",
+			Description: "End a session of yourself (not the one you use) or of a user you may take over.",
+			Transports:  TransportUI, Confirm: true,
+		}, handler.endSession),
+		Define(Endpoint{
+			Name:        "unlink_google",
+			Description: "Unlink the Google account of yourself or of a user you may take over and disconnect the sessions opened through it; it links again by email only after they sign in with the password.",
+			Transports:  TransportUI, Confirm: true,
+		}, handler.unlinkGoogle),
+		Define(Endpoint{
 			Name:        "set_theme",
 			Description: "Save the web app's color theme of the signed-in user, so every browser they log in from shows it.",
 			Idempotent:  true, Transports: TransportUI, OpenWithTemporaryPassword: true,
@@ -123,6 +138,9 @@ type userOutput struct {
 	MustChangePassword bool       `json:"must_change_password,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
 	LastLoginAt        *time.Time `json:"last_login_at,omitempty"`
+	LastActiveAt       *time.Time `json:"last_active_at,omitempty"`
+	// GoogleLinked: a Google account is linked to the user.
+	GoogleLinked bool `json:"google_linked,omitempty"`
 }
 
 // userAccess is the projects a user sees, as much as the viewer may see
@@ -147,6 +165,7 @@ func (handler *handlers) userView(viewer, user store.User) userOutput {
 		userAccess: access,
 		ID:         user.ID, Email: user.Email, Name: user.Name, DisplayName: user.DisplayName(), Role: user.Role,
 		MustChangePassword: user.MustChangePassword, CreatedAt: user.CreatedAt, LastLoginAt: user.LastLoginAt,
+		LastActiveAt: user.LastActiveAt, GoogleLinked: user.GoogleSub != "",
 	}
 }
 

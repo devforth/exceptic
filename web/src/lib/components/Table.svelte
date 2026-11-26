@@ -37,6 +37,8 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 		label?: string;
 		rowKey?: (row: Row) => RowKey;
 		compact?: boolean;
+		/** Cells centred on their row: one-line rows beside buttons. */
+		middle?: boolean;
 		flat?: boolean;
 		headerless?: boolean;
 		sort?: TableSort;
@@ -57,6 +59,7 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 		label,
 		rowKey,
 		compact = false,
+		middle = false,
 		flat = false,
 		headerless = false,
 		sort,
@@ -72,11 +75,12 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 
 	const padding = $derived(compact ? 'px-2.5 py-1.5' : 'px-3 py-2.5');
 
-	// Headings are centred on their row (a two-line heading next to one line), cells start at the top.
+	// Headings are centred on their row (a two-line heading next to one line), cells start at the
+	// top unless middle.
 	function columnClasses(column: TableColumn<Key>, heading = false) {
 		return [
 			padding,
-			heading ? 'text-left align-middle' : 'text-left align-top',
+			heading || middle ? 'text-left align-middle' : 'text-left align-top',
 			column.number && 'text-right whitespace-nowrap tabular-nums',
 			column.actions && 'w-[1%] whitespace-nowrap',
 			column.fill && 'w-full max-w-0',

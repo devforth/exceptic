@@ -52,6 +52,8 @@ type Options struct {
 	// the requests it makes with its login; the server adds the IP allowlist.
 	Web   Routes
 	UIAPI UIRoutes
+	// SignIn adds the sign-in with Google (session.Auth); the server adds the IP allowlist.
+	SignIn Routes
 	// Unsubscribe adds the links that stop emails: open to everyone like
 	// ingest (mail providers request them from their servers), signed.
 	Unsubscribe    interface{ Register(router *http.ServeMux) }
@@ -94,6 +96,10 @@ func (server *Server) Handler() http.Handler {
 
 	if server.UIAPI != nil {
 		server.UIAPI.Register(router, server.protectUI)
+	}
+
+	if server.SignIn != nil {
+		server.SignIn.Register(router, server.protectUI)
 	}
 
 	if server.Unsubscribe != nil {

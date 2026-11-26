@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	browserName,
 	sharePercent,
 	cleanLog,
 	clockTime,
@@ -82,5 +83,19 @@ describe('countOf', () => {
 	it('writes the count with the singular for one', () => {
 		expect(countOf(50000, 'logs')).toBe('50,000 logs');
 		expect(countOf(1, 'more events')).toBe('1 more event');
+	});
+});
+
+describe('browserName', () => {
+	it('names a browser and its system from a User-Agent', () => {
+		const chrome =
+			'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36';
+		const edge =
+			'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36 Edg/131.0';
+
+		expect(browserName(chrome)).toBe('Chrome on Linux');
+		expect(browserName(edge)).toBe('Edge on Windows');
+		expect(browserName('curl/8.0')).toBe('Other');
+		expect(browserName(undefined)).toBe('');
 	});
 });

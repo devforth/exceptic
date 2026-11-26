@@ -28,6 +28,7 @@ type collections struct {
 
 	users        *kv.Collection[userRecord]
 	sessions     *kv.Collection[sessionRecord]
+	signIns      *kv.Collection[signInRecord]
 	oauthClients *kv.Collection[store.OAuthClient]
 	oauthCodes   *kv.Collection[codeRecord]
 	grants       *kv.Collection[grantRecord]
@@ -191,6 +192,10 @@ func defineCollections(schema *kv.Schema) collections {
 				{Name: "superadmin", Unique: true, Key: func(user userRecord) kv.Key {
 					return kv.KIf(user.Role == store.RoleSuperadmin, kv.U8(0))
 				}},
+				// A Google account is linked to one user; users stored before have none, so nothing to backfill.
+				{Name: "google", Unique: true, Key: func(user userRecord) kv.Key {
+					return kv.KIf(user.GoogleSub != "", kv.Text(user.GoogleSub))
+				}},
 			},
 		}),
 		// session/<hash of the cookie>: a login to the UI.
@@ -202,6 +207,11 @@ func defineCollections(schema *kv.Schema) collections {
 					return kv.K(kv.Text(session.UserID), kv.Text(session.TokenHash))
 				}},
 			},
+		}),
+		// signin/<user>/<sequence>: an attempt to sign in as a user, the newest store.SignInsKept per user.
+		signIns: kv.Define(schema, kv.Definition[signInRecord]{
+			Name: "signin",
+			Key:  func(signIn signInRecord) kv.Key { return kv.K(kv.Text(signIn.UserID), kv.U64(signIn.Sequence)) },
 		}),
 		// oauth_client/<client id>: an agent registered for MCP.
 		oauthClients: kv.Define(schema, kv.Definition[store.OAuthClient]{

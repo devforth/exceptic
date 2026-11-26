@@ -24,6 +24,11 @@ type sessionRecord struct {
 	UserID    string    `json:"user_id"`
 	CreatedAt time.Time `json:"created_at"`
 	ExpiresAt time.Time `json:"expires_at"`
+	// Method, Address and Browser of the login; empty in sessions stored before.
+	Method       string    `json:"method,omitempty"`
+	Address      string    `json:"address,omitempty"`
+	Browser      string    `json:"browser,omitempty"`
+	LastActiveAt time.Time `json:"last_active_at,omitzero"`
 }
 
 // freeID returns a new random ID that no record of collection has.
@@ -151,9 +156,18 @@ func emailTaken(err error) error {
 // UpdateUser changes a user's email, name and role, and their access when
 // given, merged with the stored one (store.Access.Replace).
 func (database *Store) UpdateUser(_ context.Context, id string, change store.UserChange) error {
-	return emailTaken(database.changeUser(id, func(_ *kv.Batch, user *userRecord) error {
+	return emailTaken(database.changeUser(id, func(batch *kv.Batch, user *userRecord) error {
 		if (user.Role != change.Role || user.DisplayName() != change.Name || user.Email != change.Email) && !user.CoveredBy(change.By) {
 			return store.ErrTakeOverLocked
+		}
+
+		// An address that changed hands: its Google account and sessions go.
+		if user.Email != change.Email && user.GoogleSub != "" {
+			user.GoogleSub, user.GoogleLinkedAt = "", nil
+
+			if err := database.deleteGoogleSessions(batch, id, ""); err != nil {
+				return err
+			}
 		}
 
 		user.Email, user.Name, user.Role = change.Email, change.Name, change.Role
@@ -203,6 +217,8 @@ func (database *Store) UpdateUserEmail(_ context.Context, id string, email strin
 	return emailTaken(database.changeUser(id, func(_ *kv.Batch, user *userRecord) error {
 		user.Name = store.NameAfterEmail(user.Name, user.Email, email)
 		user.Email = email
+		// The link was made through the old email: another address, another check.
+		user.GoogleSub, user.GoogleLinkedAt = "", nil
 
 		return nil
 	}))
@@ -258,22 +274,32 @@ func (database *Store) DeleteUser(_ context.Context, id string) error {
 			return err
 		}
 
+		if err := database.deleteSignInsOf(batch, id, 0, nil); err != nil {
+			return err
+		}
+
 		return database.deleteAgentsOf(batch, id)
 	})
 }
 
 // RecordLogin notes the time of a user's login.
-func (database *Store) RecordLogin(_ context.Context, id string, now time.Time) error {
+func (database *Store) RecordLogin(_ context.Context, id, method string, now time.Time) error {
 	return database.changeUser(id, func(_ *kv.Batch, user *userRecord) error {
 		at := now.UTC()
 		user.LastLoginAt = &at
+
+		if method == store.SignInPassword {
+			user.GoogleLinkOff = false
+		}
 
 		return nil
 	})
 }
 
 // CreateSession stores a login, first dropping expired sessions (login is rare).
-func (database *Store) CreateSession(_ context.Context, tokenHash string, userID string, now, expiresAt time.Time) error {
+func (database *Store) CreateSession(_ context.Context, login store.NewSession) error {
+	now := login.CreatedAt
+
 	return database.db.Update(true, func(batch *kv.Batch) error {
 		err := database.sessions.Primary().Where(func(session sessionRecord) bool { return !session.ExpiresAt.After(now) }).
 			Each(batch, func(entry kv.Entry[sessionRecord]) (bool, error) {
@@ -286,7 +312,10 @@ func (database *Store) CreateSession(_ context.Context, tokenHash string, userID
 			return err
 		}
 
-		return database.sessions.Insert(batch, sessionRecord{TokenHash: tokenHash, UserID: userID, CreatedAt: now.UTC(), ExpiresAt: expiresAt.UTC()})
+		return database.sessions.Insert(batch, sessionRecord{
+			TokenHash: login.TokenHash, UserID: login.UserID, CreatedAt: now.UTC(), ExpiresAt: login.ExpiresAt.UTC(),
+			Method: login.Method, Address: login.Address, Browser: login.Browser, LastActiveAt: now.UTC(),
+		})
 	})
 }
 
@@ -312,6 +341,17 @@ func (database *Store) DeleteSession(_ context.Context, tokenHash string) error 
 		_, err := database.sessions.DeleteKey(batch, textKey(tokenHash))
 
 		return err
+	})
+}
+
+// deleteGoogleSessions ends a user's sessions opened through Google but the one of ID keep.
+func (database *Store) deleteGoogleSessions(batch *kv.Batch, userID, keep string) error {
+	return database.sessions.By("user", kv.Text(userID)).Each(batch, func(entry kv.Entry[sessionRecord]) (bool, error) {
+		if entry.Record.Method == store.SignInGoogle && store.SessionID(entry.Record.TokenHash) != keep {
+			database.sessions.DeleteEntry(batch, entry)
+		}
+
+		return true, nil
 	})
 }
 

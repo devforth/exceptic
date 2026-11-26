@@ -10,12 +10,14 @@ With a temporary password it is the only page open, and only the password form s
 	import ActionList from '#lib/components/ActionList.svelte';
 	import ActionRow from '#lib/components/ActionRow.svelte';
 	import Card from '#lib/components/Card.svelte';
+	import Dialog from '#lib/components/Dialog.svelte';
 	import { narrowFormClasses } from '#lib/components/field.ts';
 	import FormActions from '#lib/components/FormActions.svelte';
 	import FormDialog from '#lib/components/FormDialog.svelte';
 	import Notice from '#lib/components/Notice.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import RoleBadge from '#lib/components/RoleBadge.svelte';
+	import SignInActivity from '#lib/components/SignInActivity.svelte';
 	import TextField from '#lib/components/TextField.svelte';
 	import { FormState } from '#lib/form.svelte.ts';
 	import { toast } from '#lib/toast.svelte.ts';
@@ -59,6 +61,7 @@ With a temporary password it is the only page open, and only the password form s
 		await invalidate('app:session');
 	}
 
+	let activityOpen = $state(false);
 	let passwordOpen = $state(false);
 	let current = $state('');
 	let password = $state('');
@@ -169,6 +172,12 @@ With a temporary password it is the only page open, and only the password form s
 
 	<ActionList title="Security">
 		<ActionRow icon="password" label="Change password" onclick={openPassword} />
+		<ActionRow
+			icon="sessions"
+			label="Sessions and sign-ins"
+			description="Where you are signed in, every attempt and Google"
+			onclick={() => (activityOpen = true)}
+		/>
 	</ActionList>
 
 	<FormDialog
@@ -210,4 +219,7 @@ With a temporary password it is the only page open, and only the password form s
 	>
 		{@render passwordFields()}
 	</FormDialog>
+	<Dialog title="Sessions and sign-ins" bind:open={activityOpen} size="wide">
+		{#if activityOpen}<SignInActivity changeable />{/if}
+	</Dialog>
 {/if}

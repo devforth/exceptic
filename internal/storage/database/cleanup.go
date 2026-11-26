@@ -49,7 +49,10 @@ const (
 
 // quietFor is how long ingest must be quiet before a forced compaction:
 // under writes goleveldb repeats a range compaction as long as new files come.
-var quietFor = 2 * time.Second
+// Tests change it; defaultQuietFor is the server's.
+const defaultQuietFor = 2 * time.Second
+
+var quietFor = defaultQuietFor
 
 func (database *Store) quiet() bool {
 	return time.Since(time.Unix(0, database.lastAppend.Load())) >= quietFor

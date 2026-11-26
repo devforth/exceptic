@@ -48,7 +48,7 @@ func (server *restServer) addWebUser(user store.User) uiUser {
 
 	token := store.NewID() + store.NewID()
 
-	if err := server.database.CreateSession(ctx, secret.Hash(token), id, time.Now(), time.Now().Add(time.Hour)); err != nil {
+	if err := server.database.CreateSession(ctx, store.NewSession{TokenHash: secret.Hash(token), UserID: id, CreatedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
 		server.t.Fatal(err)
 	}
 
@@ -112,7 +112,7 @@ func TestUIRequiresSession(t *testing.T) {
 
 	expired := server.webUser(store.RoleAdmin, false)
 
-	if err := server.database.CreateSession(context.Background(), secret.Hash("expired-token"), expired.id, time.Now(), time.Now().Add(-time.Minute)); err != nil {
+	if err := server.database.CreateSession(context.Background(), store.NewSession{TokenHash: secret.Hash("expired-token"), UserID: expired.id, CreatedAt: time.Now(), ExpiresAt: time.Now().Add(-time.Minute)}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -252,6 +252,27 @@ func TestUIRefusals(t *testing.T) {
 
 	if response := admin.call(http.MethodGet, "list_users", ""); response.Code != http.StatusOK {
 		t.Errorf("admin list_users: %d %s", response.Code, response.Body)
+	}
+
+	// get_session opens with a temporary password, without the projects' data.
+	sessionOf := func(client uiUser) (session struct {
+		Unresolved    int               `json:"unresolved_issues"`
+		ProjectColors map[string]string `json:"project_colors"`
+	},
+	) {
+		if err := json.Unmarshal(client.call(http.MethodGet, "get_session", "").Body.Bytes(), &session); err != nil {
+			t.Fatal(err)
+		}
+
+		return session
+	}
+
+	if session := sessionOf(temporary); session.Unresolved != 0 || len(session.ProjectColors) != 0 {
+		t.Errorf("a temporary password's session shows project data: %+v", session)
+	}
+
+	if session := sessionOf(admin); len(session.ProjectColors) == 0 {
+		t.Error("the admin's session has no project colors: the check above proves nothing")
 	}
 }
 

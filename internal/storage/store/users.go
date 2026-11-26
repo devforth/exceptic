@@ -19,7 +19,7 @@ const (
 // the methods below.
 var RoleSummaries = map[string]string{
 	RoleSuperadmin: "everything",
-	RoleAdmin:      "projects, notifications, users and deleting issues",
+	RoleAdmin:      "projects, notifications, users of the role user, deleting issues and logs",
 	RoleUser:       "issue statuses, logs, project DSNs and their own coding agents",
 }
 
@@ -38,10 +38,19 @@ type User struct {
 	MustChangePassword bool
 	CreatedAt          time.Time
 	LastLoginAt        *time.Time
+	// LastActiveAt is the last request of any of the user's sessions (written at most every SessionActiveEvery).
+	LastActiveAt *time.Time `json:",omitempty"`
 	// Access is the projects the user sees; ProjectAccess applies it.
 	Access Access
 	// Theme is the web app's color theme the user chose (one of Themes); empty until the first login records the system's.
 	Theme string `json:",omitempty"`
+	// GoogleSub is the Google account linked to the user (its subject), set at
+	// the first Google sign-in with the user's email; a changed email drops it.
+	GoogleSub      string     `json:",omitempty"`
+	GoogleLinkedAt *time.Time `json:",omitempty"`
+	// GoogleLinkOff: Google was unlinked, so no Google sign-in links again by
+	// the email until the user signs in with the password.
+	GoogleLinkOff bool `json:",omitempty"`
 }
 
 // Themes are the web app's color themes.

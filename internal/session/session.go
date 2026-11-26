@@ -66,6 +66,7 @@ type loginLimiter struct {
 	byEmail      loginCounter
 	byDevice     loginCounter // a network and an email, for known devices
 	byKnownEmail loginCounter // known-device attempts at an email
+	blockLogged  loginCounter // a network and an email whose block is in the sign-in log
 	swept        time.Time
 	fullWarned   time.Time
 }
@@ -95,7 +96,7 @@ type loginCounter map[string]*loginWindowState
 const maxLimiterKeys = 10_000
 
 func newLoginLimiter(logger *slog.Logger) *loginLimiter {
-	return &loginLimiter{logger: logger, byAddress: loginCounter{}, byEmail: loginCounter{}, byDevice: loginCounter{}, byKnownEmail: loginCounter{}}
+	return &loginLimiter{logger: logger, byAddress: loginCounter{}, byEmail: loginCounter{}, byDevice: loginCounter{}, byKnownEmail: loginCounter{}, blockLogged: loginCounter{}}
 }
 
 // full reports a counter with no room for key.
@@ -163,7 +164,7 @@ func (limiter *loginLimiter) begin(client netip.Addr, email string, knownDevice 
 
 	// Drop finished windows so the maps do not grow with every key ever seen.
 	if now.Sub(limiter.swept) >= time.Minute {
-		for _, counter := range []loginCounter{limiter.byAddress, limiter.byEmail, limiter.byDevice, limiter.byKnownEmail} {
+		for _, counter := range []loginCounter{limiter.byAddress, limiter.byEmail, limiter.byDevice, limiter.byKnownEmail, limiter.blockLogged} {
 			counter.sweep(now)
 		}
 
@@ -212,6 +213,18 @@ func (limiter *loginLimiter) begin(client netip.Addr, email string, knownDevice 
 	attempt.emailStart = limiter.byEmail[attempt.email].start
 
 	return attempt, true
+}
+
+// firstBlock: the first blocked attempt of a network at an email in a
+// window, the only one the sign-in log records, so a flood of blocked
+// attempts cannot push the log's other entries out.
+func (limiter *loginLimiter) firstBlock(client netip.Addr, email string, now time.Time) bool {
+	limiter.mutex.Lock()
+	defer limiter.mutex.Unlock()
+
+	key := server.ClientNetwork(client).String() + "\x00" + emailKey(email)
+
+	return !limiter.blockLogged.full(key) && limiter.blockLogged.add(key, now) == 1
 }
 
 // succeeded clears the attempts of the known device, or of the network when
@@ -264,10 +277,20 @@ func deviceKey(secretKey string) []byte {
 	return sum[:]
 }
 
+// sessionStore keeps the logins and the sign-in log: services.Sessions.
+type sessionStore interface {
+	Open(ctx context.Context) (bool, error)
+	Start(ctx context.Context, login store.NewSession) error
+	Refused(ctx context.Context, email string, attempt store.SignIn) error
+	Touch(ctx context.Context, tokenHash string, now time.Time) error
+	End(ctx context.Context, tokenHash string) error
+	User(ctx context.Context, tokenHash string, now time.Time) (store.User, error)
+}
+
 // Auth is the login of the panel's users: sessions and the limit on login attempts.
 type Auth struct {
 	logger         *slog.Logger
-	sessions       *services.Sessions
+	sessions       sessionStore
 	passwords      passwordChecker
 	trustedProxies []netip.Prefix
 	sessionLife    time.Duration // SESSION_LIFETIME
@@ -283,7 +306,18 @@ type Auth struct {
 	// opened: a superadmin exists, so the UI is open; it never stops
 	// existing, so the database is asked only until then.
 	opened atomic.Bool
+	// touched: when each session's activity was last written, so a session
+	// writes it at most every store.SessionActiveEvery.
+	touchedMutex sync.Mutex
+	touched      map[string]time.Time
+	// google is the Google sign-in; nil without GOOGLE_CLIENT_ID.
+	google *googleSignIn
+	// recording holds a place per refused attempt being written (maxRecording).
+	recording chan struct{}
 }
+
+// maxTouched bounds the sessions whose last write is remembered.
+const maxTouched = 10000
 
 // passwordChecker checks passwords: services.Users.
 type passwordChecker interface {
@@ -298,6 +332,7 @@ func NewAuth(logger *slog.Logger, settings *config.Config, users *services.Users
 		logger: logger, sessions: sessions, passwords: users, trustedProxies: settings.TrustedProxies, sessionLife: settings.SessionLifetime,
 		limiter: newLoginLimiter(logger), deviceKey: deviceKey(settings.Notifications.SecretKey),
 		checks: make(chan struct{}, passwordChecks()), knownChecks: make(chan struct{}, 1), checkWait: passwordCheckWait, now: time.Now,
+		google: newGoogleSignIn(settings, users), recording: make(chan struct{}, maxRecording),
 	}
 }
 
@@ -377,12 +412,16 @@ func (auth *Auth) Login(w http.ResponseWriter, r *http.Request, email, password 
 	attempt, allowed := auth.limiter.begin(client, email, auth.knownDevice(r, email, now), now)
 
 	if !allowed {
+		auth.blocked(r, client, email, now)
+
 		return LoginBlocked, nil
 	}
 
 	done, err := auth.waitForCheck(r.Context(), attempt.knownDevice)
 
 	if errors.Is(err, errChecksBusy) {
+		auth.blocked(r, client, email, now)
+
 		return LoginBlocked, nil
 	}
 
@@ -400,6 +439,7 @@ func (auth *Auth) Login(w http.ResponseWriter, r *http.Request, email, password 
 
 	if !ok {
 		auth.failed(client, attempt)
+		auth.refused(r, email, store.SignInPassword, store.SignInWrongPassword, now)
 
 		return LoginWrongCredentials, nil
 	}
@@ -408,11 +448,45 @@ func (auth *Auth) Login(w http.ResponseWriter, r *http.Request, email, password 
 	auth.setDeviceCookie(w, r, user.Email, now)
 
 	// A new session every login.
-	if err := auth.startSession(r.Context(), w, r, user.ID, now); err != nil {
+	if err := auth.startSession(r.Context(), w, r, user.ID, store.SignInPassword, now); err != nil {
 		return LoginWrongCredentials, err
 	}
 
 	return LoginOK, nil
+}
+
+// blocked records a blocked attempt, once per network and email in a window.
+func (auth *Auth) blocked(r *http.Request, client netip.Addr, email string, now time.Time) {
+	if auth.limiter.firstBlock(client, email, now) {
+		auth.refused(r, email, store.SignInPassword, store.SignInBlocked, now)
+	}
+}
+
+// maxRecording bounds the refused attempts being written at once; past it
+// they are dropped from the log, never waited for.
+const maxRecording = 16
+
+// refused records a refused attempt in the sign-in log of the user of email,
+// apart from the answer: whether the email is a user's must not show in its time.
+func (auth *Auth) refused(r *http.Request, email, method, result string, now time.Time) {
+	select {
+	case auth.recording <- struct{}{}:
+	default:
+		auth.logger.Debug("sign-in log busy: a refused attempt is not recorded")
+
+		return
+	}
+
+	attempt := store.SignIn{At: now, Method: method, Result: result, Address: server.ClientIP(r, auth.trustedProxies).String(), Browser: r.UserAgent()}
+	ctx := context.WithoutCancel(r.Context())
+
+	go func() {
+		defer func() { <-auth.recording }()
+
+		if err := auth.sessions.Refused(ctx, email, attempt); err != nil {
+			auth.logger.Error("record a refused sign-in", "err", err)
+		}
+	}()
 }
 
 // failed logs a wrong password that used up the last attempt. A single one
@@ -572,7 +646,7 @@ func (auth *Auth) setDeviceCookie(w http.ResponseWriter, r *http.Request, email 
 
 // startSession creates a new session and sets its cookie. A session cookie
 // the browser already had (possibly planted) is ended, never reused.
-func (auth *Auth) startSession(ctx context.Context, w http.ResponseWriter, r *http.Request, userID string, now time.Time) error {
+func (auth *Auth) startSession(ctx context.Context, w http.ResponseWriter, r *http.Request, userID, method string, now time.Time) error {
 	if cookie, err := r.Cookie(CookieName); err == nil && cookie.Value != "" {
 		if err := auth.sessions.End(ctx, secret.Hash(cookie.Value)); err != nil {
 			auth.logger.Error("delete previous session", "err", err)
@@ -582,7 +656,12 @@ func (auth *Auth) startSession(ctx context.Context, w http.ResponseWriter, r *ht
 	token := newToken()
 	expires := now.Add(auth.sessionLife)
 
-	if err := auth.sessions.Start(ctx, secret.Hash(token), userID, now, expires); err != nil {
+	login := store.NewSession{
+		TokenHash: secret.Hash(token), UserID: userID, Method: method,
+		Address: server.ClientIP(r, auth.trustedProxies).String(), Browser: r.UserAgent(), CreatedAt: now, ExpiresAt: expires,
+	}
+
+	if err := auth.sessions.Start(ctx, login); err != nil {
 		return err
 	}
 
@@ -626,7 +705,36 @@ func (auth *Auth) User(r *http.Request) (store.User, error) {
 		return store.User{}, store.ErrNotFound
 	}
 
-	return auth.sessions.User(r.Context(), hash, auth.now())
+	now := auth.now()
+	user, err := auth.sessions.User(r.Context(), hash, now)
+
+	if err == nil {
+		auth.touch(r.Context(), hash, now)
+	}
+
+	return user, err
+}
+
+// touch records a session's activity, at most every store.SessionActiveEvery.
+func (auth *Auth) touch(ctx context.Context, hash string, now time.Time) {
+	auth.touchedMutex.Lock()
+
+	if last, ok := auth.touched[hash]; ok && now.Sub(last) < store.SessionActiveEvery {
+		auth.touchedMutex.Unlock()
+
+		return
+	}
+
+	if auth.touched == nil || len(auth.touched) >= maxTouched {
+		auth.touched = map[string]time.Time{}
+	}
+
+	auth.touched[hash] = now
+	auth.touchedMutex.Unlock()
+
+	if err := auth.sessions.Touch(context.WithoutCancel(ctx), hash, now); err != nil {
+		auth.logger.Error("record a session's activity", "err", err)
+	}
 }
 
 // SessionUser returns the user of the request's session; false without a

@@ -172,7 +172,7 @@ func TestUserRules(t *testing.T) {
 	}
 
 	for _, hash := range []string{"session-a", "session-b"} {
-		if err := database.CreateSession(ctx, hash, user, now, now.Add(time.Hour)); err != nil {
+		if err := database.CreateSession(ctx, store.NewSession{TokenHash: hash, UserID: user, CreatedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
 			t.Fatal(err)
 		}
 	}

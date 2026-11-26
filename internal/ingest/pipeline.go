@@ -119,9 +119,12 @@ func (pipeline *Pipeline) setWriting(writing bool) {
 	}
 }
 
+// inboxFullRetry is the Retry-After, in seconds, of an envelope refused while the inbox is full.
+const inboxFullRetry = "10"
+
 func (pipeline *Pipeline) accept(project config.Project, envelope *sentry.Envelope, body []byte) (map[string]string, error) {
 	if pipeline.store.InboxBytes() > pipeline.MaxInboxBytes {
-		return nil, &requestError{status: http.StatusTooManyRequests, message: "server busy", retryAfter: "10"}
+		return nil, &requestError{status: http.StatusTooManyRequests, message: "server busy", retryAfter: inboxFullRetry}
 	}
 
 	entry, err := pipeline.store.Append(project.ID, pipeline.handler.now(), body)

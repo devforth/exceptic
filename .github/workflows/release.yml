@@ -50,7 +50,10 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-      # Not for pre-releases: the description is the newest release's.
+      # Not for pre-releases: the description is the newest release's,
+      # without the markers of its copied blocks (TestDocsCopies).
+      - if: ${{ !contains(github.ref_name, '-') }}
+        run: sed -i '/^[[:space:]]*<!-- .* -->$/d' docs/dockerhub.md
       - if: ${{ !contains(github.ref_name, '-') }}
         uses: peter-evans/dockerhub-description@v4
         with:

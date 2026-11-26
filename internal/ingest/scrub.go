@@ -617,7 +617,10 @@ func isCookieKey(key string) bool {
 }
 
 // harmlessCookies keep their plain values; any other cookie may hold a session.
-var harmlessCookies = wordSet("theme", "lang", "language", "locale", "timezone", "tz")
+var (
+	harmlessCookieNames = []string{"theme", "lang", "language", "locale", "timezone", "tz"}
+	harmlessCookies     = wordSet(harmlessCookieNames...)
+)
 
 // cookies copies the next value, a request's cookies, with every cookie's
 // value filtered but those of harmlessCookies (filteredCookies). An object

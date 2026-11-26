@@ -10,15 +10,18 @@ to go after it (a local path only); a full load opens that page with a fresh ses
 	import { titleClasses } from '#lib/components/heading.ts';
 	import { formClasses } from '#lib/components/field.ts';
 	import FormActions from '#lib/components/FormActions.svelte';
+	import GoogleSignInButton from '#lib/components/GoogleSignInButton.svelte';
 	import Notice from '#lib/components/Notice.svelte';
 	import PageTitle from '#lib/components/PageTitle.svelte';
 	import TextField from '#lib/components/TextField.svelte';
 	import { FormState } from '#lib/form.svelte.ts';
 	import type { PageProps } from './$types';
+	import { googleRefusal } from './login.ts';
 
 	let { data }: PageProps = $props();
 
 	const form = new FormState();
+	const refusal = $derived(googleRefusal(page.url));
 	let email = $state('');
 	let password = $state('');
 	let element: HTMLFormElement | undefined = $state();
@@ -72,6 +75,13 @@ to go after it (a local path only); a full load opens that page with a fresh ses
 				/>
 				<FormActions {form} stretch>Log in</FormActions>
 			</form>
+			{#if data.state.google}
+				<div class="mt-4 flex flex-col gap-3">
+					<p class="text-center text-xs text-muted">or</p>
+					{#if refusal}<Notice tone="error" alert>{refusal}</Notice>{/if}
+					<GoogleSignInButton next={page.url.searchParams.get('next') ?? ''} />
+				</div>
+			{/if}
 		{/if}
 	</Card>
 </main>

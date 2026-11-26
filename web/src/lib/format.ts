@@ -113,3 +113,29 @@ export function sharePercent(part: number, whole: number): string {
 export function countOf(count: number, kind: string): string {
 	return `${count.toLocaleString('en-US')} ${count === 1 ? kind.replace(/s$/, '') : kind}`;
 }
+
+/** A browser as people name it, from its User-Agent: "Chrome on Linux"; "" for none. */
+export function browserName(userAgent: string | undefined): string {
+	if (!userAgent) return '';
+
+	const browsers: [RegExp, string][] = [
+		[/Edg\//, 'Edge'],
+		[/OPR\//, 'Opera'],
+		[/Firefox\//, 'Firefox'],
+		[/Chrome\//, 'Chrome'],
+		[/Safari\//, 'Safari']
+	];
+	const systems: [RegExp, string][] = [
+		[/Android/, 'Android'],
+		[/iPhone|iPad/, 'iOS'],
+		[/Windows/, 'Windows'],
+		[/Mac OS X|Macintosh/, 'macOS'],
+		[/Linux/, 'Linux']
+	];
+	const browser = browsers.find(([pattern]) => pattern.test(userAgent))?.[1];
+	const system = systems.find(([pattern]) => pattern.test(userAgent))?.[1];
+
+	if (!browser) return system ?? 'Other';
+
+	return system ? `${browser} on ${system}` : browser;
+}

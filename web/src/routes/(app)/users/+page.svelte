@@ -24,13 +24,16 @@
 	let { data }: PageProps = $props();
 
 	type Row = Item<'list_users'>;
-	type UserColumn = TableColumn<'user' | 'role' | 'projects' | 'login' | 'added' | 'actions'>;
+	type UserColumn = TableColumn<
+		'user' | 'role' | 'projects' | 'login' | 'active' | 'added' | 'actions'
+	>;
 
 	const columns: UserColumn[] = [
 		{ key: 'user', label: 'User' },
 		{ key: 'role', label: 'Role' },
 		{ key: 'projects', label: 'Projects' },
 		{ key: 'login', label: 'Last login' },
+		{ key: 'active', label: 'Last active', wideOnly: true },
 		{ key: 'added', label: 'Added', wideOnly: true },
 		{ key: 'actions', label: 'Actions', actions: true }
 	];
@@ -122,7 +125,17 @@
 			{/if}
 		{:else if column.key === 'projects'}
 			<!-- The viewer's part of the user's projects: others they do not see are left out. -->
-			<ProjectsSummary all={user.all_projects} names={user.projects ?? []} />
+			<ProjectsSummary
+				all={user.all_projects}
+				names={user.projects ?? []}
+				links={(user.project_ids ?? []).map((id) =>
+					resolve('/(app)/projects/[id=projectId]', { id })
+				)}
+			/>
+		{:else if column.key === 'active'}
+			{#if user.last_active_at}<Time at={user.last_active_at} />{:else}<span class="text-muted">
+					never
+				</span>{/if}
 		{:else if column.key === 'login'}
 			{#if user.last_login_at}<Time at={user.last_login_at} />{:else}<span class="text-muted">
 					never

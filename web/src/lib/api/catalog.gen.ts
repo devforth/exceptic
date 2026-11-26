@@ -199,6 +199,8 @@ export interface Endpoints {
 				must_change_password?: boolean;
 				created_at: IsoTime;
 				last_login_at?: IsoTime | null;
+				last_active_at?: IsoTime | null;
+				google_linked?: boolean;
 			};
 			temporary_password: string;
 			note: string;
@@ -247,6 +249,41 @@ export interface Endpoints {
 		};
 		out: {
 			done: string;
+		};
+	};
+	end_session: {
+		in: {
+			/** id from list_users; empty: yourself. */
+			user_id?: string;
+			/** id from get_activity. */
+			session_id: string;
+		};
+		out: void;
+	};
+	get_activity: {
+		in: {
+			/** id from list_users; empty: yourself. */
+			user_id?: string;
+		};
+		out: {
+			sessions: {
+				id: string;
+				method?: string;
+				address?: string;
+				browser?: string;
+				created_at: IsoTime;
+				last_active_at: IsoTime;
+				expires_at: IsoTime;
+				current?: boolean;
+			}[] | null;
+			sign_ins: {
+				at: IsoTime;
+				method: string;
+				result: string;
+				address?: string;
+				browser?: string;
+			}[] | null;
+			google_linked_at?: IsoTime | null;
 		};
 	};
 	get_connection: {
@@ -487,6 +524,8 @@ export interface Endpoints {
 				must_change_password?: boolean;
 				created_at: IsoTime;
 				last_login_at?: IsoTime | null;
+				last_active_at?: IsoTime | null;
+				google_linked?: boolean;
 			};
 			can_administer: boolean;
 			app_name: string;
@@ -551,6 +590,8 @@ export interface Endpoints {
 				must_change_password?: boolean;
 				created_at: IsoTime;
 				last_login_at?: IsoTime | null;
+				last_active_at?: IsoTime | null;
+				google_linked?: boolean;
 			};
 			can_manage: boolean;
 			can_take_over: boolean;
@@ -854,6 +895,8 @@ export interface Endpoints {
 					must_change_password?: boolean;
 					created_at: IsoTime;
 					last_login_at?: IsoTime | null;
+					last_active_at?: IsoTime | null;
+					google_linked?: boolean;
 				};
 				can_manage: boolean;
 				can_take_over: boolean;
@@ -882,6 +925,8 @@ export interface Endpoints {
 				must_change_password?: boolean;
 				created_at: IsoTime;
 				last_login_at?: IsoTime | null;
+				last_active_at?: IsoTime | null;
+				google_linked?: boolean;
 			};
 			temporary_password: string;
 			note: string;
@@ -983,6 +1028,13 @@ export interface Endpoints {
 			message: string;
 		};
 	};
+	unlink_google: {
+		in: {
+			/** id from list_users; empty: yourself. */
+			user_id?: string;
+		};
+		out: void;
+	};
 	update_account_name: {
 		in: {
 			/** The new display name; empty shows the email. */
@@ -1000,6 +1052,8 @@ export interface Endpoints {
 			must_change_password?: boolean;
 			created_at: IsoTime;
 			last_login_at?: IsoTime | null;
+			last_active_at?: IsoTime | null;
+			google_linked?: boolean;
 		};
 	};
 	update_connection: {
@@ -1102,6 +1156,8 @@ export interface Endpoints {
 			must_change_password?: boolean;
 			created_at: IsoTime;
 			last_login_at?: IsoTime | null;
+			last_active_at?: IsoTime | null;
+			google_linked?: boolean;
 		};
 	};
 }
@@ -1121,6 +1177,8 @@ export const endpoints = {
 	delete_project: { method: 'POST', admin: true, destructive: true, confirm: false },
 	delete_user: { method: 'POST', admin: true, destructive: true, confirm: false },
 	disconnect_agent: { method: 'POST', admin: false, destructive: true, confirm: false },
+	end_session: { method: 'POST', admin: false, destructive: false, confirm: true },
+	get_activity: { method: 'GET', admin: false, destructive: false, confirm: false },
 	get_connection: { method: 'GET', admin: true, destructive: false, confirm: false },
 	get_connection_defaults: { method: 'GET', admin: true, destructive: false, confirm: false },
 	get_issue_details: { method: 'GET', admin: false, destructive: false, confirm: false },
@@ -1149,6 +1207,7 @@ export const endpoints = {
 	set_theme: { method: 'POST', admin: false, destructive: false, confirm: false },
 	start_email_verification: { method: 'POST', admin: true, destructive: false, confirm: false },
 	test_chat: { method: 'POST', admin: true, destructive: false, confirm: false },
+	unlink_google: { method: 'POST', admin: false, destructive: false, confirm: true },
 	update_account_name: { method: 'POST', admin: false, destructive: false, confirm: false },
 	update_connection: { method: 'POST', admin: true, destructive: false, confirm: true },
 	update_project: { method: 'POST', admin: true, destructive: false, confirm: true },
@@ -1165,6 +1224,7 @@ export interface PlainRequests {
 			app_name: string;
 			disabled?: string;
 			redirect?: string;
+			google?: boolean;
 		};
 	};
 	login: {
@@ -1398,7 +1458,7 @@ export const diskShare = { min: 5, max: 100, step: 5 } as const;
 
 /** What each role may do. */
 export const roleSummaries = {
-	admin: 'projects, notifications, users and deleting issues',
+	admin: 'projects, notifications, users of the role user, deleting issues and logs',
 	superadmin: 'everything',
 	user: 'issue statuses, logs, project DSNs and their own coding agents',
 } as const;
@@ -1424,7 +1484,7 @@ export const help = {
 			'DSN': 'The address the app\'s Sentry SDK sends errors and logs to. The key in it only allows sending to this project, so it can be in browser code.',
 			'Disk share': 'The part of MAX_DATABASE_SIZE the project may take. When it reaches 99% of it, even with the database under its limit, the cleanup deletes the project\'s own data in the usual order, down to 80% of its share, so a flood in one project does not push out the others. A ceiling, not a reservation: shares may add up to more than 100%. At 100% the project has no limit of its own.',
 			'Dropped': 'What the project sent in the last 24 hours that was not stored: over its rate limit, refused while the server was busy, too large, unreadable or not received whole, and what its SDK reports it held back. Resets on restart.',
-			'History kept': 'The oldest record of each kind still stored; Errors counts events of every level. When the database nears its limit, the cleanup deletes logs older than a month and old event copies first, then logs below error, events below error and copies beyond an issue\'s newest 20, then error logs, then the remaining events, oldest first.',
+			'History kept': 'The oldest record of each kind still stored; Errors counts events of every level. When the database nears its limit, the cleanup deletes the least useful data first, in the order of the cleanup by size.',
 			'Logs': 'Log levels to store; others are dropped when they arrive. Unchanged, the project follows RECORD_LOG_LEVELS. Errors and messages of every level are stored.',
 		},
 		'Users': {

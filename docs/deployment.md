@@ -2,18 +2,22 @@
 
 The server is one container, `devforth/exceptic`, for amd64 and arm64. It keeps all its data in an embedded database, `/data/leveldb`, and needs nothing else; without `SECRET_KEY`, the key that encrypts chat tokens is `/data/secret.key`.
 
+<!-- image-tags -->
 Image tags: `latest` (newest release), `X.Y` (newest patch of a minor version), `X.Y.Z`. Pin `X.Y` or `X.Y.Z` in production and upgrade on purpose.
+<!-- /image-tags -->
 
 ## Docker Compose
 
 1. Copy [compose.yml](../compose.yml) to the server and pin its image to the `X.Y` you start with (`devforth/exceptic:X.Y`).
 2. Next to it, create `.env` (all settings: [Configuration](configuration.md)). A minimal one:
 
+   <!-- minimal-env -->
    ```sh
    PUBLIC_URL=https://errors.example.com
    ADMIN_PASSWORD=<at least 12 characters>
    SECRET_KEY=<openssl rand -hex 32>   # encrypts chat tokens; generated into /data when not set
    ```
+   <!-- /minimal-env -->
 
    Behind a reverse proxy, also publish the port on localhost and set `TRUSTED_PROXIES`: [HTTPS and a reverse proxy](#https-and-a-reverse-proxy).
 
@@ -94,7 +98,7 @@ server {
 - The links that stop notification emails (`/unsubscribe/<id>?token=…`) stay open too: mail providers send their one-click request from their own servers. Each works only with the token signed by `SECRET_KEY` (or `secret.key`) for one address, and only pauses that address's connections.
 - Everything else (UI, REST API, MCP) can be restricted to your office or VPN with `ALLOWED_IPS`. In Docker without a proxy the server sees IPv4 clients of a published port as they are, but the host itself, and with `"8000:8000"` every IPv6 client, as the network's gateway: do not add the gateway, publish on `127.0.0.1` behind a proxy instead.
 - Passwords, cookies, tokens and similar values are removed from incoming events and logs before they are stored; envelopes still waiting in the ingest queue, and backups made meanwhile, hold them as sent.
-- Users get one of three roles: **superadmin** (everything), **admin** (projects, notifications, users of the role user, deleting issues and logs) and **user** (issues, logs, DSNs, their own coding agents). Add them on the **Users** page; each gets a temporary password to change at the first login. Admins and users see all projects or only the projects chosen for them (users from before this setting see all); outside them they see no issue, log, project or notification connection, and their agents neither. Who may change whom: [Users](ui.md#users).
+- Users get one of three roles: **superadmin** (everything), **admin** (projects, notifications, users of the role user, deleting issues and logs) and **user** (issue statuses, logs, project DSNs and their own coding agents). Add them on the **Users** page; each gets a temporary password to change at the first login. Admins and users see all projects or only the projects chosen for them (users from before this setting see all); outside them they see no issue, log, project or notification connection, and their agents neither. Who may change whom: [Users](ui.md#users).
 
 ## Data
 
@@ -108,7 +112,7 @@ Measured on a laptop with 20 threads and an NVMe disk, with the peak of 50 proje
 |---|---|
 | Memory | About 200 MB at the peak (the default `GOMEMLIMIT`), less when idle. |
 | CPU | The errors are stored in about 14 s (3,600 a second) on 5 cores on average; SDKs get their answers in milliseconds, since envelopes wait in the queue. |
-| Disk space | At least 1.3 × `MAX_DATABASE_SIZE`: the limit counts the data held, and the files also hold deleted records until a compaction (about 10%), the ingest queue (up to 20% under a peak) and the write journal (16 MB); merging its files, the database writes new ones before it deletes the old. |
+| Disk space | At least 1.3 × `MAX_DATABASE_SIZE`: the limit counts the data held, the files hold more ([Retention](configuration.md#retention)); merging its files, the database writes new ones before it deletes the old. |
 | Disk writes | The database writes data several times as it merges its files: the 366 MB of that peak wrote 1.8 GB. Use an SSD; a slow network volume becomes the limit. |
 | Connections | At most 1,000 at once; more wait in the queue until one closes (idle keep-alive connections are closed first), none is refused. Request headers are limited to 64 KiB (431 above). |
 | At the size limit | The same peak while the cleanup runs is stored in about a minute, with answers under 0.5 s and nothing refused; the cleanup took 2 GB down to 0.5 GB in 3 minutes. |
@@ -141,6 +145,17 @@ docker compose pull && docker compose up -d
 This brings the newest patch of the pinned `X.Y`; for a new minor version change the tag first.
 
 On shutdown (`docker stop` sends SIGTERM) the server finishes requests and writes queued notifications to the database; they are sent after the next start. This can take more than Docker's default 10 s before SIGKILL: `compose.yml` gives it 30 s (`stop_grace_period`), with `docker run` add `--stop-timeout 30`.
+
+## Sign in with Google
+
+Users the admins added may also sign in with Google; nobody signs up that way.
+
+1. In Google Cloud, APIs & Services › Credentials, create an OAuth client ID of type Web application, with the authorized redirect URI `<PUBLIC_URL>/auth/google/callback` (for example `https://errors.example.com/auth/google/callback`).
+2. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `PUBLIC_URL`, and restart. The login page shows Sign in with Google.
+
+The first Google sign-in links the Google account to the user with its email, if Google has verified it; later sign-ins find the user by that account, whatever its email. An admin changing the user's email unlinks it and disconnects the sessions opened through it; the user or an admin can also unlink it on the account or user page, which disconnects those sessions too and keeps that user from linking a Google account by email again until they sign in with the password once. A new user still replaces the temporary password the admin gave them.
+
+Any Google account whose email Google has verified links this way: Gmail, Google Workspace (`you@company.com`) and a Google account made for another address alike. For an address Google does not host, it checked that the owner received mail there when the account was made, not that they still do: someone who left a company keeps a Google account made with their work email. Add a user only with an address that is theirs now, and unlink Google when an address changes hands.
 
 ## Forgotten password
 

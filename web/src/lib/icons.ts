@@ -29,6 +29,7 @@ import Info from '@lucide/svelte/icons/info';
 import KeyRound from '@lucide/svelte/icons/key-round';
 import Lock from '@lucide/svelte/icons/lock';
 import Mail from '@lucide/svelte/icons/mail';
+import MonitorSmartphone from '@lucide/svelte/icons/monitor-smartphone';
 import LogOut from '@lucide/svelte/icons/log-out';
 import LetterI from '@lucide/svelte/icons/letter-i';
 import Logs from '@lucide/svelte/icons/logs';
@@ -82,6 +83,7 @@ export const icons = {
 	// The account's security: change the email, change the password.
 	email: Mail,
 	password: Lock,
+	sessions: MonitorSmartphone,
 	code: CodeXml,
 	pause: Pause,
 	resume: Play,

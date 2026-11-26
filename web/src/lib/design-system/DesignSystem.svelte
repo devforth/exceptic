@@ -33,6 +33,7 @@ Every component with its variants, on sample data. Served only by the dev server
 	import Dialog from '#lib/components/Dialog.svelte';
 	import FormActions from '#lib/components/FormActions.svelte';
 	import FormDialog from '#lib/components/FormDialog.svelte';
+	import GoogleSignInButton from '#lib/components/GoogleSignInButton.svelte';
 	import StatusPage from '#lib/components/StatusPage.svelte';
 	import FilterPicker from '#lib/components/FilterPicker.svelte';
 	import { narrowFormClasses } from '#lib/components/field.ts';
@@ -960,7 +961,11 @@ Every component with its variants, on sample data. Served only by the dev server
 		/>
 		<p class="flex flex-wrap items-center gap-3">
 			ProjectsSummary: <ProjectsSummary all names={[]} /> ·
-			<ProjectsSummary all={false} names={['backend', 'frontend']} /> ·
+			<ProjectsSummary
+				all={false}
+				names={['backend', 'frontend']}
+				links={['#projects', '#projects']}
+			/> ·
 			<ProjectsSummary all={false} names={[]} />
 		</p>
 		<Details title="Projects" variant="form" invalid>
@@ -1353,6 +1358,11 @@ Every component with its variants, on sample data. Served only by the dev server
 				/>
 			</FormDialog>
 		</Row>
+		<Row
+			caption="GoogleSignInButton: the login page's Sign in with Google (a full load of /auth/google)"
+		>
+			<GoogleSignInButton next="/issues" />
+		</Row>
 		<Row caption="ActionList and ActionRow: rows that open a dialog (the account's Security)" wide>
 			<ActionList title="Security">
 				<ActionRow
@@ -1364,6 +1374,12 @@ Every component with its variants, on sample data. Served only by the dev server
 				<ActionRow
 					icon="password"
 					label="Change password"
+					onclick={() => (sampleNarrowDialog = true)}
+				/>
+				<ActionRow
+					icon="password"
+					label="Reset password"
+					unavailable="Only for a user whose projects you all have."
 					onclick={() => (sampleNarrowDialog = true)}
 				/>
 			</ActionList>
@@ -1543,13 +1559,17 @@ Every component with its variants, on sample data. Served only by the dev server
 				{#snippet cell(row: Context, column: ContextColumn)}{row[column.key]}{/snippet}
 			</Table>
 		</Row>
-		<Row caption="compact, flat (inside a card or a dialog)" wide>
+		<Row
+			caption="compact, middle (cells centred on their row, beside buttons), flat (inside a card or a dialog)"
+			wide
+		>
 			<Table
 				columns={breadcrumbColumns}
 				rows={breadcrumbs}
 				rowKey={(row: Breadcrumb) => row.time}
 				label="Breadcrumbs"
 				compact
+				middle
 				flat
 			>
 				{#snippet cell(row: Breadcrumb, column: BreadcrumbColumn)}{row[column.key]}{/snippet}

@@ -5,7 +5,7 @@ not shown and stay as they are. save sends it; a refusal shows at its fields.
 -->
 <script lang="ts">
 	import { help, limits } from '#lib/api/catalog.gen.ts';
-	import { narrowFormClasses } from '#lib/components/field.ts';
+	import { formClasses } from '#lib/components/field.ts';
 	import FormActions from '#lib/components/FormActions.svelte';
 	import ProjectsChoice from '#lib/components/ProjectsChoice.svelte';
 	import { projectsInput, type ProjectsInput } from '#lib/components/projectsChoice.ts';
@@ -68,7 +68,7 @@ not shown and stay as they are. save sends it; a refusal shows at its fields.
 	}
 </script>
 
-<form onsubmit={submit} class={narrowFormClasses}>
+<form onsubmit={submit} class={formClasses}>
 	{#if user?.takeOverLocked}
 		<TextField label="Email" name="email" value={email} readonly />
 		<TextField label="Name" name="name" value={name} readonly description={user.takeOverLocked} />

@@ -23,9 +23,11 @@ fix:
 build: web
 	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o bin/exceptic ./cmd/exceptic
 
-# Rewrites the web app's types of the catalog (web/src/lib/api/catalog.gen.ts); make test fails while they are stale.
+# Rewrites what is generated from the code: the web app's types of the catalog (web/src/lib/api/catalog.gen.ts)
+# and the parts of the docs the TestDocs* tests keep (tables, copied blocks, the values of the code they state);
+# make test fails while they are stale. One package at a time: several write the same documents.
 api-types:
-	UPDATE_API_TYPES=1 go test ./internal/api -run TestTypeScriptCatalog -count=1
+	UPDATE_API_TYPES=1 go test -p 1 ./docs ./internal/... -run 'TestTypeScriptCatalog|TestDocs' -count=1
 
 # The single-page app (web/, Node and pnpm): built into web/dist/spa, which Go embeds.
 web: web-deps

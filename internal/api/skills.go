@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"strconv"
 	"strings"
+
+	"github.com/devforth/exceptic/internal/storage/store"
 )
 
 //go:embed instructions.md skills/*/SKILL.md
@@ -17,6 +19,14 @@ type agentSkill struct {
 	description string
 	content     string
 }
+
+// skillPlaceholders are the values of the code that the instructions and
+// the skills name, so they never repeat a number.
+var skillPlaceholders = strings.NewReplacer(
+	"{{default_limit}}", strconv.Itoa(DefaultLimit),
+	"{{max_limit}}", strconv.Itoa(MaxLimit),
+	"{{max_issue_batch}}", strconv.Itoa(store.MaxIssueBatch),
+)
 
 // skills are guides an agent loads on demand (fetch_skill), one topic each,
 // named and described by their front matter.
@@ -39,7 +49,7 @@ func loadSkills() []agentSkill {
 			panic(err)
 		}
 
-		skill := agentSkill{content: string(content)}
+		skill := agentSkill{content: skillPlaceholders.Replace(string(content))}
 		frontMatter, _, _ := strings.Cut(strings.TrimPrefix(skill.content, "---\n"), "\n---\n")
 
 		for line := range strings.SplitSeq(frontMatter, "\n") {
@@ -94,11 +104,7 @@ func serverInstructions(appName string) string {
 
 	var text strings.Builder
 
-	text.WriteString(strings.NewReplacer(
-		"{{app}}", appName,
-		"{{default_limit}}", strconv.Itoa(DefaultLimit),
-		"{{max_limit}}", strconv.Itoa(MaxLimit),
-	).Replace(string(instructions)))
+	text.WriteString(skillPlaceholders.Replace(strings.ReplaceAll(string(instructions), "{{app}}", appName)))
 
 	for _, skill := range skills {
 		fmt.Fprintf(&text, "  - %s: %s\n", skill.name, skill.description)

@@ -1,7 +1,7 @@
 <!--
 @component
 A row that opens what it names (a dialog): an icon in a square, the label, an optional line under
-it and a chevron, on a card's surface.
+it and a chevron, on a card's surface. unavailable is why it does nothing now, shown under the label.
 -->
 <script lang="ts">
 	import type { IconName } from '#lib/icons.ts';
@@ -15,26 +15,33 @@ it and a chevron, on a card's surface.
 		onclick: () => void;
 		/** What it opens (aria-haspopup). */
 		popup?: 'dialog';
+		/** Why it does nothing now (aria-disabled, so it keeps the focus). */
+		unavailable?: string;
 	};
 
-	let { icon, label, description, onclick, popup = 'dialog' }: Props = $props();
+	let { icon, label, description, onclick, popup = 'dialog', unavailable }: Props = $props();
 </script>
 
 <button
 	type="button"
 	class={[
 		cardClasses,
-		'flex w-full cursor-pointer items-center gap-3.5 px-4 py-3.5 text-left focus-ring transition-colors hover:bg-hover'
+		'flex w-full items-center gap-3.5 px-4 py-3.5 text-left focus-ring transition-colors',
+		unavailable ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-hover'
 	]}
 	aria-haspopup={popup}
-	{onclick}
+	aria-disabled={unavailable ? true : undefined}
+	title={unavailable}
+	onclick={unavailable ? undefined : onclick}
 >
 	<span class="grid size-9 shrink-0 place-items-center rounded-control bg-code-bg text-muted">
 		<Icon name={icon} size={16} />
 	</span>
 	<span class="flex min-w-0 flex-1 flex-col">
 		<span class="font-semibold">{label}</span>
-		{#if description}<span class="text-xs text-muted">{description}</span>{/if}
+		{#if unavailable || description}<span class="text-xs text-muted">
+				{unavailable ?? description}
+			</span>{/if}
 	</span>
 	<span class="text-muted"><Icon name="chevronRight" size={16} /></span>
 </button>

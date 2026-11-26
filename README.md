@@ -20,6 +20,7 @@ Tracing spans, session replays and other Sentry item types are accepted and drop
 
 ## Quick start
 
+<!-- docker-run -->
 ```sh
 docker run -d --name exceptic -p 8000:8000 -v exceptic-data:/data \
   -e ADMIN_PASSWORD='<at least 12 characters>' \
@@ -27,6 +28,7 @@ docker run -d --name exceptic -p 8000:8000 -v exceptic-data:/data \
 ```
 
 Open http://localhost:8000 and log in as `admin` with that password. On the **Projects** page add a project and copy its DSN.
+<!-- /docker-run -->
 
 For a real deployment use [compose.yml](compose.yml) with an `.env` file and put the server behind HTTPS: see [Deployment](docs/deployment.md).
 
@@ -74,7 +76,7 @@ cp .env.example .env.local   # works as is: log in as admin / admin-password
 make run                     # http://localhost:8000
 make dev                     # server and web app with hot reload, both at http://localhost:8000 (Ctrl+C stops both)
 make test lint web-check     # what CI runs
-make api-types               # after changing the catalog: the web app's generated types
+make api-types               # after changing the catalog or a value the docs state: the generated types and doc parts
 make docker image-size       # build the image and check its size
 ```
 

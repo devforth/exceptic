@@ -4,7 +4,7 @@ The fields of the settings pages. The UI shows these rows as the hints (?) next 
 
 ## Projects
 
-A project is one service (backend, frontend, worker) with its own DSN. Projects from `PROJECTS` take their key from the environment (their name only when they are created) and cannot be deleted here; the rest of their settings change here. Deleting a project stops its DSN at once, then deletes its issues, events and logs; a deletion stopped by a restart goes on at the next start. A project an admin with only some projects adds joins his projects at once; a deleted one leaves every user's. The storage card shows the parts of your projects; Other includes the projects you do not see. A name another project has is refused, without naming that project when it is not one of yours.
+A project is one service (backend, frontend, worker) with its own DSN. Projects from `PROJECTS` follow it as [Configuration](configuration.md#projects) says; the rest of their settings change here. Deleting a project stops its DSN at once, then deletes its issues, events and logs; a deletion stopped by a restart goes on at the next start. A project an admin with only some projects adds joins his projects at once; a deleted one leaves every user's. The storage card shows the parts of your projects; Other includes the projects you do not see. A name another project has is refused, without naming that project when it is not one of yours.
 
 | Field | |
 |---|---|
@@ -12,7 +12,7 @@ A project is one service (backend, frontend, worker) with its own DSN. Projects 
 | DSN | The address the app's Sentry SDK sends errors and logs to. The key in it only allows sending to this project, so it can be in browser code. |
 | Logs | Log levels to store; others are dropped when they arrive. Unchanged, the project follows RECORD_LOG_LEVELS. Errors and messages of every level are stored. |
 | Disk share | The part of MAX_DATABASE_SIZE the project may take. When it reaches 99% of it, even with the database under its limit, the cleanup deletes the project's own data in the usual order, down to 80% of its share, so a flood in one project does not push out the others. A ceiling, not a reservation: shares may add up to more than 100%. At 100% the project has no limit of its own. |
-| History kept | The oldest record of each kind still stored; Errors counts events of every level. When the database nears its limit, the cleanup deletes logs older than a month and old event copies first, then logs below error, events below error and copies beyond an issue's newest 20, then error logs, then the remaining events, oldest first. |
+| History kept | The oldest record of each kind still stored; Errors counts events of every level. When the database nears its limit, the cleanup deletes the least useful data first, in the order of the [cleanup by size](configuration.md#retention). |
 | Dropped | What the project sent in the last 24 hours that was not stored: over its rate limit, refused while the server was busy, too large, unreadable or not received whole, and what its SDK reports it held back. Resets on restart. |
 
 ## Notifications
@@ -46,6 +46,8 @@ Who may change whom:
 - A user changes no one. Everyone changes their own name, email and password only on the Account page; the email and the password ask for the current password.
 
 Changing means the email, name and role, resetting the password, deleting the user and disconnecting their coding agents. The Projects field is apart: an admin edits it for any user of the role user (see the table).
+
+Sessions and sign-ins (the Account page for oneself, a user's page for those above them): the browsers signed in now, with the address, how they signed in and when they were last active; the newest 100 sign-ins and, apart, the newest 100 refused attempts (a wrong password, the login limit (once per network and window), another Google account, Google unlinked); and the linked Google account, if any. Disconnecting a session or unlinking Google is changing the user; nobody disconnects the session they use (they log out).
 
 For an admin with the projects backend and frontend, a user of the role user with:
 

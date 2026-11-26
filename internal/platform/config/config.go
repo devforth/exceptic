@@ -188,6 +188,8 @@ type Config struct {
 	SessionLifetime time.Duration
 	// Notifications: where to send alerts about new and regressed issues.
 	Notifications Notifications
+	// Google: the Google sign-in (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET).
+	Google Google
 	// Retention: how much data is kept (MAX_DATABASE_SIZE).
 	Retention Retention
 	// Recording: which event and log levels are stored by default.
@@ -229,6 +231,9 @@ const (
 	// project id (stored as 32 bits).
 	MaxProjectName = 64
 	MaxProjectID   = math.MaxUint32
+	// A project's public key has MinPublicKey to MaxPublicKey letters or digits.
+	MinPublicKey = 16
+	MaxPublicKey = 64
 	// ProjectNamePattern: lowercase letters, digits, '-' and '_', starting
 	// with a letter or digit, not digits only (that reads as a project ID).
 	// Also the pattern attribute of the project form, hence the escaped '-'.
@@ -238,7 +243,7 @@ const (
 var (
 	projectNameRe = regexp.MustCompile(`^(?:` + ProjectNamePattern + `)$`)
 	adminLoginRe  = regexp.MustCompile(`^[A-Za-z0-9._@-]+$`)
-	publicKeyRe   = regexp.MustCompile(`^[A-Za-z0-9]{16,64}$`)
+	publicKeyRe   = regexp.MustCompile(fmt.Sprintf(`^[A-Za-z0-9]{%d,%d}$`, MinPublicKey, MaxPublicKey))
 	originRe      = regexp.MustCompile(`^https?://([a-z0-9.-]+|\[[0-9a-f:]+\])(:[0-9]{1,5})?$`)
 )
 
@@ -363,6 +368,10 @@ func loadFrom(getenv func(string) string) (*Config, error) {
 	}
 
 	config.Notifications = notifications
+
+	if config.Google, err = parseGoogle(getenv, notifications.PublicURL); err != nil {
+		return nil, err
+	}
 
 	recording, err := parseRecording(getenv)
 

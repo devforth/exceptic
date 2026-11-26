@@ -10,7 +10,7 @@ import { defineConfig } from 'vitest/config';
 // not keep it (Vite 8's proxy sends the target's host), so the header is set again.
 const goServer = process.env.EXCEPTIC_URL ?? 'http://localhost:8000';
 const goAddresses =
-	'^/(api/|mcp(/|\\?|$)|health(\\?|$)|oauth/(token|register|jwks)(\\?|$)|\\.well-known/|unsubscribe/)';
+	'^/(api/|mcp(/|\\?|$)|health(\\?|$)|oauth/(token|register|jwks)(\\?|$)|\\.well-known/|unsubscribe/|auth/google)';
 
 export default defineConfig({
 	plugins: [

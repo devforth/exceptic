@@ -9,12 +9,17 @@ A temporary password made here or on the way here is shown once.
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { post } from '#lib/api/client.ts';
+	import ActionList from '#lib/components/ActionList.svelte';
+	import ActionRow from '#lib/components/ActionRow.svelte';
 	import Breadcrumbs from '#lib/components/Breadcrumbs.svelte';
+	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
 	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
+	import Dialog from '#lib/components/Dialog.svelte';
 	import Facts from '#lib/components/Facts.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import RoleBadge from '#lib/components/RoleBadge.svelte';
 	import SecretReveal from '#lib/components/SecretReveal.svelte';
+	import SignInActivity from '#lib/components/SignInActivity.svelte';
 	import { takeOver } from '#lib/handoff.ts';
 	import { toast } from '#lib/toast.svelte.ts';
 	import UserForm from '../UserForm.svelte';
@@ -33,6 +38,8 @@ A temporary password made here or on the way here is shown once.
 	const user = $derived(data.managed.user);
 	// Why the viewer may not rename, delete or reset the user, or change their role.
 	const takeOverLocked = $derived(takeOverLock(data.managed));
+	let activityOpen = $state(false);
+	let resetOpen = $state(false);
 	const editable = $derived(data.managed.can_take_over || data.managed.access_editable);
 
 	// The temporary password, in this component only: shown for its own user, gone on leaving.
@@ -126,15 +133,28 @@ A temporary password made here or on the way here is shown once.
 		{save}
 	/>
 	<div class="mt-6">
-		<ConfirmButton
-			variant="default"
-			confirm={resetConfirmation(user.email)}
-			action={reset}
-			unavailable={takeOverLocked}
-		>
-			Reset password
-		</ConfirmButton>
+		<ActionList title="Security">
+			<ActionRow
+				icon="password"
+				label="Reset password"
+				description="A temporary password, shown once; they are logged out"
+				unavailable={takeOverLocked}
+				onclick={() => (resetOpen = true)}
+			/>
+			<ActionRow
+				icon="sessions"
+				label="Sessions and sign-ins"
+				description="Where they are signed in, every attempt and Google"
+				onclick={() => (activityOpen = true)}
+			/>
+		</ActionList>
 	</div>
+	<ConfirmDialog bind:open={resetOpen} {...resetConfirmation(user.email)} onconfirm={reset} />
+	<Dialog title="Sessions and sign-ins of {user.display_name}" bind:open={activityOpen} size="wide">
+		{#if activityOpen}
+			<SignInActivity userId={user.id} changeable={!takeOverLocked} reason={takeOverLocked} />
+		{/if}
+	</Dialog>
 {:else}
 	<Facts {facts}>
 		{#snippet value(fact: Fact)}

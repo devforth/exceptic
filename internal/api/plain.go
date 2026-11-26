@@ -51,6 +51,8 @@ type LoginState struct {
 	// Disabled says why nobody can log in (no ADMIN_PASSWORD); empty otherwise.
 	Disabled string `json:"disabled,omitempty"`
 	Redirect string `json:"redirect,omitempty"`
+	// Google: the page offers to sign in with Google.
+	Google bool `json:"google,omitempty"`
 }
 
 type LoginInput struct {
@@ -98,7 +100,7 @@ func LoginRequests(logger *slog.Logger, auth *session.Auth, appName string) map[
 
 	return map[string]http.Handler{
 		"login_state": http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			state := LoginState{AppName: appName}
+			state := LoginState{AppName: appName, Google: auth.GoogleEnabled()}
 
 			if auth.Disabled(r.Context()) {
 				state.Disabled = loginDisabled

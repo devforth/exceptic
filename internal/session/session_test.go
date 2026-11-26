@@ -100,10 +100,15 @@ func testAuth(passwords passwordChecker, places int) *Auth {
 	logger := slog.New(slog.DiscardHandler)
 
 	return &Auth{
-		logger: logger, passwords: passwords, limiter: newLoginLimiter(logger), deviceKey: deviceKey("0123456789abcdef0123456789abcdef"),
+		logger: logger, passwords: passwords, sessions: noSignInLog{}, recording: make(chan struct{}, maxRecording), limiter: newLoginLimiter(logger), deviceKey: deviceKey("0123456789abcdef0123456789abcdef"),
 		checks: make(chan struct{}, places), knownChecks: make(chan struct{}, 1), checkWait: passwordCheckWait, now: time.Now,
 	}
 }
+
+// noSignInLog drops the refused attempts the tests make; nothing else of it is called.
+type noSignInLog struct{ sessionStore }
+
+func (noSignInLog) Refused(context.Context, string, store.SignIn) error { return nil }
 
 func network(index int) netip.Addr {
 	return netip.MustParseAddr(fmt.Sprintf("203.0.113.%d", index))

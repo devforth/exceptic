@@ -116,17 +116,21 @@ func (handler *handlers) getStorage(ctx context.Context, call Call, _ noInput) (
 	return output, err
 }
 
+// getSession answers a temporary password too, so it shows no data of the
+// projects (the unresolved count, their colors) until the password is chosen.
 func (handler *handlers) getSession(ctx context.Context, call Call, _ noInput) (sessionOutput, error) {
-	unresolved, err := handler.services.Issues.Unresolved(ctx, call.Access())
-
-	if err != nil {
-		return sessionOutput{}, err
+	output := sessionOutput{
+		User: handler.userView(call.Viewer, call.Viewer), CanAdminister: call.Viewer.CanAdminister(),
+		AppName: handler.services.AppName, ProjectColors: map[string]string{}, AllProjects: call.Access().All(),
+		AssignableRoles: append([]string{}, call.Viewer.AssignableRoles()...), Theme: call.Viewer.Theme,
 	}
 
-	return sessionOutput{
-		User: handler.userView(call.Viewer, call.Viewer), CanAdminister: call.Viewer.CanAdminister(),
-		AppName: handler.services.AppName, UnresolvedIssues: unresolved,
-		ProjectColors: handler.services.Projects.ColorsByName(call.Access()), AllProjects: call.Access().All(),
-		AssignableRoles: append([]string{}, call.Viewer.AssignableRoles()...), Theme: call.Viewer.Theme,
-	}, nil
+	if call.Viewer.MustChangePassword {
+		return output, nil
+	}
+
+	unresolved, err := handler.services.Issues.Unresolved(ctx, call.Access())
+	output.UnresolvedIssues, output.ProjectColors = unresolved, handler.services.Projects.ColorsByName(call.Access())
+
+	return output, err
 }

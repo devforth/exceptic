@@ -23,35 +23,42 @@ The API and the [MCP tools](mcp.md) are the same endpoints with the same names, 
 - `project` takes project ids (`1`) or names (`backend`), `level` levels; each takes several values (`?project=backend&project=frontend`), and none means every one.
 - Issues have IDs of 8 random lowercase letters and digits (`k3x9q2mf`); a project keeps the number in its DSN.
 - Times are RFC 3339 in UTC, e.g. `2026-11-11T10:00:00Z`.
-- Free text (titles, log lines) is returned as stored; the MCP tools return it with IPs, hosts, emails and credentials replaced, since it goes to a model provider. `get_issue` and `get_event` return that redacted prompt to every caller; `get_event_payload` has the event as stored.
+- Free text (titles, log lines) is returned as stored; the MCP tools return it redacted, since it goes to a model provider ([What leaves the server](mcp.md#what-leaves-the-server)). `get_issue` and `get_event` return that redacted prompt to every caller; `get_event_payload` has the event as stored.
 
 ## Endpoints
 
-| Endpoint | Input | |
-|---|---|---|
-| `GET list_projects` | `limit`, `cursor` | Projects: `id`, `name`, `unresolved_issues`, `dsn`, `from_env` (from `PROJECTS`: its key comes from there and it cannot be deleted), `log_levels` (recorded, highest first; events of every level are stored). |
-| `GET list_issues` | see below | Issues: `id`, `project`, `title`, `location`, `level`, `status`, `event_count`, `not_stored` (of `event_count`, over 10 a minute; left out when 0), `stored_events` (stored now, what `list_issue_events` returns), `first_seen`, `last_seen`, `resolved_at`; an ignored one `ignored_until` and `ignore_events_left` when its ignore ends by itself. |
-| `GET get_issues` | `issue_ids` (1–100) | `{"issues": [...], "missing_issue_ids": [...]}`; for an agent also `forbidden_issue_ids`, those of projects outside its user's. |
-| `GET get_issue` | `issue_id`, `event_id` | The latest (or given) event of an issue as a text prompt for a coding agent: exception, stack, request, breadcrumbs, related logs, status, event count, first and last seen. |
-| `GET list_issue_events` | `issue_id`, `limit`, `cursor` | Events of an issue, newest first: `event_id`, `timestamp`, `level`, `environment`, `release`, `trace_id`, `received_at`. |
-| `GET get_event` | `project`, `event_id` | Like `get_issue`, for an event ID (32 hex characters, with or without dashes). |
-| `GET list_logs` | `project`, `level`, `query` (text in the line), `trace_id`, `since`, `until` (by the SDK's time of the log; with `until`, logs stored more than about an hour after it are left out: sent from an offline cache or delayed by an ingest backlog), `limit`, `cursor` or `offset` (logs to skip, for numbered pages), `from_id` (only logs with this id or a greater one) | Logs, newest first: `id`, `time`, `project`, `level`, `body`, `trace_id`, `issue` (`id` and `title` of the error raised in the same request, when there is one). A search stops after 20 seconds: then `stopped` is true, `searched_to` is the time from which every log received was searched, and `next_cursor` goes on with the older logs (none when it stopped while skipping `offset`); narrowing by date, project or level searches further faster. |
-| `POST update_issue_status` | `issue_ids` (1–100), `status`, `ignore_for`, `ignore_until_events` | Set `resolved`, `ignored` or `unresolved` on all of them or none; returns the updated issues. With `ignored` only: `ignore_for` (`1h`, `24h`, `7d`, `30d`) or `ignore_until_events` (1–1000000 events more) end the ignore, then the issue is unresolved again (both: whichever comes first); without them it stays ignored. Any later status change drops them. |
-| `GET get_event_payload` | `project`, `event_id` | REST only. The event with its JSON as stored in `payload`: without credentials and the parts that do not help a fix ([What is stored](sdk.md#what-is-stored)); `thinned` marks an old event reduced as [Retention](configuration.md#retention) says. |
-| `GET list_trace` | `trace_id` | REST only. Events (without payloads) and logs, with their attributes, of one trace, up to 100 of each; a log search that stops after 20 seconds says so with `stopped` and `searched_to`, as `list_logs` does. |
-| `POST delete_issue` | `issue_id` | Delete the issue with its events: `{"deleted": "<id>"}` (agents: admins only). |
+<!-- endpoints: generated from internal/api by make api-types -->
+| Endpoint | Input (required first) | Output | |
+|---|---|---|---|
+| `GET list_issues` | `cursor`, `date_by`, `level`, `limit`, `project`, `query`, `since`, `sort`, `status`, `until` | `items` [`id`, `project`, `title`, `location`, `level`, `status`, `event_count`, `not_stored`, `stored_events`, `first_seen`, `last_seen`, `resolved_at`, `ignored_until`, `ignore_events_left`, `mcp_reference`], `next_cursor` | List issues (errors grouped by cause) with event count and first/last seen. Default: unresolved, most recently seen first, every project. The way to find errors without known IDs. |
+| `GET get_issue` | `issue_id`, `event_id` | text | Diagnose an issue: its latest event (or event_id) as the agent prompt of notifications, with the exception chain, stack frames with source, message, request, runtime, tags, breadcrumbs, up to 20 logs of the request and the issue history. |
+| `GET get_issues` | `issue_ids` | `issues` [`id`, `project`, `title`, `location`, `level`, `status`, `event_count`, `not_stored`, `stored_events`, `first_seen`, `last_seen`, `resolved_at`, `ignored_until`, `ignore_events_left`, `mcp_reference`], `missing_issue_ids`, `forbidden_issue_ids` | Summaries and current statuses of 1 to 100 known issue IDs in one call, without event details. |
+| `GET list_issue_events` | `issue_id`, `cursor`, `limit` | `items` [`event_id`, `timestamp`, `level`, `environment`, `release`, `trace_id`, `received_at`], `next_cursor` | List the stored events of an issue, newest first: time, level, environment, release and trace ID. Pass an event_id to get_issue to read one. |
+| `GET get_event` | `event_id`, `project` | text | Like get_issue, for an event ID the SDK reported to the application (with its project). |
+| `GET list_logs` | `cursor`, `from_id`, `level`, `limit`, `offset`, `project`, `query`, `since`, `trace_id`, `until` | `items` [`id`, `time`, `project`, `level`, `body`, `trace_id`, `issue`], `next_cursor`, `stopped`, `searched_to` | Search logs, newest first. Pass trace_id (from get_issue) for the logs of one request or browser session. A search stops after 20s: then stopped is true, searched_to says how far back it got and next_cursor goes on from there; narrow it (since/until, project, level) rather than paging far. |
+| `GET list_projects` | `cursor`, `limit` | `items` [`id`, `name`, `dsn`, `from_env`, `log_levels`, `unresolved_issues`], `next_cursor` | List the monitored projects with their unresolved issue counts and DSNs (what a Sentry SDK is configured with to report to the project). Not needed before list_issues: issue rows name their project. |
+| `POST update_issue_status` | `issue_ids`, `status`, `ignore_for`, `ignore_until_events` | `issues` [`id`, `project`, `title`, `location`, `level`, `status`, `event_count`, `not_stored`, `stored_events`, `first_seen`, `last_seen`, `resolved_at`, `ignored_until`, `ignore_events_left`, `mcp_reference`], `missing_issue_ids`, `forbidden_issue_ids` | Set the status of 1 to 100 issues in one atomic call: resolved (fixed, reopens if the error happens again), ignored (no notifications; for good, or until the time or number of events chosen when ignoring) or unresolved (still happening or not looked at yet). Only when the user asks. Returns the updated summaries. |
+| `POST delete_issue` | `issue_id` | `deleted` | Delete an issue with its events; if the error happens again it comes back as a new issue. Admins only. |
+| `GET get_event_payload` | `event_id`, `project` | `project_id`, `issue_id`, `event_id`, `timestamp`, `received_at`, `level`, `environment`, `release`, `trace_id`, `span_id`, `parent_span_id`, `thinned`, `payload` | An event with its JSON as stored: credentials and parts that do not help a fix removed; thinned marks an old event whose details were removed. |
+| `GET list_trace` | `trace_id` | `trace_id`, `events` [`project_id`, `issue_id`, `event_id`, `timestamp`, `received_at`, `level`, `environment`, `release`, `trace_id`, `span_id`, `parent_span_id`, `thinned`], `logs` [`id`, `project_id`, `timestamp`, `level`, `severity_number`, `body`, `trace_id`, `span_id`, `attributes`], `stopped`, `searched_to` | Events (without payloads) and logs of one trace, up to 100 of each. |
+<!-- /endpoints -->
 
 ### list_issues input
 
+<!-- list-issues-input: generated from internal/api by make api-types -->
 | Parameter | |
 |---|---|
-| `project`, `level` | Filters. |
-| `status` | `unresolved` (default), `resolved`, `ignored` or `all`. |
-| `query` | Text in the title or location. |
-| `since`, `until` | Time range, `since` inclusive, `until` exclusive. |
-| `date_by` | What the range applies to: `event` (default: any event of the issue in the range, its first or last seen time included, so an issue whose events the cleanup deleted stays listed), `first_seen` or `last_seen`. |
-| `sort` | `last_seen` (default), `first_seen`, `event_count`, each newest or most first, or with `_asc`; `project` (A–Z) or `project_desc`. |
-| `limit`, `cursor` | Paging. |
+| `project` | Project names or IDs; every project when empty. |
+| `status` | Issue status, unresolved by default; all for every status. One of `unresolved`, `resolved`, `ignored`, `all`. |
+| `level` | Issue levels; every level when empty. Any of `debug`, `info`, `warning`, `error`, `fatal`. |
+| `query` | Text in the issue title or location. |
+| `since` | RFC 3339 time, e.g. 2026-11-11T10:00:00Z: only issues with an event at or after it. |
+| `until` | RFC 3339 time: only issues with an event before it. |
+| `date_by` | What since/until apply to; by default any event of the issue, its first or last seen time included. One of `event`, `first_seen`, `last_seen`. |
+| `sort` | Order, last_seen by default: a field newest or most first, with _asc the reverse; project A to Z, project_desc the reverse. One of `project`, `project_desc`, `last_seen`, `last_seen_asc`, `first_seen`, `first_seen_asc`, `event_count`, `event_count_asc`. |
+| `limit` | Issues per page. At most 100, 20 by default. |
+| `cursor` | next_cursor of the previous page. |
+<!-- /list-issues-input -->
 
 ## Example: resolve every unresolved issue of a project
 

@@ -14,8 +14,7 @@ export function resetConfirmation(email: string): Confirmation {
 	return {
 		title: 'Reset password',
 		message: `Give ${email} a temporary password? They are logged out and their coding agents are disconnected.`,
-		confirmLabel: 'Reset password',
-		tone: 'primary'
+		confirmLabel: 'Reset password'
 	};
 }
 
