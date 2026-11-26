@@ -47,7 +47,7 @@ func newTestServer(t *testing.T, configure ...func(*config.Config)) *testServer 
 	database := storetest.Open(t)
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	settings := &config.Config{AppName: config.DefaultAppName, Projects: fixtures.Projects(), AllowedOrigins: []string{"*"}}
+	settings := &config.Config{AppName: config.DefaultAppName, Projects: fixtures.Projects()}
 
 	for _, change := range configure {
 		change(settings)

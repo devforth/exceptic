@@ -118,6 +118,10 @@ func run() error {
 		logger.Warn("ADMIN_USERNAME is renamed: set ADMIN_EMAIL (read instead while ADMIN_EMAIL is not set)")
 	}
 
+	if os.Getenv("ALLOWED_ORIGINS") != "" {
+		logger.Warn("ALLOWED_ORIGINS is no longer used: set the allowed domains of each project in its settings")
+	}
+
 	if os.Getenv("RATE_LIMIT_PER_MINUTE") != "" {
 		logger.Warn("RATE_LIMIT_PER_MINUTE is no longer used: set RATE_LIMIT_EVENTS_PER_MINUTE and RATE_LIMIT_LOGS_PER_MINUTE")
 	}

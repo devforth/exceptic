@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -20,7 +21,7 @@ func TestLoadDefaults(t *testing.T) {
 	}
 
 	if config.Port != DefaultPort || config.DataDir != DefaultDataDir || config.LogLevel != DefaultLogLevel || config.Projects != nil || config.APIToken != "" || config.AllowedIPs != nil ||
-		len(config.AllowedOrigins) != 1 || config.AllowedOrigins[0] != DefaultAllowedOrigins || config.RateLimitEventsPerMinute != 10000 || config.RateLimitLogsPerMinute != 10000 ||
+		config.RateLimitEventsPerMinute != 10000 || config.RateLimitLogsPerMinute != 10000 ||
 		config.AdminEmail != DefaultAdminEmail || config.AdminPassword != "" || config.SessionLifetime != 24*time.Hour {
 		t.Fatalf("unexpected defaults: %+v", config)
 	}
@@ -31,7 +32,6 @@ func TestLoadValues(t *testing.T) {
 		"PORT":                         "9000",
 		"DATA_DIR":                     "/data",
 		"LOG_LEVEL":                    "debug",
-		"ALLOWED_ORIGINS":              "https://App.example.com, http://localhost:3500,http://[::1]:8080",
 		"RATE_LIMIT_EVENTS_PER_MINUTE": "0",
 		"RATE_LIMIT_LOGS_PER_MINUTE":   "500",
 		// Replaced by the two above: ignored, whatever its value (main warns).
@@ -52,10 +52,6 @@ func TestLoadValues(t *testing.T) {
 
 	if config.Port != 9000 || config.DataDir != "/data" || config.LogLevel != slog.LevelDebug || config.SessionLifetime != 12*time.Hour {
 		t.Fatalf("unexpected config: %+v", config)
-	}
-
-	if strings.Join(config.AllowedOrigins, " ") != "https://app.example.com http://localhost:3500 http://[::1]:8080" {
-		t.Fatalf("origins = %q", config.AllowedOrigins)
 	}
 
 	if config.RateLimitEventsPerMinute != 0 || config.RateLimitLogsPerMinute != 500 {
@@ -84,7 +80,7 @@ func TestLoadValues(t *testing.T) {
 	}
 
 	for index := range want {
-		if config.Projects[index] != want[index] {
+		if !reflect.DeepEqual(config.Projects[index], want[index]) {
 			t.Errorf("project %d = %+v, want %+v", index, config.Projects[index], want[index])
 		}
 	}
@@ -108,9 +104,6 @@ func TestLoadErrors(t *testing.T) {
 		{"short key", "PROJECTS", "1:backend:abc", "16-64"},
 		{"duplicate id", "PROJECTS", "1:backend:a1b2c3d4e5f6a7b8,1:frontend:0123456789abcdef", "duplicate project id"},
 		{"duplicate name", "PROJECTS", "1:backend:a1b2c3d4e5f6a7b8,2:backend:0123456789abcdef", "duplicate project name"},
-		{"origin with path", "ALLOWED_ORIGINS", "https://app.example.com/", "invalid origin"},
-		{"origin without scheme", "ALLOWED_ORIGINS", "app.example.com", "invalid origin"},
-		{"only commas in origins", "ALLOWED_ORIGINS", ",,", "no origins"},
 		{"negative events rate limit", "RATE_LIMIT_EVENTS_PER_MINUTE", "-1", "RATE_LIMIT_EVENTS_PER_MINUTE"},
 		{"bad logs rate limit", "RATE_LIMIT_LOGS_PER_MINUTE", "10k", "RATE_LIMIT_LOGS_PER_MINUTE"},
 		{"short api token", "API_TOKEN", "secret", "at least"},

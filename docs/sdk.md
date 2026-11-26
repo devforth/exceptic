@@ -68,7 +68,7 @@ Sentry.init({
 
 Browsers send errors straight to the server, so:
 
-- set `ALLOWED_ORIGINS` to the sites that send them (`https://app.example.com`), or leave `*`;
+- set the project's Allowed domains on its page to the sites that send them (`https://app.example.com`, [Projects](ui.md#projects)), or leave it empty for any site;
 - the ingest endpoint must be reachable from your users' browsers, even if the UI is limited with `ALLOWED_IPS`.
 
 A DSN key is public by design (it is in the page); it only allows sending events to its project.

@@ -41,7 +41,6 @@ func TestDocsValues(t *testing.T) {
 		value{Phrase: " to {} characters. Needed for the first start", Value: config.MaxPasswordLength},
 		value{Phrase: "| `SESSION_LIFETIME` | `{}` |", Value: days(config.DefaultSessionLifetime)},
 		value{Phrase: "REST API](api.md), at least {} characters", Value: config.MinAPITokenLength},
-		value{Phrase: "| `ALLOWED_ORIGINS` | `{}` |", Value: config.DefaultAllowedOrigins},
 		value{Phrase: "| `RATE_LIMIT_EVENTS_PER_MINUTE` | `{}` |", Value: config.DefaultRateLimitEventsPerMinute},
 		value{Phrase: "| `RATE_LIMIT_LOGS_PER_MINUTE` | `{}` |", Value: config.DefaultRateLimitLogsPerMinute},
 		value{Phrase: "Keep it at least `{}`, the most logs", Value: config.SDKLogBatch},

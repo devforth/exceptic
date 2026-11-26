@@ -318,6 +318,8 @@ type projectSettings struct {
 	ShownColor string `json:"shown_color"`
 	// DiskShare: the percent of MAX_DATABASE_SIZE it may hold before a cleanup of its own.
 	DiskShare int `json:"disk_share"`
+	// AllowedOrigins: the sites whose browsers may send to it; empty: any.
+	AllowedOrigins []string `json:"allowed_origins"`
 }
 
 // findProject reads the project given by name or ID: an unknown one is
@@ -337,6 +339,7 @@ func (handler *handlers) settings(call Call, project store.Project) projectSetti
 
 	return projectSettings{
 		projectView: handler.projectView(call, shown), Color: project.Color, ShownColor: handler.services.Projects.Color(project), DiskShare: project.Share(),
+		AllowedOrigins: append([]string{}, project.AllowedOrigins...),
 	}
 }
 
@@ -345,6 +348,8 @@ type projectDefaults struct {
 	ShownColor string   `json:"shown_color"`
 	LogLevels  []string `json:"log_levels"`
 	DiskShare  int      `json:"disk_share"`
+	// AllowedOrigins: empty, any site.
+	AllowedOrigins []string `json:"allowed_origins"`
 }
 
 func (handler *handlers) getProjectDefaults(_ context.Context, call Call, _ noInput) (projectDefaults, error) {
@@ -352,6 +357,7 @@ func (handler *handlers) getProjectDefaults(_ context.Context, call Call, _ noIn
 
 	return projectDefaults{
 		ShownColor: handler.services.Projects.Color(store.Project{}), LogLevels: defaults["log_level"], DiskShare: store.Project{}.Share(),
+		AllowedOrigins: []string{},
 	}, nil
 }
 
@@ -427,6 +433,8 @@ type projectFields struct {
 	Color     *string   `json:"color,omitempty" jsonschema:"#rrggbb, or empty for the palette color."`
 	LogLevels *[]string `json:"log_levels,omitempty" jsonschema:"Log levels to store; an empty list stores none. Events of every level are stored."`
 	DiskShare *int      `json:"disk_share,omitempty" jsonschema:"Percent of MAX_DATABASE_SIZE the project may hold, in steps of 5; above it the cleanup deletes its own data first. 100: no limit of its own."`
+	// AllowedOrigins: maxItems is config.MaxAllowedOrigins.
+	AllowedOrigins *[]string `json:"allowed_origins,omitempty" jsonschema:"Sites whose browsers may send to the project, as scheme://host[:port] (https://app.example.com, https://*.example.com for subdomains); an empty list: any site. Backend SDKs are not affected."`
 }
 
 var projectChoices = map[string][]string{"log_levels": config.LogLevels}
@@ -444,10 +452,15 @@ func (fields projectFields) apply(form url.Values) {
 	if fields.DiskShare != nil {
 		form.Set("disk_share", strconv.Itoa(*fields.DiskShare))
 	}
+
+	if fields.AllowedOrigins != nil {
+		// An empty list still sends the field, so it clears them.
+		form["allowed_origin"] = append([]string{""}, *fields.AllowedOrigins...)
+	}
 }
 
 // projectFormFields names the form's fields as the tools do.
-var projectFormFields = map[string]string{"log_level": "log_levels"}
+var projectFormFields = map[string]string{"log_level": "log_levels", "allowed_origin": "allowed_origins"}
 
 type createProjectInput struct {
 	Name string `json:"name" jsonschema:"Lowercase letters, digits, '-' and '_', starting with a letter or digit, not digits only (that reads as an ID): backend, frontend, worker."`

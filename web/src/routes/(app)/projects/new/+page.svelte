@@ -11,6 +11,7 @@
 	import PageTitle from '#lib/components/PageTitle.svelte';
 	import { FormState } from '#lib/form.svelte.ts';
 	import { freeColor, projectInput, type ProjectFormValues } from '#lib/projects.ts';
+	import AllowedOriginsField from '../AllowedOriginsField.svelte';
 	import DiskShareField from '../DiskShareField.svelte';
 	import LogLevelsField from '../LogLevelsField.svelte';
 	import ProjectNameField from '../ProjectNameField.svelte';
@@ -23,7 +24,8 @@
 	const initial: ProjectFormValues = {
 		color: freeColor(Object.values(data.session?.project_colors ?? {}), data.defaults.shown_color),
 		logLevels: data.defaults.log_levels ?? [],
-		diskShare: data.defaults.disk_share
+		diskShare: data.defaults.disk_share,
+		allowedOrigins: ''
 	};
 
 	let name = $state('');
@@ -31,7 +33,12 @@
 
 	const form = new FormState();
 	const advancedInvalid = $derived(
-		Boolean(form.fields.color || form.fields.log_levels || form.fields.disk_share)
+		Boolean(
+			form.fields.color ||
+			form.fields.log_levels ||
+			form.fields.disk_share ||
+			form.fields.allowed_origins
+		)
 	);
 
 	// The new project's installation page shows its DSN and the code for its SDK.
@@ -73,7 +80,7 @@
 
 	<Details title="Advanced settings" variant="disclosure" invalid={advancedInvalid}>
 		{#snippet summary()}
-			Color, logs to record, disk share. Defaults work for most projects.
+			Color, logs to record, allowed domains, disk share. Defaults work for most projects.
 		{/snippet}
 		<FormGroup title="Color" hint={help.fields.Projects.Color}>
 			<ColorField
@@ -85,6 +92,9 @@
 		</FormGroup>
 		<FormGroup title="Logs to record">
 			<LogLevelsField bind:value={values.logLevels} error={form.fields.log_levels} />
+		</FormGroup>
+		<FormGroup title="Allowed domains">
+			<AllowedOriginsField bind:value={values.allowedOrigins} error={form.fields.allowed_origins} />
 		</FormGroup>
 		<FormGroup title="Disk share">
 			<DiskShareField

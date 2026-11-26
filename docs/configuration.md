@@ -41,7 +41,6 @@ The id is part of the DSN (`https://<public_key>@errors.example.com/<id>`) and o
 
 | Variable | Default | |
 |---|---|---|
-| `ALLOWED_ORIGINS` | `*` | Browser origins allowed to send events (CORS), e.g. `https://app.example.com,https://admin.example.com`. Backend SDKs send no origin and are always allowed. |
 | `RATE_LIMIT_EVENTS_PER_MINUTE` | `10000` | Events (errors and messages) a project may send per minute, a guard against abuse: an error in a loop below it is already capped per issue ([Retention](#retention)). Over it the SDK is told to pause sending events until the minute ends; its logs keep coming ([what an SDK sees](sdk.md#rate-limits)). `0` = no limit. |
 | `RATE_LIMIT_LOGS_PER_MINUTE` | `10000` | Logs a project may send per minute, counted one by one as received, before the levels it does not record are left out; over it only its logs pause, errors keep coming. Keep it at least `100`, the most logs the JavaScript SDK sends in one batch: a batch over the limit is dropped whole (the server warns at start). `0` = no limit. `RATE_LIMIT_PER_MINUTE` (it counted envelopes) is ignored with a warning at start. |
 | `RECORD_LOG_LEVELS` | `all` | Log levels to store: `fatal`, `error`, `warn`, `info`, `debug`, `trace`, or `all`/`none`. Others are dropped on arrival. A project can choose its own on the Projects page. Events (errors and messages) of every level are stored. |

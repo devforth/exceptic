@@ -47,7 +47,7 @@ If the tools `list_projects`, `list_issues` and `get_issue` are already availabl
 1. Find the app's platform and framework, and whether it already uses a Sentry SDK. If it reports to another Sentry server, ask before switching it.
 2. Get the DSN from `list_projects` (each project has `dsn`), or ask the user to copy it from the Projects page. Use one project per service (backend, frontend, worker); if the right one is missing, ask the user to add it.
 3. Follow sdk.md for the platform: install the official SDK, initialize it as early as the platform requires, read the DSN from the app's env or config, turn on logs (`enableLogs` / `enable_logs`). Tracing (`tracesSampleRate`) links logs to the failing request; spans are not stored.
-4. Browser apps: the user's site must be in `ALLOWED_ORIGINS` (or it is `*`), and the server must be reachable from browsers.
+4. Browser apps: the user's site must be in the project's Allowed domains (or they are empty: any site; `update_project` `allowed_origins`), and the server must be reachable from browsers.
 5. Verify: with the user's consent, trigger a test error (e.g. `Sentry.captureException(new Error("exceptic test"))`), then find it with `list_issues`. Events of every level are stored; a new notification connection sends only `fatal` and `error`, so an `info` test message notifies nobody.
 
 ## Investigate errors

@@ -18,8 +18,7 @@ import (
 type Handler struct {
 	logger   *slog.Logger
 	projects config.ProjectList // read per request: projects can change while running
-	cors     cors
-	limiter  *rateLimiter // nil when both limits are off
+	limiter  *rateLimiter       // nil when both limits are off
 	reading  *readBudget
 	dropped  *DropCounter
 	now      func() time.Time
@@ -31,7 +30,6 @@ func newHandler(logger *slog.Logger, settings *config.Config, projects config.Pr
 	handler := &Handler{
 		logger:   logger,
 		projects: projects,
-		cors:     newCORS(settings.AllowedOrigins),
 		now:      time.Now,
 		reading:  newReadBudget(MaxReadingBytes, MaxProjectReadingBytes),
 		dropped:  newDropCounter(logger),
@@ -58,7 +56,8 @@ func reject(status int, format string, args ...any) error {
 }
 
 func (handler *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	originAllowed := handler.cors.apply(w, r)
+	project, known := handler.project(r)
+	originAllowed := applyCORS(w, r, project, known)
 
 	if r.Method == http.MethodOptions {
 		if !originAllowed {
@@ -108,6 +107,17 @@ func (handler *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	server.WriteJSON(w, http.StatusOK, response)
+}
+
+// project is the project of the request's path, if there is one.
+func (handler *Handler) project(r *http.Request) (config.Project, bool) {
+	projectID, err := strconv.Atoi(r.PathValue("projectID"))
+
+	if err != nil {
+		return config.Project{}, false
+	}
+
+	return handler.projects.List().ByID(projectID)
 }
 
 func (handler *Handler) ingest(w http.ResponseWriter, r *http.Request) (response map[string]string, err error) {

@@ -8,32 +8,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/sentry"
 )
 
-// cors lets browser SDKs send events from allowed origins. Backend SDKs send
-// no Origin header and are not affected.
-type cors struct {
-	anyOrigin bool
-	origins   map[string]bool
-}
-
-func newCORS(allowedOrigins []string) cors {
-	result := cors{origins: map[string]bool{}}
-
-	for _, origin := range allowedOrigins {
-		if origin == "*" {
-			result.anyOrigin = true
-		}
-
-		result.origins[strings.ToLower(origin)] = true
-	}
-
-	return result
-}
-
-// apply sets the CORS response headers and reports whether the origin is allowed.
-func (policy cors) apply(w http.ResponseWriter, r *http.Request) bool {
+// applyCORS sets the CORS response headers of a browser's request and
+// reports whether its origin may send to the project (config.Project.OriginAllowed).
+// Backend SDKs send no Origin header and are not affected. An unknown project
+// answers any origin, so the SDK can read why it is refused.
+func applyCORS(w http.ResponseWriter, r *http.Request, project config.Project, known bool) bool {
 	header := w.Header()
 	header.Add("Vary", "Origin")
 
@@ -43,7 +26,7 @@ func (policy cors) apply(w http.ResponseWriter, r *http.Request) bool {
 		return true
 	}
 
-	if !policy.anyOrigin && !policy.origins[strings.ToLower(origin)] {
+	if known && !project.OriginAllowed(origin) {
 		return false
 	}
 

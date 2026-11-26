@@ -45,10 +45,18 @@ describe('deleting a project', () => {
 
 describe('projectInput', () => {
 	it('sends the whole form, empty level lists included', () => {
-		expect(projectInput({ color: '#123456', logLevels: [], diskShare: 40 })).toEqual({
+		expect(
+			projectInput({
+				color: '#123456',
+				logLevels: [],
+				diskShare: 40,
+				allowedOrigins: ' https://app.example.com,https://*.example.com\n'
+			})
+		).toEqual({
 			color: '#123456',
 			log_levels: [],
-			disk_share: 40
+			disk_share: 40,
+			allowed_origins: ['https://app.example.com', 'https://*.example.com']
 		});
 	});
 });

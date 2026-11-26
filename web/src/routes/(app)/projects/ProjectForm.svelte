@@ -19,7 +19,13 @@ problem beside it. `actions` and `description` go to its PageHeading.
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import { FormState } from '#lib/form.svelte.ts';
 	import { formatSize } from '#lib/format.ts';
-	import { projectInput, projectNameRules, type ProjectFormValues } from '#lib/projects.ts';
+	import {
+		originList,
+		projectInput,
+		projectNameRules,
+		type ProjectFormValues
+	} from '#lib/projects.ts';
+	import AllowedOriginsField from './AllowedOriginsField.svelte';
 	import DiskShareField from './DiskShareField.svelte';
 	import LogLevelsField from './LogLevelsField.svelte';
 
@@ -81,6 +87,15 @@ problem beside it. `actions` and `description` go to its PageHeading.
 			<LevelSummary kind="log" chosen={values.logLevels} />
 		{/snippet}
 		<LogLevelsField bind:value={values.logLevels} error={form.fields.log_levels} beside />
+	</Details>
+
+	<Details title="Allowed domains" variant="form" invalid={Boolean(form.fields.allowed_origins)}>
+		{#snippet summary()}
+			<span class="text-muted">
+				{originList(values.allowedOrigins).join(', ') || 'any site'}
+			</span>
+		{/snippet}
+		<AllowedOriginsField bind:value={values.allowedOrigins} error={form.fields.allowed_origins} />
 	</Details>
 
 	<Details title="Disk share" variant="form" open invalid={Boolean(form.fields.disk_share)}>

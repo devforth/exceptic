@@ -24,7 +24,8 @@
 	const initial = $derived({
 		color: project.shown_color,
 		logLevels: project.log_levels ?? [],
-		diskShare: project.disk_share
+		diskShare: project.disk_share,
+		allowedOrigins: (project.allowed_origins ?? []).join(', ')
 	});
 
 	// The badges take a new name or color from the session, which the reload brings.

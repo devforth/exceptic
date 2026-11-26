@@ -62,10 +62,9 @@ func startRESTServer(t *testing.T, database *database.Store, configure ...func(s
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	settings := &config.Config{
-		AppName:        config.DefaultAppName,
-		Projects:       fixtures.Projects(),
-		AllowedOrigins: []string{"*"},
-		APIToken:       token,
+		AppName:  config.DefaultAppName,
+		Projects: fixtures.Projects(),
+		APIToken: token,
 	}
 
 	for _, change := range configure {

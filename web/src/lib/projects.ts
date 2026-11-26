@@ -29,7 +29,14 @@ export type ProjectFormValues = {
 	color: string;
 	logLevels: string[];
 	diskShare: number;
+	/** The allowed sites as typed: separated by commas, spaces or lines. */
+	allowedOrigins: string;
 };
+
+/** The sites of an allowed-origins text: split at commas and white space, empty ones left out. */
+export function originList(text: string): string[] {
+	return text.split(/[\s,]+/).filter(Boolean);
+}
 
 /** Why a project from the PROJECTS env variable cannot be deleted in the app. */
 export const fromEnvDeleteReason = 'Remove it from PROJECTS first.';
@@ -49,7 +56,9 @@ export function projectInput(values: ProjectFormValues): ProjectInput {
 		color: values.color,
 		// The checkboxes offer only the generated levels.
 		log_levels: values.logLevels as LogLevel[],
-		disk_share: values.diskShare
+		disk_share: values.diskShare,
+		// The whole list: an empty one allows any site.
+		allowed_origins: originList(values.allowedOrigins)
 	};
 }
 

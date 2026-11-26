@@ -42,7 +42,7 @@ func newNotificationsServer(t *testing.T, configure ...func(*config.Config)) *no
 
 	smtp, mails := fixtures.FakeSMTP(t)
 	settings := &config.Config{
-		AppName: config.DefaultAppName, Projects: fixtures.Projects(), AllowedOrigins: []string{"*"},
+		AppName: config.DefaultAppName, Projects: fixtures.Projects(),
 		Notifications: config.Notifications{SecretKey: notificationsKey, SMTP: smtp},
 	}
 

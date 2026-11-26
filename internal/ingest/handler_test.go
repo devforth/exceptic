@@ -30,8 +30,7 @@ import (
 // Same keys and IDs as the fixtures and the sentry-playground DSNs.
 func testSettings() *config.Config {
 	return &config.Config{
-		Projects:       fixtures.Projects(),
-		AllowedOrigins: []string{"*"},
+		Projects: fixtures.Projects(),
 	}
 }
 
@@ -256,7 +255,13 @@ func TestAuthentication(t *testing.T) {
 
 func TestCORS(t *testing.T) {
 	settings := testSettings()
-	settings.AllowedOrigins = []string{"https://app.example.com"}
+	// Project 2 (the browser's) allows one site; project 1 lists none, so any.
+	for index := range settings.Projects {
+		if settings.Projects[index].ID == 2 {
+			settings.Projects[index].AllowedOrigins = []string{"https://app.example.com"}
+		}
+	}
+
 	server := newTestServer(t, settings)
 
 	t.Run("allowed origin", func(t *testing.T) {
@@ -293,10 +298,19 @@ func TestCORS(t *testing.T) {
 	})
 
 	t.Run("backend without origin", func(t *testing.T) {
-		response := server.send(newRequest(http.MethodPost, envelopeURL("1", fixtures.BackendKey), []byte(simpleEnvelope)))
+		response := server.send(newRequest(http.MethodPost, envelopeURL("2", fixtures.BrowserKey), []byte(simpleEnvelope)))
 
 		if response.Code != http.StatusOK {
 			t.Fatalf("got %d", response.Code)
+		}
+	})
+
+	t.Run("a project without origins takes any site", func(t *testing.T) {
+		request := newRequest(http.MethodPost, envelopeURL("1", fixtures.BackendKey), []byte(simpleEnvelope))
+		request.Header.Set("Origin", "https://evil.example.com")
+
+		if response := server.send(request); response.Code != http.StatusOK || response.Header().Get("Access-Control-Allow-Origin") != "https://evil.example.com" {
+			t.Fatalf("got %d, allow-origin %q", response.Code, response.Header().Get("Access-Control-Allow-Origin"))
 		}
 	})
 }

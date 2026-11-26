@@ -58,7 +58,50 @@ func readProjectForm(form url.Values, project *store.Project, recording config.R
 		}
 	}
 
+	// The allowed origins, one per value; a missing field keeps them.
+	if form.Has("allowed_origin") {
+		origins, problem := allowedOrigins(form["allowed_origin"])
+
+		if problem != "" {
+			problems["allowed_origin"] = problem
+		} else {
+			project.AllowedOrigins = origins
+		}
+	}
+
 	return problems
+}
+
+// allowedOrigins reads the form's origins (empty values skipped, the same
+// one once) or says what is wrong.
+func allowedOrigins(values []string) ([]string, string) {
+	origins := []string{}
+
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+
+		origin, err := config.ParseOrigin(value)
+
+		if err != nil {
+			return nil, "Not a site address: " + err.Error() + "."
+		}
+
+		if !slices.Contains(origins, origin) {
+			origins = append(origins, origin)
+		}
+	}
+
+	if len(origins) > config.MaxAllowedOrigins {
+		return nil, fmt.Sprintf("At most %d domains.", config.MaxAllowedOrigins)
+	}
+
+	if len(origins) == 0 {
+		return nil, ""
+	}
+
+	return origins, ""
 }
 
 // chosenLevels keeps the known levels of the form; nil when they are the
@@ -83,6 +126,7 @@ func (service *Projects) FormValues(project store.Project) url.Values {
 	form := url.Values{"name": {project.Name}, "color": {project.Color}, "disk_share": {strconv.Itoa(project.Share())}}
 
 	form["log_level"] = service.recording.RecordedLogLevels(project.LogLevels)
+	form["allowed_origin"] = append([]string{}, project.AllowedOrigins...)
 
 	return form
 }

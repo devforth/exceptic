@@ -16,7 +16,9 @@ type Project struct {
 	// DiskShare: the percent of MAX_DATABASE_SIZE the project may hold before
 	// a cleanup of its own (Share; 0, as stored before it existed, is 100).
 	DiskShare int
-	CreatedAt time.Time
+	// AllowedOrigins: the sites whose browsers may send to it; none: any.
+	AllowedOrigins []string `json:",omitempty"`
+	CreatedAt      time.Time
 }
 
 // A disk share goes from MinDiskShare to MaxDiskShare percent in steps of DiskShareStep.

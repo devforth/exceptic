@@ -24,7 +24,12 @@ function renderForm(save = vi.fn(() => Promise.resolve())) {
 	render(ProjectForm, {
 		id: 1,
 		name: 'backend',
-		initial: { color: '#2563eb', logLevels: ['fatal', 'error'], diskShare: 100 },
+		initial: {
+			color: '#2563eb',
+			logLevels: ['fatal', 'error'],
+			diskShare: 100,
+			allowedOrigins: ''
+		},
 		storage,
 		save
 	});
@@ -54,7 +59,12 @@ describe('ProjectForm', () => {
 		await user.click(saveButton());
 		await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
 		expect(save).toHaveBeenCalledWith(
-			{ color: '#2563eb', logLevels: ['fatal', 'error', 'warn'], diskShare: 100 },
+			{
+				color: '#2563eb',
+				logLevels: ['fatal', 'error', 'warn'],
+				diskShare: 100,
+				allowedOrigins: ''
+			},
 			'backend'
 		);
 		await waitFor(() => expect(inactive()).toBe(true));

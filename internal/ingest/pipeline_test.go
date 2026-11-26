@@ -63,7 +63,7 @@ func TestPipelineStoresEnvelopes(t *testing.T) {
 
 	t.Cleanup(func() { _ = database.Close() })
 
-	settings := &config.Config{Projects: benchProjects(1), AllowedOrigins: []string{"*"}}
+	settings := &config.Config{Projects: benchProjects(1)}
 	notifier := &recordingNotifier{}
 	pipeline := NewPipeline(slog.New(slog.DiscardHandler), settings, settings.Projects, database, StoreSink{Logger: slog.New(slog.DiscardHandler), Notifier: notifier})
 	handler := pipeline.Handler()
@@ -176,7 +176,7 @@ func TestBurstWithCleanup(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	projects := benchProjects(10)
-	settings := &config.Config{Projects: projects, AllowedOrigins: []string{"*"}}
+	settings := &config.Config{Projects: projects}
 	pipeline := NewPipeline(slog.New(slog.DiscardHandler), settings, projects, db, StoreSink{Logger: slog.New(slog.DiscardHandler)})
 	handler := pipeline.Handler()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -319,7 +319,7 @@ func TestScanDoesNotStoreTwice(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	projects := benchProjects(1)
-	settings := &config.Config{Projects: projects, AllowedOrigins: []string{"*"}}
+	settings := &config.Config{Projects: projects}
 	pipeline := NewPipeline(slog.New(slog.DiscardHandler), settings, projects, db, StoreSink{Logger: slog.New(slog.DiscardHandler)})
 	handler := pipeline.Handler()
 	pipeline.LogsPerMessage = 0

@@ -119,6 +119,7 @@ func TestUIProjectFormErrors(t *testing.T) {
 		{"create_project", `{"name":"Not Valid"}`, "name", "lowercase letters", http.StatusBadRequest},
 		{"create_project", `{"name":"backend"}`, "name", "Another project already has this name.", http.StatusConflict},
 		{"update_project", `{"project":"1","color":"red"}`, "color", "Choose a color.", http.StatusBadRequest},
+		{"update_project", `{"project":"1","allowed_origins":["app.example.com"]}`, "allowed_origins", "Not a site address", http.StatusBadRequest},
 	} {
 		response := admin.call(http.MethodPost, test.name, test.body)
 
@@ -524,5 +525,45 @@ func TestListCleanupsOfAProject(t *testing.T) {
 		Name string `json:"name"`
 	}{1, "backend"} {
 		t.Fatalf("%+v", history.Runs)
+	}
+}
+
+// A project's allowed domains are saved as typed in any case and apply to
+// ingest at once: a browser of another site is refused, a backend SDK is
+// not checked; an empty list takes any site again.
+func TestUIProjectAllowedOrigins(t *testing.T) {
+	server := newRESTServer(t)
+	admin := server.webUser(store.RoleAdmin, false)
+
+	var project struct {
+		AllowedOrigins []string `json:"allowed_origins"`
+	}
+
+	admin.request(http.MethodPost, "update_project", `{"project":"1","allowed_origins":["https://App.example.com","https://*.example.org"," "]}`, &project)
+
+	if strings.Join(project.AllowedOrigins, " ") != "https://app.example.com https://*.example.org" {
+		t.Fatalf("saved %q", project.AllowedOrigins)
+	}
+
+	send := func(origin string) int {
+		request := httptest.NewRequest(http.MethodPost, fixtures.BackendEnvelopeURL, strings.NewReader("{}\n"))
+
+		if origin != "" {
+			request.Header.Set("Origin", origin)
+		}
+
+		return serve(server, request).Code
+	}
+
+	for origin, allowed := range map[string]bool{"https://app.example.com": true, "https://eu.example.org": true, "https://evil.example.com": false, "": true} {
+		if code := send(origin); (code != http.StatusForbidden) != allowed {
+			t.Errorf("origin %q: %d", origin, code)
+		}
+	}
+
+	admin.request(http.MethodPost, "update_project", `{"project":"1","allowed_origins":[]}`, &project)
+
+	if len(project.AllowedOrigins) != 0 || send("https://evil.example.com") == http.StatusForbidden {
+		t.Errorf("cleared: %q", project.AllowedOrigins)
 	}
 }

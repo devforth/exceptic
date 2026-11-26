@@ -39,6 +39,9 @@ type Project struct {
 	// DiskShare is the percent of MAX_DATABASE_SIZE the project may hold
 	// before a cleanup of its own; 100 sets no limit of its own.
 	DiskShare int
+	// AllowedOrigins are the sites whose browsers may send to it (origins.go);
+	// empty: any.
+	AllowedOrigins []string
 }
 
 // DSN is what a Sentry SDK is configured with: the server address (base,
@@ -160,9 +163,6 @@ type Config struct {
 	// pretty, text or json; see package logging.
 	LogFormat string
 	Projects  Projects
-	// AllowedOrigins lists the browser origins allowed to send events (CORS).
-	// ["*"] allows any origin. Requests without an Origin header (backend SDKs) are always allowed.
-	AllowedOrigins []string
 	// RateLimitEventsPerMinute and RateLimitLogsPerMinute cap the events and
 	// the logs a project may send per minute, a guard against abuse (an
 	// error in a loop is capped per issue, EventsPerIssuePerMinute); 0 turns a limit off.
@@ -201,7 +201,6 @@ const (
 	DefaultPort                     = 8000
 	DefaultDataDir                  = "./data"
 	DefaultLogLevel                 = slog.LevelInfo
-	DefaultAllowedOrigins           = "*"
 	DefaultRateLimitEventsPerMinute = 10000
 	DefaultRateLimitLogsPerMinute   = 10000
 	// SDKLogBatch is the most logs the JavaScript SDK sends in one envelope; a
@@ -244,7 +243,6 @@ var (
 	projectNameRe = regexp.MustCompile(`^(?:` + ProjectNamePattern + `)$`)
 	adminLoginRe  = regexp.MustCompile(`^[A-Za-z0-9._@-]+$`)
 	publicKeyRe   = regexp.MustCompile(fmt.Sprintf(`^[A-Za-z0-9]{%d,%d}$`, MinPublicKey, MaxPublicKey))
-	originRe      = regexp.MustCompile(`^https?://([a-z0-9.-]+|\[[0-9a-f:]+\])(:[0-9]{1,5})?$`)
 )
 
 // Load reads the configuration from the process environment.
@@ -264,7 +262,6 @@ func loadFrom(getenv func(string) string) (*Config, error) {
 		Port:                     DefaultPort,
 		DataDir:                  DefaultDataDir,
 		LogLevel:                 DefaultLogLevel,
-		AllowedOrigins:           []string{DefaultAllowedOrigins},
 		RateLimitEventsPerMinute: DefaultRateLimitEventsPerMinute,
 		RateLimitLogsPerMinute:   DefaultRateLimitLogsPerMinute,
 		AdminEmail:               DefaultAdminEmail,
@@ -301,16 +298,6 @@ func loadFrom(getenv func(string) string) (*Config, error) {
 
 	if !slices.Contains(logging.Formats, config.LogFormat) {
 		return nil, fmt.Errorf("LOG_FORMAT: %q is not one of %s", config.LogFormat, strings.Join(logging.Formats, ", "))
-	}
-
-	if value := getenv("ALLOWED_ORIGINS"); value != "" {
-		origins, err := parseOrigins(value)
-
-		if err != nil {
-			return nil, fmt.Errorf("ALLOWED_ORIGINS: %w", err)
-		}
-
-		config.AllowedOrigins = origins
 	}
 
 	for name, limit := range map[string]*int{
@@ -472,32 +459,6 @@ func parseProjects(raw string) (Projects, error) {
 	}
 
 	return projects, nil
-}
-
-// parseOrigins parses "*" or "https://app.example.com,http://localhost:3000".
-// Origins are compared exactly, so a path or trailing slash is an error.
-func parseOrigins(raw string) ([]string, error) {
-	var origins []string
-
-	for _, entry := range strings.Split(raw, ",") {
-		origin := strings.ToLower(strings.TrimSpace(entry))
-
-		if origin == "" {
-			continue
-		}
-
-		if origin != "*" && !originRe.MatchString(origin) {
-			return nil, fmt.Errorf("invalid origin %q (expected scheme://host[:port], e.g. https://app.example.com)", entry)
-		}
-
-		origins = append(origins, origin)
-	}
-
-	if len(origins) == 0 {
-		return nil, fmt.Errorf("no origins in %q", raw)
-	}
-
-	return origins, nil
 }
 
 // parseNetworks parses "10.0.0.0/8, 203.0.113.7, ::1". A plain address means
