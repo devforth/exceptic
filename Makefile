@@ -67,6 +67,7 @@ image-size:
 	echo "image $(IMAGE):$(VERSION): $${mb} MB (limit $(MAX_IMAGE_MB) MB)"; \
 	test $$mb -le $(MAX_IMAGE_MB)
 
-# Publishes devforth/exceptic:VERSION for amd64 and arm64 from main once CI passed, and tags it (tools/release.sh).
+# Publishes devforth/exceptic for amd64 and arm64 from main once CI passed, tags it and makes the GitHub
+# release (tools/release.sh): the next version from the feat/fix commits, or VERSION=X.Y.Z.
 release:
-	tools/release.sh $(VERSION)
+	tools/release.sh $(filter-out dev,$(VERSION))

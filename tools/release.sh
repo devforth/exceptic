@@ -1,6 +1,9 @@
 #!/bin/sh
-# Publishes a release from this machine: make release VERSION=1.2.3 (or 1.2.3-rc.1).
+# Publishes a release from this machine: make release, or make release VERSION=1.2.3 (1.2.3-rc.1).
 #
+# Without VERSION the next one comes from the commits since the last tag, as semantic-release
+# reads them (AdminForth): a breaking change ("feat!:", "BREAKING CHANGE") the major, a "feat:"
+# the minor, a "fix:" or "perf:" the patch; with none of them there is nothing to release.
 # Checks that main is clean, pushed and green on CI, that the image keeps its size, then builds
 # devforth/exceptic for amd64 and arm64 and pushes :1.2.3, :1.2 and :latest (a pre-release only
 # its own tag) with the docker login of this machine, tags the commit v1.2.3 and makes its GitHub
@@ -12,24 +15,47 @@ set -eu
 
 image=devforth/exceptic
 version=${1:-}
-
-case $version in
-'' | *[!0-9a-z.-]*) echo "usage: make release VERSION=1.2.3" >&2 && exit 2 ;;
-esac
-
-if ! echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9a-z.]+)?$'; then
-	echo "VERSION must be X.Y.Z or X.Y.Z-pre (got $version)" >&2
-	exit 2
-fi
-
 cd "$(dirname "$0")/.."
-tag=v$version
 fail() { echo "release: $*" >&2 && exit 1; }
 
 [ "$(git branch --show-current)" = main ] || fail "release from main"
 [ -z "$(git status --porcelain)" ] || fail "commit or stash the changes first"
 git fetch --quiet --tags origin
 [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || fail "main is not the pushed origin/main"
+
+# The last release (pre-releases are not a base).
+last=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --merged HEAD | grep -v '[-]' | sort -V | tail -1)
+
+if [ -z "$version" ]; then
+	[ -n "$last" ] || fail "no release yet: give the first one, make release VERSION=0.1.0"
+
+	log=$(git log --format='%s%n%b' "$last..HEAD")
+	set -- $(echo "${last#v}" | tr . ' ')
+	major=$1 minor=$2 patch=$3
+
+	if echo "$log" | grep -Eq '^[a-z]+(\([^)]*\))?!:|^BREAKING[ -]CHANGE'; then
+		version=$((major + 1)).0.0
+	elif echo "$log" | grep -Eq '^feat(\([^)]*\))?:'; then
+		version=$major.$((minor + 1)).0
+	elif echo "$log" | grep -Eq '^(fix|perf)(\([^)]*\))?:'; then
+		version=$major.$minor.$((patch + 1))
+	else
+		fail "no feat, fix or perf commit since $last: nothing to release"
+	fi
+
+	echo "since $last:"
+	git log --format='  %s' "$last..HEAD"
+	printf 'release %s? [y/N] ' "$version"
+	read -r answer </dev/tty
+	[ "$answer" = y ] || fail "not released"
+fi
+
+if ! echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9a-z.]+)?$'; then
+	echo "VERSION must be X.Y.Z or X.Y.Z-pre (got $version)" >&2
+	exit 2
+fi
+
+tag=v$version
 ! git rev-parse --quiet --verify "refs/tags/$tag" >/dev/null || fail "$tag exists"
 
 # The checks of this very commit already ran on CI (tests, lint, vulnerabilities, both images).

@@ -80,7 +80,7 @@ make api-types               # after changing the catalog or a value the docs st
 make docker image-size       # build the image and check its size
 ```
 
-`make release VERSION=X.Y.Z` publishes the image `devforth/exceptic` for amd64 and arm64 from `main` once its CI passed, with this machine's `docker login`, and tags the commit `vX.Y.Z` ([tools/release.sh](tools/release.sh)).
+`make release` publishes the next version (from the `feat:`/`fix:` commits since the last tag, or `VERSION=X.Y.Z`) of the image `devforth/exceptic` for amd64 and arm64 from `main` once its CI passed, with this machine's `docker login`, and tags the commit `vX.Y.Z` ([tools/release.sh](tools/release.sh)).
 
 ## License
 
