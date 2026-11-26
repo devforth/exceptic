@@ -100,8 +100,8 @@
 		<Button variant="primary" icon="add" href={resolve('/(app)/users/new')}>Add user</Button>
 	{/snippet}
 	{#snippet description()}
-		Users change issue statuses, read logs and connect their own coding agents. Admins also manage
-		projects, notifications and users. There is one superadmin.
+		Admins manage everything. Users work in their projects: issues, logs, notifications, settings
+		and the users of those projects.
 	{/snippet}
 </PageHeading>
 

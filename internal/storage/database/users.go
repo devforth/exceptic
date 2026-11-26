@@ -96,14 +96,33 @@ func (database *Store) UserPassword(_ context.Context, id string) (string, error
 	return user.PasswordHash, err
 }
 
-// Superadmin returns the superadmin; ErrNotFound when there is none yet.
-func (database *Store) Superadmin(context.Context) (store.User, error) {
-	user, err := database.users.GetBy(database.db, "superadmin", kv.K(kv.U8(0)))
+// Admins returns the users of the role admin, by email.
+func (database *Store) Admins(ctx context.Context) ([]store.User, error) {
+	users, err := database.ListUsers(ctx)
 
-	return user.User, notFound(err)
+	return slices.DeleteFunc(users, func(user store.User) bool { return user.Role != store.RoleAdmin }), err
 }
 
-// ListUsers lists the users by role (superadmin first), then email.
+// keepsAnAdmin refuses a change that leaves no admin but the one of id:
+// read in the batch of the change, so two admins removing each other at
+// once cannot both succeed.
+func (database *Store) keepsAnAdmin(batch *kv.Batch, id string) error {
+	others := false
+
+	err := database.users.Primary().Each(batch, func(entry kv.Entry[userRecord]) (bool, error) {
+		others = entry.Record.Role == store.RoleAdmin && entry.Record.ID != id
+
+		return !others, nil
+	})
+
+	if err == nil && !others {
+		err = store.ErrLastAdmin
+	}
+
+	return err
+}
+
+// ListUsers lists the users by role (admins first), then email.
 func (database *Store) ListUsers(context.Context) ([]store.User, error) {
 	records, err := database.users.Primary().All(database.db)
 
@@ -112,8 +131,8 @@ func (database *Store) ListUsers(context.Context) ([]store.User, error) {
 	}
 
 	// Ranks start at 1, so a missing one (0) is the last rank, users'.
-	rank := map[string]int{store.RoleSuperadmin: 1, store.RoleAdmin: 2}
-	rankOf := func(user store.User) int { return cmp.Or(rank[user.Role], 3) }
+	rank := map[string]int{store.RoleAdmin: 1}
+	rankOf := func(user store.User) int { return cmp.Or(rank[user.Role], 2) }
 	users := make([]store.User, 0, len(records))
 
 	for _, record := range records {
@@ -161,6 +180,12 @@ func (database *Store) UpdateUser(_ context.Context, id string, change store.Use
 			return store.ErrTakeOverLocked
 		}
 
+		if user.Role == store.RoleAdmin && change.Role != store.RoleAdmin {
+			if err := database.keepsAnAdmin(batch, id); err != nil {
+				return err
+			}
+		}
+
 		// An address that changed hands: its Google account and sessions go.
 		if user.Email != change.Email && user.GoogleSub != "" {
 			user.GoogleSub, user.GoogleLinkedAt = "", nil
@@ -178,6 +203,11 @@ func (database *Store) UpdateUser(_ context.Context, id string, change store.Use
 
 		access, err := user.Access.Replace(change.By, *change.Access)
 		user.Access = access
+
+		// Merged with the projects the viewer does not see: none left at all is refused.
+		if err == nil && user.Role == store.RoleUser && access.Limited && len(access.ProjectIDs) == 0 {
+			err = store.ErrNoProjects
+		}
 
 		return err
 	}))
@@ -264,6 +294,12 @@ func (database *Store) DeleteUser(_ context.Context, id string) error {
 
 		if err != nil {
 			return err
+		}
+
+		if user.Role == store.RoleAdmin {
+			if err := database.keepsAnAdmin(batch, id); err != nil {
+				return err
+			}
 		}
 
 		if err := database.users.Delete(batch, user); err != nil {

@@ -71,7 +71,7 @@ func newNotificationsServer(t *testing.T, configure ...func(*config.Config)) *no
 	built, err := app.New(context.Background(), app.Options{
 		Settings: settings, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Store: database, Version: "test",
 		Factory: notify.Factory{
-			SMTP: settings.Notifications.SMTP, Box: box, TelegramURL: telegram.URL,
+			SMTP: settings.Notifications.SMTP, Box: box, TelegramURL: telegram.URL, PrivateWebhooks: true,
 			PublicURL: settings.Notifications.PublicURL, Unsubscribe: notify.NewUnsubscriber(notificationsKey),
 		},
 	})
@@ -343,11 +343,11 @@ func TestUIConnections(t *testing.T) {
 		t.Errorf("a missing connection: %d", code)
 	}
 
-	// A user's role may not read connections.
-	user := server.webUser(store.RoleUser, false)
+	// A user reads only the connections within their projects.
+	user := server.webUserWith(store.RoleUser, store.OnlyProjects())
 
 	if response := user.call(http.MethodGet, "get_connection?connection_id="+webhookID, ""); response.Code != http.StatusForbidden {
-		t.Errorf("a user read a connection: %d", response.Code)
+		t.Errorf("a user without projects read a connection: %d", response.Code)
 	}
 }
 
@@ -458,8 +458,8 @@ func TestUITestChat(t *testing.T) {
 		t.Errorf("saved connection: %+v, %d messages", got, hook.count())
 	}
 
-	if endpoint := endpointNamed(t, "test_chat"); endpoint.Serves(api.TransportMCP) || endpoint.Serves(api.TransportREST) || !endpoint.Admin {
-		t.Error("test_chat is the web app's, for admins")
+	if endpoint := endpointNamed(t, "test_chat"); endpoint.Serves(api.TransportMCP) || endpoint.Serves(api.TransportREST) {
+		t.Error("test_chat is the web app's")
 	}
 }
 

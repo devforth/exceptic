@@ -59,20 +59,23 @@
 		storage={data.storage}
 		{save}
 		description={fromEnv ? fromEnvNote : undefined}
+		shareEditable={data.session.can_administer}
 	>
 		{#snippet actions()}
-			<!-- Disabled for a project from PROJECTS; the wrapper keeps the reason's tooltip, which a
+			{#if data.session.can_administer}
+				<!-- Disabled for a project from PROJECTS; the wrapper keeps the reason's tooltip, which a
 			     disabled button does not show in every browser. -->
-			<span title={fromEnv ? fromEnvDeleteReason : undefined}>
-				<ConfirmButton
-					icon="delete"
-					confirm={deleteConfirmation(project.name)}
-					action={remove}
-					disabled={fromEnv}
-				>
-					Delete project
-				</ConfirmButton>
-			</span>
+				<span title={fromEnv ? fromEnvDeleteReason : undefined}>
+					<ConfirmButton
+						icon="delete"
+						confirm={deleteConfirmation(project.name)}
+						action={remove}
+						disabled={fromEnv}
+					>
+						Delete project
+					</ConfirmButton>
+				</span>
+			{/if}
 		{/snippet}
 	</ProjectForm>
 {/key}

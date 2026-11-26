@@ -28,7 +28,7 @@ func TestUsersRefuseMalformedIDsBeforeLookup(t *testing.T) {
 	ctx := context.Background()
 	counter := &lookupCounter{}
 	users := NewUsers(slog.New(slog.NewTextHandler(io.Discard, nil)), counter)
-	admin := store.User{ID: "admin001", Role: store.RoleSuperadmin}
+	admin := store.User{ID: "admin001", Role: store.RoleAdmin}
 
 	for _, id := range []string{"", "ADMIN001", "admin00", "../users", "admin0011"} {
 		if _, err := users.Get(ctx, id); !errors.Is(err, store.ErrNotFound) {

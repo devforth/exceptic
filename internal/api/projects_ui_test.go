@@ -102,7 +102,8 @@ func TestGetProjectDefaults(t *testing.T) {
 		t.Errorf("%+v, want color %s", defaults, next)
 	}
 
-	if response := server.webUser(store.RoleUser, false).call(http.MethodGet, "get_project_defaults", ""); response.Code != http.StatusForbidden {
+	// Users add projects too.
+	if response := server.webUser(store.RoleUser, false).call(http.MethodGet, "get_project_defaults", ""); response.Code != http.StatusOK {
 		t.Errorf("a user: %d", response.Code)
 	}
 }
@@ -565,5 +566,127 @@ func TestUIProjectAllowedOrigins(t *testing.T) {
 
 	if len(project.AllowedOrigins) != 0 || send("https://evil.example.com") == http.StatusForbidden {
 		t.Errorf("cleared: %q", project.AllowedOrigins)
+	}
+}
+
+// Resetting a DSN: the old key is refused at once, the new one works, the
+// setup says when; a project from PROJECTS keeps the key it has there, and
+// a user resets only a project they have.
+func TestUIResetProjectKey(t *testing.T) {
+	server := newRESTServer(t)
+	admin := server.webUser(store.RoleAdmin, false)
+
+	var created uiProject
+
+	admin.request(http.MethodPost, "create_project", `{"name":"mobile"}`, &created)
+
+	send := func(dsn string) int {
+		match := dsnPattern.FindStringSubmatch(dsn)
+
+		if match == nil {
+			t.Fatalf("DSN %q", dsn)
+		}
+
+		response := httptest.NewRecorder()
+		url := "/api/" + match[2] + "/envelope/?sentry_key=" + match[1]
+		server.handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, url, strings.NewReader("{}\n{\"type\":\"event\"}\n{\"message\":\"from mobile\"}")))
+
+		return response.Code
+	}
+
+	var setup struct {
+		DSN          string     `json:"dsn"`
+		KeyChangedAt *time.Time `json:"key_changed_at"`
+		CreatedAt    time.Time  `json:"created_at"`
+	}
+
+	id := strconv.Itoa(created.ID)
+	admin.request(http.MethodGet, "get_project_setup?project="+id, "", &setup)
+	old := setup.DSN
+
+	if setup.KeyChangedAt != nil || setup.CreatedAt.IsZero() || send(old) != http.StatusOK {
+		t.Fatalf("before the reset: %+v", setup)
+	}
+
+	user := server.webUserWith(store.RoleUser, store.OnlyProjects(created.ID))
+	user.request(http.MethodPost, "reset_project_key", `{"project":`+id+`}`, &setup)
+
+	if setup.DSN == old || setup.KeyChangedAt == nil || send(old) != http.StatusForbidden || send(setup.DSN) != http.StatusOK {
+		t.Errorf("after the reset: %+v, the old one %d", setup, send(old))
+	}
+
+	// Settings saved afterwards keep the new key.
+	admin.request(http.MethodPost, "update_project", `{"project":"mobile","color":"#654321"}`, &struct{}{})
+
+	if send(setup.DSN) != http.StatusOK {
+		t.Error("a settings save brought the old key back")
+	}
+
+	// A project from PROJECTS resets too.
+	if response := admin.call(http.MethodPost, "reset_project_key", `{"project":1}`); response.Code != http.StatusOK || strings.Contains(response.Body.String(), fixtures.BackendKey) {
+		t.Errorf("a project from PROJECTS: %d %s", response.Code, response.Body)
+	}
+
+	if response := server.webUserWith(store.RoleUser, store.OnlyProjects(1)).call(http.MethodPost, "reset_project_key", `{"project":`+id+`}`); response.Code != http.StatusForbidden {
+		t.Errorf("a user without the project: %d", response.Code)
+	}
+}
+
+// A paused project's apps are answered but nothing is stored until it is
+// resumed; a user pauses a project they have, not another.
+func TestUIPauseProject(t *testing.T) {
+	server := newRESTServer(t)
+	admin := server.webUser(store.RoleAdmin, false)
+
+	var created uiProject
+
+	admin.request(http.MethodPost, "create_project", `{"name":"mobile"}`, &created)
+
+	match := dsnPattern.FindStringSubmatch(created.DSN)
+	url := "/api/" + match[2] + "/envelope/?sentry_key=" + match[1]
+	stored := func(message string) int {
+		response := httptest.NewRecorder()
+		server.handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, url, strings.NewReader("{}\n{\"type\":\"event\"}\n{\"message\":\""+message+"\"}")))
+		waitStored(t, server.app)
+
+		if response.Code != http.StatusOK {
+			t.Fatalf("envelope %q: %d", message, response.Code)
+		}
+
+		var list struct {
+			Items []struct {
+				Title string `json:"title"`
+			} `json:"items"`
+		}
+
+		admin.request(http.MethodGet, "list_issues?project=mobile&query="+message, "", &list)
+
+		return len(list.Items)
+	}
+
+	user := server.webUserWith(store.RoleUser, store.OnlyProjects(created.ID))
+
+	var project struct {
+		Paused bool `json:"paused"`
+	}
+
+	user.request(http.MethodPost, "set_project_active", `{"project":"mobile","active":false}`, &project)
+
+	if !project.Paused || stored("while-paused") != 0 {
+		t.Errorf("paused: %+v, stored while paused", project)
+	}
+
+	var resumed struct {
+		Paused bool `json:"paused"`
+	}
+
+	user.request(http.MethodPost, "set_project_active", `{"project":"mobile","active":true}`, &resumed)
+
+	if resumed.Paused || stored("after-resume") != 1 {
+		t.Errorf("resumed: %+v", resumed)
+	}
+
+	if response := server.webUserWith(store.RoleUser, store.OnlyProjects(1)).call(http.MethodPost, "set_project_active", `{"project":"mobile","active":false}`); response.Code != http.StatusForbidden {
+		t.Errorf("a user without the project: %d", response.Code)
 	}
 }

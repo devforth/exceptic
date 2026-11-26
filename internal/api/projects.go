@@ -22,10 +22,12 @@ type projectView struct {
 	FromEnv bool `json:"from_env,omitempty"`
 	// LogLevels are the log levels recorded, highest first; events of every level are.
 	LogLevels []string `json:"log_levels"`
+	// Paused: nothing its apps send is stored until it is resumed.
+	Paused bool `json:"paused,omitempty"`
 }
 
 func (handler *handlers) projectView(call Call, project config.Project) projectView {
-	view := projectView{ID: project.ID, Name: project.Name, FromEnv: handler.services.Projects.FromEnv(project.ID)}
+	view := projectView{ID: project.ID, Name: project.Name, FromEnv: handler.services.Projects.FromEnv(project.ID), Paused: project.Paused}
 	view.LogLevels = handler.services.Projects.RecordedLogLevels(project)
 
 	if call.Address != nil {

@@ -15,6 +15,14 @@ export function deleteConfirmation(name: string): Confirmation {
 	};
 }
 
+export function pauseConnectionConfirmation(name: string): Confirmation {
+	return {
+		title: 'Pause notifications',
+		message: `Pause the connection ${name}? Nothing is sent through it until it is resumed.`,
+		confirmLabel: 'Pause'
+	};
+}
+
 export async function deleteConnection(id: string): Promise<void> {
 	await post('delete_connection', { connection_id: id });
 	toast.show('Connection deleted.');

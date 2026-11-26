@@ -161,6 +161,11 @@ func (handler *Handler) ingest(w http.ResponseWriter, r *http.Request) (response
 		return nil, reject(http.StatusForbidden, "invalid project or key")
 	}
 
+	// A paused project's apps are answered as if stored: nothing of the body is read.
+	if project.Paused {
+		return map[string]string{}, nil
+	}
+
 	var envelope *sentry.Envelope
 
 	// What the project's app sent and was refused is counted (refusals

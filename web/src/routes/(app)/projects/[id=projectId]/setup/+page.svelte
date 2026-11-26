@@ -1,6 +1,13 @@
 <script lang="ts">
 	import { invalidate } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { post } from '#lib/api/client.ts';
+	import ActionList from '#lib/components/ActionList.svelte';
+	import ActionRow from '#lib/components/ActionRow.svelte';
+	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
+	import { timeAgo } from '#lib/format.ts';
+	import { pauseConfirmation } from '#lib/projects.ts';
+	import { toast } from '#lib/toast.svelte.ts';
 	import BackButton from '#lib/components/BackButton.svelte';
 	import Breadcrumbs from '#lib/components/Breadcrumbs.svelte';
 	import Badge from '#lib/components/Badge.svelte';
@@ -19,7 +26,6 @@
 	const setup = $derived(data.setup);
 	const platforms = $derived(setup.platforms ?? []);
 	const id = $derived(setup.id);
-	const canAdminister = $derived(data.session.can_administer);
 	const tabs = $derived(platforms.map((platform) => ({ id: platform.id, label: platform.label })));
 
 	let platformID: string | undefined = $state();
@@ -37,12 +43,36 @@
 		return () => clearInterval(timer);
 	});
 
+	let resetOpen = $state(false);
+
+	// When the DSN last changed: its reset, else the project's creation.
+	const keyAge = $derived(
+		setup.key_changed_at
+			? `Last reset ${timeAgo(setup.key_changed_at)}`
+			: `Unchanged since the project was added ${timeAgo(setup.created_at)}`
+	);
+
+	let pauseOpen = $state(false);
+	const pause = $derived(pauseConfirmation(setup.name));
+
+	async function setActive(active: boolean) {
+		await post('set_project_active', { project: String(id), active });
+		toast.show(
+			active ? `Recording ${setup.name} again.` : `${setup.name} paused: nothing is stored.`
+		);
+		await invalidate('app:project-setup');
+	}
+
+	async function resetKey() {
+		await post('reset_project_key', { project: id });
+		toast.show('New DSN: give it to the apps of this project.');
+		await invalidate('app:project-setup');
+	}
+
 	// The settings page is admins' only; for the others the path ends here.
 	const crumbs = $derived([
 		{ label: 'Projects', href: resolve('/(app)/projects') },
-		...(canAdminister
-			? [{ label: setup.name, href: resolve('/(app)/projects/[id=projectId]', { id }) }]
-			: []),
+		{ label: setup.name, href: resolve('/(app)/projects/[id=projectId]', { id }) },
 		{ label: 'Installation', href: resolve('/(app)/projects/[id=projectId]/setup', { id }) }
 	]);
 </script>
@@ -111,3 +141,39 @@
 </Tabs>
 
 <ConnectStatus name={setup.name} connected={setup.connected} later={resolve('/(app)/projects')} />
+
+<div class="mt-6 max-w-guide">
+	<ActionList title="Connection">
+		<ActionRow
+			icon="token"
+			label="Reset DSN"
+			description={keyAge}
+			onclick={() => (resetOpen = true)}
+		/>
+		{#if setup.paused}
+			<ActionRow
+				icon="resume"
+				label="Resume recording"
+				description="Its apps are answered, nothing is stored"
+				status={{ label: 'Paused', tone: 'muted' }}
+				onclick={() => void setActive(true)}
+			/>
+		{:else}
+			<ActionRow
+				icon="pause"
+				label="Pause recording"
+				description="What its apps send is stored"
+				status={{ label: 'Active', tone: 'success' }}
+				onclick={() => (pauseOpen = true)}
+			/>
+		{/if}
+	</ActionList>
+</div>
+<ConfirmDialog
+	bind:open={resetOpen}
+	title="Reset DSN"
+	message="Give {setup.name} a new DSN? Apps still using the current one are refused until they get the new one."
+	confirmLabel="Reset DSN"
+	onconfirm={resetKey}
+/>
+<ConfirmDialog bind:open={pauseOpen} {...pause} onconfirm={() => setActive(false)} />

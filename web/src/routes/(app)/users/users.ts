@@ -26,7 +26,7 @@ export function deleteConfirmation(email: string): Confirmation {
 	};
 }
 
-/** Why the viewer may not change a user they do not manage (another admin, the superadmin). */
+/** Why the viewer may not change a user they do not manage (an admin, for a user). */
 export const roleLocked = 'Your role cannot change this user.';
 
 type Managed = Pick<Out<'get_user'>, 'can_manage' | 'can_take_over' | 'take_over_reason'>;

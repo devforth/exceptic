@@ -607,7 +607,11 @@ Every component with its variants, on sample data. Served only by the dev server
 						onchange={(value: string) => (sampleStatus = value)}
 					/>
 				</Row>
-				<TextField label="Name" name="display_name" note="optional: the email when empty" />
+				<TextField
+					label="Name"
+					name="display_name"
+					note="optional: the email before @ when empty"
+				/>
 				<TextField label="Email" name="email" value="developer@example.com" readonly />
 				<TextField label="Bot token" name="bot_token" type="password" saved="1234…wxyz" />
 				<TextField
@@ -828,8 +832,7 @@ Every component with its variants, on sample data. Served only by the dev server
 		<Row caption="project tone with color: a color not saved yet (the project form's preview)">
 			<Badge tone="project" label="mobile" color="#0d9488" />
 		</Row>
-		<Row caption="RoleBadge: the roles an administrator gives plain, the superadmin standing out">
-			<RoleBadge role="superadmin" />
+		<Row caption="RoleBadge: an admin standing out, a user plain">
 			<RoleBadge role="admin" />
 			<RoleBadge role="user" />
 		</Row>
@@ -1374,6 +1377,13 @@ Every component with its variants, on sample data. Served only by the dev server
 				<ActionRow
 					icon="password"
 					label="Change password"
+					onclick={() => (sampleNarrowDialog = true)}
+				/>
+				<ActionRow
+					icon="pause"
+					label="Pause recording"
+					description="What its apps send is stored"
+					status={{ label: 'Active', tone: 'success' }}
 					onclick={() => (sampleNarrowDialog = true)}
 				/>
 				<ActionRow

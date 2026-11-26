@@ -38,7 +38,7 @@ func TestLoadValues(t *testing.T) {
 		"RATE_LIMIT_PER_MINUTE": "-1",
 		"API_TOKEN":             "0123456789abcdef0123456789abcdef",
 		"ALLOWED_IPS":           "10.0.0.0/8, 203.0.113.7,::1",
-		"TRUSTED_PROXIES":       "172.17.0.1",
+		"TRUSTED_PROXIES":       "172.17.0.1, 10.0.0.0/8",
 		"ADMIN_EMAIL":           " root ", // logins are trimmed, so the stored one is too
 		"ADMIN_PASSWORD":        "root-password",
 		"SESSION_LIFETIME":      "12h",
@@ -66,7 +66,7 @@ func TestLoadValues(t *testing.T) {
 		t.Fatalf("admin = %q / %q", config.AdminEmail, config.AdminPassword)
 	}
 
-	if fmt.Sprint(config.AllowedIPs) != "[10.0.0.0/8 203.0.113.7/32 ::1/128]" || fmt.Sprint(config.TrustedProxies) != "[172.17.0.1/32]" {
+	if fmt.Sprint(config.AllowedIPs) != "[10.0.0.0/8 203.0.113.7/32 ::1/128]" || fmt.Sprint(config.TrustedProxies) != "[172.17.0.1/32 10.0.0.0/8]" {
 		t.Fatalf("allowed=%v trusted=%v", config.AllowedIPs, config.TrustedProxies)
 	}
 

@@ -20,7 +20,7 @@ Everything is set with environment variables (in Docker: `-e`, `env_file` or `en
 
 | Variable | Default | |
 |---|---|---|
-| `PROJECTS` | | `id:name:public_key,...`, e.g. `1:backend:<key>,2:frontend:<key>`. The id is from 1 to 4294967295, the key is 16–64 letters or digits (`openssl rand -hex 16`). Created at start when missing, with that name; after that the name, color and levels change on the Projects page, and only the key follows `PROJECTS` at every start (a changed key stops the old DSN). A new entry whose name or key another project holds stops the start with a message naming that project. Such a project cannot be deleted on the Projects page; one removed from the list stays, DSN included, and can then be deleted there. Projects can also be added on the Projects page. |
+| `PROJECTS` | | `id:name:public_key,...`, e.g. `1:backend:<key>,2:frontend:<key>`. The id is from 1 to 4294967295, the key is 16–64 letters or digits (`openssl rand -hex 16`). Created at start when missing, with that name; after that the name, color and levels change on the Projects page, and only the key follows `PROJECTS` at every start (a changed key stops the old DSN), until the DSN is reset on the Installation page: from then on the key there is ignored, with a warning at start. A new entry whose name or key another project holds stops the start with a message naming that project. Such a project cannot be deleted on the Projects page; one removed from the list stays, DSN included, and can then be deleted there. Projects can also be added on the Projects page. |
 
 The id is part of the DSN (`https://<public_key>@errors.example.com/<id>`) and of every stored event, so never change or reuse it. Name each service (backend, frontend, …) as its own project.
 
@@ -28,14 +28,14 @@ The id is part of the DSN (`https://<public_key>@errors.example.com/<id>`) and o
 
 | Variable | Default | |
 |---|---|---|
-| `ADMIN_EMAIL` | `admin` | The superadmin's login, created at the first start only: an email, or up to 254 letters, digits and `. _ @ -` (changed later on the Account page, then to an email only). `ADMIN_USERNAME`, its former name, is read while it is not set, with a warning. |
+| `ADMIN_EMAIL` | `admin` | The first admin's login, created while there is no admin: an email, or up to 254 letters, digits and `. _ @ -` (changed later on the Account page, then to an email only). `ADMIN_USERNAME`, its former name, is read while it is not set, with a warning. |
 | `ADMIN_PASSWORD` | | 12 to 256 characters. Needed for the first start; later changes are ignored (change the password in the UI, or see [forgotten password](deployment.md#forgotten-password)). Until it is set, nobody can log in. |
 | `SESSION_LIFETIME` | `1d` | How long a login to the UI lasts (`12h`, `7d`); not extended by use. |
 | `GOOGLE_CLIENT_ID` | | With `GOOGLE_CLIENT_SECRET`, users may also sign in with Google: an OAuth client of Google Cloud ([Sign in with Google](deployment.md#sign-in-with-google)). Needs `PUBLIC_URL`. |
 | `GOOGLE_CLIENT_SECRET` | | The secret of that OAuth client. |
 | `API_TOKEN` | | Token of the [REST API](api.md), at least 32 characters (`openssl rand -hex 32`). Without it the REST API is closed. MCP does not use it. |
 | `ALLOWED_IPS` | any | Addresses or networks (`203.0.113.7,10.0.0.0/8`) allowed to open the UI, REST API and MCP; others get 403, and `LOG_LEVEL=debug` logs the address the server saw. Ingest, `/health` and the links that stop emails (`/unsubscribe/…`, signed) stay open. In Docker the host itself, and with `"8000:8000"` every IPv6 client, reach the container from the compose network's gateway, so never let the list cover it (no `172.16.0.0/12` or `192.168.0.0/16`); behind a proxy the client address comes from `TRUSTED_PROXIES`. |
-| `TRUSTED_PROXIES` | | Reverse proxies (addresses or networks) whose `X-Forwarded-For` and `X-Forwarded-Proto` are believed. Name only the proxy's own address (in Docker, the gateway of the compose network for a proxy on the host; see [Deployment](deployment.md#https-and-a-reverse-proxy)). Needed behind a proxy: for the client address (`ALLOWED_IPS`, login limits) and to know the page is HTTPS (secure cookies, DSNs). |
+| `TRUSTED_PROXIES` | | Reverse proxies, addresses or networks separated by commas (`172.30.0.1,10.0.0.0/8`), whose `X-Forwarded-For` and `X-Forwarded-Proto` are believed. Name only the proxy's own address (in Docker, the gateway of the compose network for a proxy on the host; see [Deployment](deployment.md#https-and-a-reverse-proxy)). Needed behind a proxy: for the client address (`ALLOWED_IPS`, login limits) and to know the page is HTTPS (secure cookies, DSNs). |
 
 ## Ingest
 

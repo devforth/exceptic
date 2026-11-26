@@ -1,7 +1,7 @@
 <!--
 A user as an administrator sees them: name and role to change, the password to reset, the
 user to delete; for a user with projects the viewer lacks only their projects, and read-only when
-the viewer may change nothing (another admin or the superadmin for an admin).
+the viewer may change nothing (an admin, for a user).
 A temporary password made here or on the way here is shown once.
 -->
 <script lang="ts">

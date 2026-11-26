@@ -31,7 +31,7 @@ type MCP struct {
 }
 
 // roles are the roles a server is built for.
-var roles = []string{store.RoleSuperadmin, store.RoleAdmin, store.RoleUser}
+var roles = []string{store.RoleAdmin, store.RoleUser}
 
 // NewMCP builds the MCP servers at /mcp from the catalog: the endpoints a
 // user's role allows, plus fetch_skill; appName (APP_NAME) names them to

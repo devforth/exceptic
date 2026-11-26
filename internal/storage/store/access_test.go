@@ -130,19 +130,25 @@ func TestAccessReplace(t *testing.T) {
 	}
 }
 
-// The superadmin sees every project whatever is stored.
+// An admin sees every project whatever is stored; a user what is stored.
 func TestProjectAccess(t *testing.T) {
 	limited := OnlyProjects(1)
 
-	if !(User{Role: RoleSuperadmin, Access: limited}).ProjectAccess().All() {
-		t.Error("superadmin limited")
+	if !(User{Role: RoleAdmin, Access: limited}).ProjectAccess().All() {
+		t.Error("admin limited")
 	}
 
-	if (User{Role: RoleAdmin, Access: limited}).ProjectAccess().All() {
-		t.Error("admin not limited")
+	if (User{Role: RoleUser, Access: limited}).ProjectAccess().All() {
+		t.Error("user not limited")
 	}
 
-	if !(User{Role: RoleAdmin, Access: limited}).CanGiveAccess(limited) || (User{Role: RoleAdmin, Access: limited}).CanGiveAccess(Access{}) {
+	// A role this code does not know sees nothing.
+	if access := (User{Role: "superadmin"}).ProjectAccess(); access.All() || len(access.ProjectIDs) > 0 {
+		t.Errorf("an unknown role: %+v", access)
+	}
+
+	// Only projects one has; every project only an admin.
+	if !(User{Role: RoleAdmin}).CanGiveAccess(Access{}) || !(User{Role: RoleUser, Access: limited}).CanGiveAccess(limited) || (User{Role: RoleUser, Access: limited}).CanGiveAccess(Access{}) {
 		t.Error("CanGiveAccess")
 	}
 }

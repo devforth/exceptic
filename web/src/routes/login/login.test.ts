@@ -62,7 +62,7 @@ describe('the login page', () => {
 		expect(mocks.assign).not.toHaveBeenCalled();
 	});
 
-	it('says why nobody can log in without a superadmin', () => {
+	it('says why nobody can log in without an admin', () => {
 		renderLogin('The web UI is disabled: set ADMIN_PASSWORD to enable it.');
 
 		expect(screen.getByText(/The web UI is disabled/)).toBeTruthy();

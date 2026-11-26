@@ -81,9 +81,9 @@ func New(ctx context.Context, options Options) (*App, error) {
 		Dropped: pipeline.Dropped(),
 	})
 
-	// The first start creates the superadmin from env; later starts do not
+	// While there is no admin, one is created from env; later starts do not
 	// use ADMIN_EMAIL/ADMIN_PASSWORD.
-	if err := all.Users.EnsureSuperadmin(ctx, settings.AdminEmail, settings.AdminPassword); err != nil {
+	if err := all.Users.EnsureAdmin(ctx, settings.AdminEmail, settings.AdminPassword); err != nil {
 		_ = notifier.Close(ctx)
 
 		return nil, err

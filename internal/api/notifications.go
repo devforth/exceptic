@@ -24,77 +24,77 @@ func (handler *handlers) notificationEndpoints() []Endpoint {
 		Define(Endpoint{
 			Name:        "list_connections",
 			Description: "Notification connections (email, Telegram, Slack): where each sends, projects, levels, whether active and confirmed, and delivery health.",
-			ReadOnly:    true, Admin: true, Transports: ActsAsUser,
+			ReadOnly:    true, Transports: ActsAsUser,
 		}, handler.listConnections),
 		Define(Endpoint{
 			Name:        "get_connection",
 			Description: "One connection as its form shows it: project ids, chat ids, the saved tokens masked, when its address was confirmed and how many messages wait for a retry.",
-			ReadOnly:    true, Admin: true, Transports: TransportUI,
+			ReadOnly:    true, Transports: TransportUI,
 		}, handler.getConnection),
 		Define(Endpoint{
 			Name:        "get_connection_defaults",
 			Description: "What the form of a new connection offers: each type with what it lacks, the default type and levels, and whether messages can link to issues (PUBLIC_URL).",
-			ReadOnly:    true, Admin: true, Transports: TransportUI,
+			ReadOnly:    true, Transports: TransportUI,
 		}, handler.getConnectionDefaults),
 		Define(Endpoint{
 			Name: "start_email_verification",
 			Description: "First step of an email connection: mails a 6-digit code to the address, or says it is confirmed already. " +
 				"Ask the user for the code, then call confirm_email.",
-			Admin: true, Transports: ActsAsUser,
+			Transports: ActsAsUser,
 		}, handler.startEmailVerification),
 		Define(Endpoint{
 			Name:        "confirm_email",
 			Description: "Confirm an email address with the code the user received (start_email_verification); then create_connection can use it.",
-			Admin:       true, Transports: ActsAsUser,
+			Transports:  ActsAsUser,
 		}, handler.confirmEmail),
 		Define(Endpoint{
 			Name: "create_connection",
 			Description: "Add a notification connection for new and regressed issues: email (a confirmed address), telegram (bot_token, chat_id) " +
 				"or slack (webhook_url, or slack_bot_token and slack_channel). Test it with send_test_message.",
-			Admin: true, Transports: ActsAsUser, Confirm: true,
+			Transports: ActsAsUser, Confirm: true,
 			Choices: connectionChoices,
 		}, handler.createConnection),
 		Define(Endpoint{
 			Name:        "update_connection",
 			Description: "Change a connection; fields not given keep their values (tokens too). Saving an active connection retries its waiting messages.",
-			Idempotent:  true, Admin: true, Transports: ActsAsUser, Confirm: true,
+			Idempotent:  true, Transports: ActsAsUser, Confirm: true,
 			Choices: connectionChoices,
 		}, handler.updateConnection),
 		Define(Endpoint{
 			Name:        "set_connection_active",
 			Description: "Turn a connection on or off without changing anything else; an unconfirmed address cannot be turned on.",
-			Idempotent:  true, Admin: true, Transports: ActsAsUser, Confirm: true,
+			Idempotent:  true, Transports: ActsAsUser, Confirm: true,
 		}, handler.setConnectionActive),
 		Define(Endpoint{
 			Name:        "test_chat",
 			Description: "Send a test message with the chat fields of the form before they are saved; with connection_id, empty fields keep its saved tokens.",
-			Admin:       true, Transports: TransportUI,
+			Transports:  TransportUI,
 		}, handler.testChat),
 		Define(Endpoint{
 			Name:        "send_test_message",
 			Description: "Send a test message through a saved connection and say whether it was delivered.",
-			Admin:       true, Transports: ActsAsUser,
+			Transports:  ActsAsUser,
 		}, handler.sendTestMessage),
 		Define(Endpoint{
 			Name:        "retry_connection",
 			Description: "Send the messages of a connection that wait for a retry now, after the cause was fixed outside this server.",
-			Idempotent:  true, Admin: true, Transports: ActsAsUser,
+			Idempotent:  true, Transports: ActsAsUser,
 		}, handler.retryConnection),
 		Define(Endpoint{
 			Name:        "delete_connection",
 			Description: "Delete a notification connection; its waiting messages are not sent. A confirmed address stays confirmed.",
-			Destructive: true, Admin: true, Transports: ActsAsUser,
+			Destructive: true, Transports: ActsAsUser,
 		}, handler.deleteConnection),
 		Define(Endpoint{
 			Name:        "list_deliveries",
 			Description: "The delivery log, newest first: each message with its connection, issue, status, attempts and last error.",
-			ReadOnly:    true, Admin: true, Transports: ActsAsUser,
+			ReadOnly:    true, Transports: ActsAsUser,
 			Choices: map[string][]string{"status": store.OutboxStatuses},
 		}, handler.listDeliveries),
 		Define(Endpoint{
 			Name:        "count_deliveries",
 			Description: "How many messages of the delivery log match the filters of list_deliveries.",
-			ReadOnly:    true, Admin: true, Transports: TransportUI,
+			ReadOnly:    true, Transports: TransportUI,
 			Choices: map[string][]string{"status": store.OutboxStatuses},
 		}, handler.countDeliveries),
 	}

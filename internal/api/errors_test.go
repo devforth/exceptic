@@ -42,7 +42,7 @@ func TestUIErrorCodes(t *testing.T) {
 	wantStatus(t, "list_logs of a hidden project", backend.call(http.MethodGet, "list_logs?project=2", ""), http.StatusForbidden, "is not in your projects")
 
 	// The role: an admin endpoint, deleting issues.
-	wantStatus(t, "an admin endpoint", backend.call(http.MethodGet, "get_project_defaults", ""), http.StatusForbidden, "your role may not")
+	wantStatus(t, "an admin endpoint", backend.call(http.MethodPost, "delete_project", `{"project":"backend"}`), http.StatusForbidden, "your role may not")
 	wantStatus(t, "delete by a user", backend.call(http.MethodPost, "apply_issue_action", fmt.Sprintf(`{"action":"delete","issue_ids":[%q]}`, data.backendIssue)), http.StatusForbidden, "your role may not delete issues")
 
 	// A temporary password opens only the account page.
@@ -57,17 +57,17 @@ func TestUIErrorCodes(t *testing.T) {
 		t.Errorf("POST list_issues: %d %v", response.Code, response.Header())
 	}
 
-	// A limited admin: projects and connections outside their access.
-	admin := server.webUserWith(store.RoleAdmin, store.OnlyProjects(1))
+	// A user with some projects: projects outside their access.
+	admin := server.webUserWith(store.RoleUser, store.OnlyProjects(1))
 	wantStatus(t, "get_project of a hidden project", admin.call(http.MethodGet, "get_project?project=frontend", ""), http.StatusForbidden, `project "frontend" is not in your projects`)
 	wantStatus(t, "get_project of a missing project", admin.call(http.MethodGet, "get_project?project=nosuch", ""), http.StatusNotFound, `project "nosuch"`)
 	wantStatus(t, "get_project_setup of a hidden project", admin.call(http.MethodGet, "get_project_setup?project=2", ""), http.StatusForbidden, "is not in your projects")
 	wantStatus(t, "get_project_setup of a missing project", admin.call(http.MethodGet, "get_project_setup?project=999", ""), http.StatusNotFound, "not found")
 
-	// The superadmin is no user an admin may change.
-	root := server.webUser(store.RoleSuperadmin, false)
-	wantStatus(t, "reset the superadmin", server.webUser(store.RoleAdmin, false).call(http.MethodPost, "reset_user_password", fmt.Sprintf(`{"user_id":%q}`, root.id)),
-		http.StatusForbidden, "your role may not change this user")
+	// An admin is no user a user may change; nobody resets themselves here.
+	root := server.webUser(store.RoleAdmin, false)
+	wantStatus(t, "a user resets an admin", admin.call(http.MethodPost, "reset_user_password", fmt.Sprintf(`{"user_id":%q}`, root.id)),
+		http.StatusForbidden, "is not in your projects")
 	wantStatus(t, "reset oneself", root.call(http.MethodPost, "reset_user_password", fmt.Sprintf(`{"user_id":%q}`, root.id)), http.StatusForbidden, "/account")
 	wantStatus(t, "reset a missing user", root.call(http.MethodPost, "reset_user_password", fmt.Sprintf(`{"user_id":%q}`, missingID)), http.StatusNotFound, "not found")
 }
@@ -191,15 +191,15 @@ func TestMCPErrorCodes(t *testing.T) {
 		t.Errorf("get_issues: %+v", batch)
 	}
 
-	// A role refusal inside a tool.
-	admin, _ := server.as(store.RoleAdmin)
-	root, err := server.database.Superadmin(context.Background())
+	// A role refusal inside a tool: a user may not delete an admin.
+	user, _ = server.as(store.RoleUser)
+	admins, adminsErr := server.database.Admins(context.Background())
 
-	if err != nil {
-		t.Fatal(err)
+	if adminsErr != nil || len(admins) == 0 {
+		t.Fatal(adminsErr, admins)
 	}
 
-	if text, isError := admin.try("delete_user", map[string]any{"user_id": root.ID}); !isError || !strings.HasPrefix(text, "forbidden: your role may not change this user") {
-		t.Errorf("delete the superadmin: %q", text)
+	if text, isError := user.try("delete_user", map[string]any{"user_id": admins[0].ID}); !isError || !strings.HasPrefix(text, "forbidden: ") || !strings.Contains(text, "is not in your projects") {
+		t.Errorf("a user deletes an admin: %q", text)
 	}
 }

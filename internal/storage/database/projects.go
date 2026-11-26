@@ -104,9 +104,40 @@ func (database *Store) UpdateProject(_ context.Context, project store.Project) e
 			return notFound(err)
 		}
 
-		project.CreatedAt = stored.CreatedAt
+		// The key changes only by SeedProject and RotateProjectKey, the pause
+		// only by SetProjectPaused, so a save of settings read before cannot undo them.
+		project.CreatedAt, project.PublicKey, project.KeyChangedAt, project.Paused = stored.CreatedAt, stored.PublicKey, stored.KeyChangedAt, stored.Paused
 
 		return projectConflict(database.projects.Save(batch, keepNone(project)))
+	})
+}
+
+func (database *Store) SetProjectPaused(_ context.Context, id int, paused bool) error {
+	return database.db.Update(true, func(batch *kv.Batch) error {
+		stored, err := database.projects.Get(batch, projectKey(id))
+
+		if err != nil {
+			return notFound(err)
+		}
+
+		stored.Paused = paused
+
+		return database.projects.Save(batch, stored)
+	})
+}
+
+func (database *Store) RotateProjectKey(_ context.Context, id int, key string, now time.Time) error {
+	return database.db.Update(true, func(batch *kv.Batch) error {
+		stored, err := database.projects.Get(batch, projectKey(id))
+
+		if err != nil {
+			return notFound(err)
+		}
+
+		at := now.UTC()
+		stored.PublicKey, stored.KeyChangedAt = key, &at
+
+		return projectConflict(database.projects.Save(batch, stored))
 	})
 }
 
@@ -127,7 +158,8 @@ func (database *Store) SeedProject(_ context.Context, project store.Project, now
 			return projectConflict(database.projects.Insert(batch, project))
 		case err != nil:
 			return err
-		case stored.PublicKey == project.PublicKey:
+		case stored.PublicKey == project.PublicKey || stored.KeyChangedAt != nil:
+			// A DSN reset in the web app wins over the key in PROJECTS.
 			return nil
 		}
 

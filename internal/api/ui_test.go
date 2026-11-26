@@ -146,7 +146,7 @@ func TestUIRequiresSession(t *testing.T) {
 	}
 
 	// A session opens neither the REST API nor MCP.
-	user := server.webUser(store.RoleSuperadmin, false)
+	user := server.webUser(store.RoleAdmin, false)
 
 	// An agent's token does not open the web app's API either.
 	personal, err := server.app.OAuth.NewPersonalToken(context.Background(), user.id)
@@ -187,7 +187,7 @@ func serve(server *restServer, request *http.Request) *httptest.ResponseRecorder
 // method, other transports' endpoints and unknown names answer 404.
 func TestUIRoutesFollowTheCatalog(t *testing.T) {
 	server := newRESTServer(t)
-	user := server.webUser(store.RoleSuperadmin, false)
+	user := server.webUser(store.RoleAdmin, false)
 
 	for _, endpoint := range api.Endpoints(nil, nil) {
 		method, _, _ := strings.Cut(api.Route(api.TransportUI, endpoint), " ")
@@ -420,7 +420,7 @@ func TestGetSession(t *testing.T) {
 		t.Fatalf("unresolved %d, %v", unresolved, err)
 	}
 
-	for role, canAdminister := range map[string]bool{store.RoleUser: false, store.RoleAdmin: true, store.RoleSuperadmin: true} {
+	for role, canAdminister := range map[string]bool{store.RoleUser: false, store.RoleAdmin: true} {
 		user := server.webUser(role, false)
 		response := user.call(http.MethodGet, "get_session", "")
 
@@ -627,7 +627,7 @@ func TestAppName(t *testing.T) {
 	server := newRESTServerWith(t, func(settings *config.Config) { settings.AppName = appName })
 	server.ingestFixtures()
 
-	user := server.webUser(store.RoleSuperadmin, false)
+	user := server.webUser(store.RoleAdmin, false)
 
 	var session sessionAnswer
 

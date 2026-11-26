@@ -25,13 +25,13 @@ import (
 func testUserID(t *testing.T, authorization *Server) string {
 	t.Helper()
 
-	user, err := authorization.Store.Superadmin(context.Background())
+	admins, err := authorization.Store.Admins(context.Background())
 
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || len(admins) == 0 {
+		t.Fatal(err, admins)
 	}
 
-	return user.ID
+	return admins[0].ID
 }
 
 func testAuthorization(t *testing.T) (*Server, http.Handler) {
@@ -39,7 +39,7 @@ func testAuthorization(t *testing.T) (*Server, http.Handler) {
 	database := storetest.Open(t)
 
 	// The user agents act for (users are created by the UI).
-	if _, err := database.CreateUser(context.Background(), store.User{Email: "admin", Role: store.RoleSuperadmin, CreatedAt: time.Now()}, "x"); err != nil {
+	if _, err := database.CreateUser(context.Background(), store.User{Email: "admin", Role: store.RoleAdmin, CreatedAt: time.Now()}, "x"); err != nil {
 		t.Fatal(err)
 	}
 

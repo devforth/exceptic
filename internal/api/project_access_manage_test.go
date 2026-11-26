@@ -37,7 +37,7 @@ func sameAccess(got, want store.Access) bool {
 func TestProjectAccessProjectWrites(t *testing.T) {
 	server := newRESTServer(t)
 	seedProjects(t, server.database)
-	admin := server.webUserWith(store.RoleAdmin, store.OnlyProjects(1))
+	admin := server.webUserWith(store.RoleUser, store.OnlyProjects(1))
 	other := server.webUserWith(store.RoleUser, store.OnlyProjects(1))
 	everyone := server.webUser(store.RoleUser, false)
 
@@ -86,7 +86,7 @@ func TestProjectAccessProjectWrites(t *testing.T) {
 	mixed := server.webUserWith(store.RoleUser, store.OnlyProjects(1, created.ID))
 	only := server.webUserWith(store.RoleUser, store.OnlyProjects(created.ID))
 
-	admin.request(http.MethodPost, "delete_project", `{"project":"worker"}`, &struct{}{})
+	server.webUser(store.RoleAdmin, false).request(http.MethodPost, "delete_project", `{"project":"worker"}`, &struct{}{})
 
 	if access := server.storedAccess(mixed.id); !sameAccess(access, store.OnlyProjects(1)) {
 		t.Errorf("a user with the deleted project and backend: %+v", access)
@@ -118,12 +118,13 @@ type accessUserRow struct {
 	AccessReason   string `json:"access_reason"`
 }
 
-// A limited admin manages every user, but sees and changes only the part
-// of their access within his own; the rest stays as it is.
+// A user with some projects sees the users they share one with, and sees
+// and changes only the part of their access within their own; the rest
+// stays as it is. A user without a shared project is hidden.
 func TestProjectAccessUsers(t *testing.T) {
 	server := newRESTServer(t)
 	seedProjects(t, server.database)
-	admin := server.webUserWith(store.RoleAdmin, store.OnlyProjects(1))
+	admin := server.webUserWith(store.RoleUser, store.OnlyProjects(1))
 	fullAdmin := server.webUser(store.RoleAdmin, false)
 	frontend := server.webUserWith(store.RoleUser, store.OnlyProjects(2))
 	mixed := server.webUserWith(store.RoleUser, store.OnlyProjects(1, 2))
@@ -136,8 +137,9 @@ func TestProjectAccessUsers(t *testing.T) {
 	admin.read("list_users", &rows)
 	fullAdmin.read("list_users", &fullRows)
 
-	if len(rows.Items) != len(fullRows.Items) {
-		t.Errorf("list_users: %d rows, %d for an admin with every project", len(rows.Items), len(fullRows.Items))
+	// Not the frontend user nor the admin.
+	if len(rows.Items) != len(fullRows.Items)-2 {
+		t.Errorf("list_users: %d rows, %d for an admin", len(rows.Items), len(fullRows.Items))
 	}
 
 	byID := map[string]accessUserRow{}
@@ -146,8 +148,8 @@ func TestProjectAccessUsers(t *testing.T) {
 		byID[row.User.ID] = row
 	}
 
-	if row := byID[frontend.id]; !row.CanManage || row.User.AllProjects || len(row.User.ProjectIDs) != 0 {
-		t.Errorf("a frontend user as the backend admin sees them: %+v", row)
+	if _, ok := byID[frontend.id]; ok {
+		t.Errorf("a frontend user is in the backend user's list")
 	}
 
 	if row := byID[mixed.id]; !slices.Equal(row.User.ProjectIDs, []int{1}) {
@@ -164,12 +166,8 @@ func TestProjectAccessUsers(t *testing.T) {
 		return &code
 	}
 
-	if code := update(frontend, fmt.Sprintf(`{"user_id":%q,"all_projects":false,"projects":["1"]}`, frontend.id)); *code != http.StatusOK {
-		t.Fatalf("giving backend: %d", *code)
-	}
-
-	if access := server.storedAccess(frontend.id); !sameAccess(access, store.OnlyProjects(1, 2)) {
-		t.Errorf("after giving backend: %+v", access)
+	if code := update(frontend, fmt.Sprintf(`{"user_id":%q,"all_projects":false,"projects":["1"]}`, frontend.id)); *code != http.StatusForbidden {
+		t.Fatalf("giving backend to a hidden user: %d", *code)
 	}
 
 	if code := update(mixed, fmt.Sprintf(`{"user_id":%q,"all_projects":false,"projects":[]}`, mixed.id)); *code != http.StatusOK {
@@ -180,7 +178,7 @@ func TestProjectAccessUsers(t *testing.T) {
 		t.Errorf("after taking backend: %+v", access)
 	}
 
-	hiddenOrMissing(t, "update_user with a hidden project", admin.answer(http.MethodPost, "update_user", fmt.Sprintf(`{"user_id":%q,"projects":["2"]}`, mixed.id)), admin.answer(http.MethodPost, "update_user", fmt.Sprintf(`{"user_id":%q,"projects":["999"]}`, mixed.id)), http.StatusBadRequest)
+	hiddenOrMissing(t, "update_user with a hidden project", admin.answer(http.MethodPost, "update_user", fmt.Sprintf(`{"user_id":%q,"projects":["2"]}`, everyone.id)), admin.answer(http.MethodPost, "update_user", fmt.Sprintf(`{"user_id":%q,"projects":["999"]}`, everyone.id)), http.StatusBadRequest)
 
 	// A user with every project: only someone with every project changes that.
 	if code := admin.call(http.MethodPost, "update_user", fmt.Sprintf(`{"user_id":%q,"all_projects":false,"projects":["1"]}`, everyone.id)).Code; code != http.StatusForbidden {
@@ -204,10 +202,9 @@ func TestProjectAccessUsers(t *testing.T) {
 		t.Errorf("get_user of a user with every project: %+v", row)
 	}
 
-	admin.read("get_user?user_id="+frontend.id, &row)
-
-	if !row.AccessEditable || !slices.Equal(row.User.ProjectIDs, []int{1}) {
-		t.Errorf("get_user of a frontend user: %+v", row)
+	// Without backend they share no project now: hidden.
+	if code := admin.call(http.MethodGet, "get_user?user_id="+mixed.id, "").Code; code != http.StatusForbidden {
+		t.Errorf("get_user of a user who lost backend: %d", code)
 	}
 
 	var created struct {
@@ -294,7 +291,7 @@ func accessConnections(t *testing.T, server *notificationsServer) map[string]str
 func TestProjectAccessConnections(t *testing.T) {
 	server := newNotificationsServer(t)
 	ids := accessConnections(t, server)
-	admin := server.webUserWith(store.RoleAdmin, store.OnlyProjects(1))
+	admin := server.webUserWith(store.RoleUser, store.OnlyProjects(1))
 
 	var list struct {
 		Items []struct {
@@ -408,7 +405,7 @@ func TestProjectAccessConnections(t *testing.T) {
 func TestProjectAccessManageMCP(t *testing.T) {
 	server := newTestServer(t)
 	seedProjects(t, server.database)
-	admin := server.asWith(store.RoleAdmin, store.OnlyProjects(1))
+	admin := server.asWith(store.RoleUser, store.OnlyProjects(1))
 
 	var project struct {
 		ID int `json:"id"`
@@ -425,7 +422,8 @@ func TestProjectAccessManageMCP(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	id, err := server.database.CreateUser(ctx, store.User{Email: "frontend-dev", Role: store.RoleUser, Access: store.OnlyProjects(2), CreatedAt: time.Now()}, "x")
+	// A user of frontend and the new worker: seen through worker.
+	id, err := server.database.CreateUser(ctx, store.User{Email: "frontend-dev", Role: store.RoleUser, Access: store.OnlyProjects(2, project.ID), CreatedAt: time.Now()}, "x")
 
 	if err != nil {
 		t.Fatal(err)
@@ -493,10 +491,9 @@ func TestProjectAccessManageMCP(t *testing.T) {
 func TestProjectAccessTakeOver(t *testing.T) {
 	server := newRESTServer(t)
 	seedProjects(t, server.database)
-	admin := server.webUserWith(store.RoleAdmin, store.OnlyProjects(1))
+	admin := server.webUserWith(store.RoleUser, store.OnlyProjects(1))
 	backend := server.webUserWith(store.RoleUser, store.OnlyProjects(1))
 	targets := map[string]uiUser{
-		"frontend":            server.webUserWith(store.RoleUser, store.OnlyProjects(2)),
 		"both":                server.webUserWith(store.RoleUser, store.OnlyProjects(1, 2)),
 		"every project":       server.webUser(store.RoleUser, false),
 		"backend, for a role": server.webUserWith(store.RoleUser, store.OnlyProjects(1)),
@@ -593,7 +590,7 @@ func TestProjectAccessTakeOver(t *testing.T) {
 func TestProjectAccessAgents(t *testing.T) {
 	server := newRESTServer(t)
 	seedProjects(t, server.database)
-	admin := server.webUserWith(store.RoleAdmin, store.OnlyProjects(1))
+	admin := server.webUserWith(store.RoleUser, store.OnlyProjects(1))
 	backend := server.webUserWith(store.RoleUser, store.OnlyProjects(1))
 	frontend := server.webUserWith(store.RoleUser, store.OnlyProjects(2))
 	fullAdmin := server.webUser(store.RoleAdmin, false)
@@ -616,7 +613,7 @@ func TestProjectAccessAgents(t *testing.T) {
 	for name, user := range map[string]uiUser{"frontend": frontend, "full admin": fullAdmin} {
 		grant := decoded[agentsList](t, user.call(http.MethodGet, "list_agents", ""), http.StatusOK).Agents[0].GrantID
 
-		reason := map[string]string{"frontend": services.TakeOverProblem, "full admin": "your role may not"}[name]
+		reason := "is not in your projects"
 
 		forbiddenOrMissing(t, "list_agents of "+name, admin.answer(http.MethodGet, "list_agents?user_id="+user.id, ""), admin.answer(http.MethodGet, "list_agents?user_id="+missingID, ""), reason, http.StatusNotFound)
 		forbiddenOrMissing(t, "disconnect_agent of "+name, admin.answer(http.MethodPost, "disconnect_agent", `{"grant_id":"`+grant+`"}`), admin.answer(http.MethodPost, "disconnect_agent", `{"grant_id":"`+missingID+`"}`), reason, http.StatusNotFound)
@@ -642,7 +639,7 @@ func TestProjectAccessAgents(t *testing.T) {
 func TestProjectAccessProjectSettings(t *testing.T) {
 	server := newRESTServer(t)
 	seedProjects(t, server.database)
-	admin := server.webUserWith(store.RoleAdmin, store.OnlyProjects(1))
+	admin := server.webUserWith(store.RoleUser, store.OnlyProjects(1))
 	fullAdmin := server.webUser(store.RoleAdmin, false)
 
 	// A taken name, hidden or not, is a conflict (409), so the status tells
@@ -672,19 +669,16 @@ func TestProjectAccessProjectSettings(t *testing.T) {
 		DiskShare int `json:"disk_share"`
 	}
 
-	admin.request(http.MethodPost, "update_project", `{"project":"backend","disk_share":50}`, &project)
+	// The disk share is an admin's: a user changes the rest.
+	refused(admin, "update_project", `{"project":"backend","disk_share":50}`, http.StatusForbidden, "disk_share", "Only an admin changes the disk share.")
+	refused(admin, "create_project", `{"name":"worker","disk_share":40}`, http.StatusForbidden, "disk_share", "Only an admin changes the disk share.")
+	fullAdmin.request(http.MethodPost, "update_project", `{"project":"backend","disk_share":50}`, &project)
 
 	if project.DiskShare != 50 {
-		t.Errorf("the disk share set by an admin of backend: %d", project.DiskShare)
+		t.Errorf("the disk share set by an admin: %d", project.DiskShare)
 	}
 
-	admin.request(http.MethodPost, "create_project", `{"name":"worker","disk_share":40}`, &project)
-
-	if project.DiskShare != 40 {
-		t.Errorf("the disk share of a project the admin created: %d", project.DiskShare)
-	}
-
-	refused(admin, "update_project", `{"project":"frontend","disk_share":50}`, http.StatusForbidden, "", "")
+	refused(admin, "update_project", `{"project":"frontend","name":"renamed"}`, http.StatusForbidden, "", "")
 
 	refused(admin, "create_project", `{"name":"frontend"}`, http.StatusConflict, "name", hiddenName)
 	refused(admin, "update_project", `{"project":"backend","name":"frontend"}`, http.StatusConflict, "name", hiddenName)
@@ -759,7 +753,7 @@ func TestProjectAccessDeliveries(t *testing.T) {
 		return names
 	}
 
-	if got := titles(server.webUserWith(store.RoleAdmin, store.OnlyProjects(1))); !slices.Equal(got, []string{"Backend error"}) {
+	if got := titles(server.webUserWith(store.RoleUser, store.OnlyProjects(1))); !slices.Equal(got, []string{"Backend error"}) {
 		t.Errorf("backend admin: %v", got)
 	}
 

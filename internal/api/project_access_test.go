@@ -203,17 +203,9 @@ func TestProjectAccessIssues(t *testing.T) {
 		t.Errorf("get_session: %+v", session)
 	}
 
-	// A limited admin's delete skips the hidden issue too.
-	admin := server.webUserWith(store.RoleAdmin, store.OnlyProjects(1))
-
-	if code := admin.act("delete", data.backendIssue, data.frontendIssue); code != http.StatusOK {
-		t.Fatalf("delete: %d", code)
-	}
-
-	everyone.read("list_issues?status=all", &list)
-
-	if len(list.Items) != 1 || list.Items[0].ID != data.frontendIssue {
-		t.Errorf("after the delete: %+v", list.Items)
+	// Deleting is an admin's, whatever the projects.
+	if code := backend.act("delete", data.backendIssue); code != http.StatusForbidden {
+		t.Errorf("a user deletes an issue: %d", code)
 	}
 }
 
@@ -307,28 +299,9 @@ func TestProjectAccessLogs(t *testing.T) {
 
 	hiddenOrMissing(t, "list_logs of a hidden project", backend.answer(http.MethodGet, "list_logs?project=frontend", ""), backend.answer(http.MethodGet, "list_logs?project=nosuch", ""), http.StatusNotFound)
 
-	// A limited admin's delete of both logs deletes only his project's.
-	var ids []int64
-
-	for _, item := range all.Items {
-		ids = append(ids, item.ID)
-	}
-
-	body, err := json.Marshal(map[string]any{"log_ids": ids})
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var deleted struct {
-		Deleted int `json:"deleted"`
-	}
-
-	server.webUserWith(store.RoleAdmin, store.OnlyProjects(1)).request(http.MethodPost, "delete_logs", string(body), &deleted)
-	everyone.read("list_logs", &all)
-
-	if deleted.Deleted != 1 || len(all.Items) != 1 || all.Items[0].Project != "frontend" {
-		t.Errorf("after deleting both: deleted %d, left %+v", deleted.Deleted, all.Items)
+	// Deleting logs is an admin's, whatever the projects.
+	if response := backend.call(http.MethodPost, "delete_logs", `{"log_ids":[1]}`); response.Code != http.StatusForbidden {
+		t.Errorf("a user deletes logs: %d", response.Code)
 	}
 }
 
@@ -338,7 +311,7 @@ func TestProjectAccessProjects(t *testing.T) {
 	server := newRESTServer(t)
 	seedProjects(t, server.database)
 	everyone := server.webUser(store.RoleUser, false)
-	backend := server.webUserWith(store.RoleAdmin, store.OnlyProjects(1))
+	backend := server.webUserWith(store.RoleUser, store.OnlyProjects(1))
 
 	var projects accessList
 
@@ -351,7 +324,6 @@ func TestProjectAccessProjects(t *testing.T) {
 	hiddenOrMissing(t, "get_project_setup", backend.answer(http.MethodGet, "get_project_setup?project=2", ""), backend.answer(http.MethodGet, "get_project_setup?project=999", ""), http.StatusNotFound)
 	hiddenOrMissing(t, "get_project", backend.answer(http.MethodGet, "get_project?project=frontend", ""), backend.answer(http.MethodGet, "get_project?project=nosuch", ""), http.StatusNotFound)
 	hiddenOrMissing(t, "update_project", backend.answer(http.MethodPost, "update_project", `{"project":"frontend","name":"renamed"}`), backend.answer(http.MethodPost, "update_project", `{"project":"nosuch","name":"renamed"}`), http.StatusNotFound)
-	hiddenOrMissing(t, "delete_project", backend.answer(http.MethodPost, "delete_project", `{"project":"frontend"}`), backend.answer(http.MethodPost, "delete_project", `{"project":"nosuch"}`), http.StatusNotFound)
 
 	type storage struct {
 		UsedBytes  int64 `json:"used_bytes"`
@@ -448,7 +420,7 @@ func TestProjectAccessCleanups(t *testing.T) {
 func TestProjectAccessNone(t *testing.T) {
 	server := newRESTServer(t)
 	seedProjects(t, server.database)
-	nobody := server.webUserWith(store.RoleAdmin, store.OnlyProjects())
+	nobody := server.webUserWith(store.RoleUser, store.OnlyProjects())
 
 	var list accessList
 
@@ -490,7 +462,7 @@ func TestProjectAccessNone(t *testing.T) {
 func TestProjectAccessREST(t *testing.T) {
 	server := newRESTServer(t)
 	data := seedProjects(t, server.database)
-	server.webUserWith(store.RoleAdmin, store.OnlyProjects(1))
+	server.webUserWith(store.RoleUser, store.OnlyProjects(1))
 
 	var list accessIssues
 
@@ -535,7 +507,7 @@ func TestProjectAccessMCP(t *testing.T) {
 	server := newTestServer(t)
 	data := seedProjects(t, server.database)
 	user := server.asWith(store.RoleUser, store.OnlyProjects(1))
-	admin := server.asWith(store.RoleAdmin, store.OnlyProjects(1))
+	admin := server.asWith(store.RoleUser, store.OnlyProjects(1))
 
 	var list accessIssues
 
@@ -591,7 +563,6 @@ func TestProjectAccessMCP(t *testing.T) {
 
 	hiddenOrMissing(t, "get_event", tool(user, "get_event", map[string]any{"project": "frontend", "event_id": frontendEventID}), tool(user, "get_event", map[string]any{"project": "nosuch", "event_id": frontendEventID}), http.StatusNotFound)
 	hiddenOrMissing(t, "update_issue_status", tool(user, "update_issue_status", map[string]any{"issue_ids": []string{data.frontendIssue}, "status": "resolved"}), tool(user, "update_issue_status", map[string]any{"issue_ids": []string{missingID}, "status": "resolved"}), http.StatusNotFound)
-	hiddenOrMissing(t, "delete_issue", tool(admin, "delete_issue", map[string]any{"issue_id": data.frontendIssue}), tool(admin, "delete_issue", map[string]any{"issue_id": missingID}), http.StatusNotFound)
 	hiddenOrMissing(t, "get_project", tool(admin, "get_project", map[string]any{"project": "frontend"}), tool(admin, "get_project", map[string]any{"project": "nosuch"}), http.StatusNotFound)
 
 	var logs struct {

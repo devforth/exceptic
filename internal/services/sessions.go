@@ -18,15 +18,11 @@ func NewSessions(database store.Store) *Sessions {
 	return &Sessions{store: database}
 }
 
-// Open reports whether a superadmin exists, so somebody can log in.
+// Open reports whether an admin exists, so somebody can log in.
 func (sessions *Sessions) Open(ctx context.Context) (bool, error) {
-	_, err := sessions.store.Superadmin(ctx)
+	admins, err := sessions.store.Admins(ctx)
 
-	if errors.Is(err, store.ErrNotFound) {
-		return false, nil
-	}
-
-	return err == nil, err
+	return len(admins) > 0, err
 }
 
 // Start stores a new session and records the login, in the user's sign-in log too.

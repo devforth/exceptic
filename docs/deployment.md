@@ -98,7 +98,7 @@ server {
 - The links that stop notification emails (`/unsubscribe/<id>?token=…`) stay open too: mail providers send their one-click request from their own servers. Each works only with the token signed by `SECRET_KEY` (or `secret.key`) for one address, and only pauses that address's connections.
 - Everything else (UI, REST API, MCP) can be restricted to your office or VPN with `ALLOWED_IPS`. In Docker without a proxy the server sees IPv4 clients of a published port as they are, but the host itself, and with `"8000:8000"` every IPv6 client, as the network's gateway: do not add the gateway, publish on `127.0.0.1` behind a proxy instead.
 - Passwords, cookies, tokens and similar values are removed from incoming events and logs before they are stored; envelopes still waiting in the ingest queue, and backups made meanwhile, hold them as sent.
-- Users get one of three roles: **superadmin** (everything), **admin** (projects, notifications, users of the role user, deleting issues and logs) and **user** (issue statuses, logs, project DSNs and their own coding agents). Add them on the **Users** page; each gets a temporary password to change at the first login. Admins and users see all projects or only the projects chosen for them (users from before this setting see all); outside them they see no issue, log, project or notification connection, and their agents neither. Who may change whom: [Users](ui.md#users).
+- Users get one of two roles: **admin** (everything: every project, users, settings, deleting) and **user** (issue statuses, logs, project DSNs and their own coding agents). Add them on the **Users** page; each gets a temporary password to change at the first login. Admins see every project; users see only the projects chosen for them, and outside them no issue, log, project or notification connection, and their agents neither. Who may change whom: [Users](ui.md#users).
 
 ## Data
 
@@ -163,7 +163,7 @@ The running server holds the database, so stop it first:
 
 ```sh
 docker compose stop exceptic
-docker compose run --rm exceptic reset-password          # the superadmin
+docker compose run --rm exceptic reset-password          # the admin, when there is only one
 docker compose run --rm exceptic reset-password <email>
 docker compose start exceptic
 ```

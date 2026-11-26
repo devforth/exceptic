@@ -186,3 +186,36 @@ func TestEnvNameTakenStopsTheStart(t *testing.T) {
 		t.Fatalf("err = %v, want the project that holds the name", err)
 	}
 }
+
+// A DSN reset in the web app outlives a restart: the key in PROJECTS is
+// no longer read for that project.
+func TestResetKeyOutlivesPROJECTS(t *testing.T) {
+	ctx := context.Background()
+	database := storetest.Open(t)
+	env := config.Projects{{ID: 1, Name: "backend", PublicKey: "0123456789abcdef"}}
+	logger := slog.New(slog.DiscardHandler)
+
+	registry, err := Open(ctx, logger, database, env)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := registry.RotateKey(ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	reset, _ := registry.List().ByID(1)
+
+	if reset.PublicKey == env[0].PublicKey {
+		t.Fatal("the key did not change")
+	}
+
+	if registry, err = Open(ctx, logger, database, env); err != nil {
+		t.Fatal(err)
+	}
+
+	if project, _ := registry.List().ByID(1); project.PublicKey != reset.PublicKey {
+		t.Errorf("after a restart: %q, want the reset key %q", project.PublicKey, reset.PublicKey)
+	}
+}

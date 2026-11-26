@@ -38,6 +38,15 @@ export function originList(text: string): string[] {
 	return text.split(/[\s,]+/).filter(Boolean);
 }
 
+/** Asked before pausing a project: its apps are answered but nothing is stored. */
+export function pauseConfirmation(name: string): Confirmation {
+	return {
+		title: 'Pause recording',
+		message: `Pause ${name}? Its apps are answered as usual, but no error or log is stored and nothing is notified until it is resumed.`,
+		confirmLabel: 'Pause'
+	};
+}
+
 /** Why a project from the PROJECTS env variable cannot be deleted in the app. */
 export const fromEnvDeleteReason = 'Remove it from PROJECTS first.';
 

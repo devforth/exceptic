@@ -49,6 +49,8 @@ func Open(ctx context.Context, logger *slog.Logger, database store.Store, env co
 			if holder, taken := findProject(stored, func(other store.Project) bool { return other.PublicKey == project.PublicKey }); taken {
 				return nil, fmt.Errorf("PROJECTS: project %d %q: the key is used by project %d %q", project.ID, project.Name, holder.ID, holder.Name)
 			}
+		case existing.PublicKey != project.PublicKey && existing.KeyChangedAt != nil:
+			logger.Warn("the DSN of this project was reset in the web app: its key in PROJECTS is ignored", "id", project.ID, "name", existing.Name)
 		case existing.PublicKey != project.PublicKey:
 			logger.Warn("project key changed by PROJECTS: the old DSN stops working", "id", project.ID, "name", existing.Name)
 		}
@@ -109,7 +111,7 @@ func (registry *Registry) Reload(ctx context.Context) error {
 
 		list = append(list, config.Project{
 			ID: project.ID, Name: project.Name, PublicKey: project.PublicKey, Color: color,
-			LogLevels: project.LogLevels, DiskShare: project.Share(), AllowedOrigins: project.AllowedOrigins,
+			LogLevels: project.LogLevels, DiskShare: project.Share(), AllowedOrigins: project.AllowedOrigins, Paused: project.Paused,
 		})
 	}
 
@@ -137,13 +139,29 @@ func (registry *Registry) Create(ctx context.Context, project store.Project, own
 	return id, registry.Reload(ctx)
 }
 
-// Update saves a project. A project from PROJECTS keeps the key env gives it.
+// Update saves a project's settings (the store keeps its key).
 func (registry *Registry) Update(ctx context.Context, project store.Project) error {
-	if envProject, ok := registry.env.ByID(project.ID); ok {
-		project.PublicKey = envProject.PublicKey
+	if err := registry.store.UpdateProject(ctx, project); err != nil {
+		return err
 	}
 
-	if err := registry.store.UpdateProject(ctx, project); err != nil {
+	return registry.Reload(ctx)
+}
+
+// SetPaused pauses or resumes storing what a project's apps send; ingest
+// reads it from the list at once.
+func (registry *Registry) SetPaused(ctx context.Context, id int, paused bool) error {
+	if err := registry.store.SetProjectPaused(ctx, id, paused); err != nil {
+		return err
+	}
+
+	return registry.Reload(ctx)
+}
+
+// RotateKey gives a project a new DSN key: the old one stops working at
+// once. A project from PROJECTS keeps it too: its key there is no longer read.
+func (registry *Registry) RotateKey(ctx context.Context, id int) error {
+	if err := registry.store.RotateProjectKey(ctx, id, NewPublicKey(), time.Now()); err != nil {
 		return err
 	}
 

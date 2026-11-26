@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/devforth/exceptic/internal/server"
 )
 
 func TestClientIDURL(t *testing.T) {
@@ -44,8 +46,8 @@ func TestMetadataFetchReachesOnlyPublicAddresses(t *testing.T) {
 		"127.0.0.1": false, "10.1.2.3": false, "172.16.0.1": false, "192.168.1.1": false, "169.254.169.254": false,
 		"100.64.0.1": false, "0.0.0.0": false, "::1": false, "fe80::1": false, "fc00::1": false, "::ffff:10.0.0.1": false, "224.0.0.1": false,
 	} {
-		if got := publicAddress(netip.MustParseAddr(address)); got != want {
-			t.Errorf("publicAddress(%s) = %v, want %v", address, got, want)
+		if got := server.PublicAddress(netip.MustParseAddr(address)); got != want {
+			t.Errorf("PublicAddress(%s) = %v, want %v", address, got, want)
 		}
 	}
 

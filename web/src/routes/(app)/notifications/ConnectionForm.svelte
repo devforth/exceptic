@@ -376,6 +376,7 @@ is confirmed. Saved tokens are never in the page: their fields stay empty to kee
 				legend="Projects that are sent"
 				hint={help.fields.Notifications.Projects}
 				allowAll={viewerAll}
+				required
 				error={form.fields.projects}
 			/>
 

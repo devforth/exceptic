@@ -2,7 +2,7 @@
 // resolve the type).
 import { choices } from '#lib/api/catalog.gen.ts';
 
-/** A role an administrator may give: every role but the one superadmin's. */
+/** A role of a user. */
 export type Role = (typeof choices.create_user.role)[number];
 
 const assignable: readonly string[] = choices.create_user.role;

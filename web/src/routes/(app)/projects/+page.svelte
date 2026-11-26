@@ -13,6 +13,7 @@
 	import type { MenuItem } from '#lib/components/menu.ts';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import RowMenu from '#lib/components/RowMenu.svelte';
+	import StatusText from '#lib/components/StatusText.svelte';
 	import Table from '#lib/components/Table.svelte';
 	import type { TableColumn } from '#lib/components/table.ts';
 	import Time from '#lib/components/Time.svelte';
@@ -24,6 +25,7 @@
 		droppedSummary,
 		fromEnvDeleteReason,
 		errorsKept,
+		pauseConfirmation,
 		usageSegments
 	} from '#lib/projects.ts';
 	import { FormState } from '#lib/form.svelte.ts';
@@ -37,7 +39,7 @@
 
 	type Project = Item<'list_projects'>;
 	type ProjectColumn = TableColumn<
-		'project' | 'unresolved' | 'logs' | 'size' | 'received' | 'actions'
+		'project' | 'unresolved' | 'logs' | 'size' | 'received' | 'status' | 'actions'
 	>;
 
 	const columns: ProjectColumn[] = [
@@ -46,6 +48,7 @@
 		{ key: 'logs', label: 'Logs recorded', wideOnly: true },
 		{ key: 'size', label: 'Size', number: true },
 		{ key: 'received', label: 'Last received', wideOnly: true },
+		{ key: 'status', label: 'Status' },
 		{ key: 'actions', label: 'Actions', actions: true }
 	];
 
@@ -54,6 +57,15 @@
 	const usage = $derived(new Map((storage.projects ?? []).map((part) => [part.id, part])));
 	const colors = $derived(data.session.project_colors ?? {});
 	const segments = $derived(usageSegments(storage, (name) => colors[name]));
+
+	// Paused: what the project's apps send is answered but not stored.
+	async function setActive(project: Project, active: boolean) {
+		await post('set_project_active', { project: String(project.id), active });
+		toast.show(
+			active ? `Recording ${project.name} again.` : `${project.name} paused: nothing is stored.`
+		);
+		void invalidateAll();
+	}
 
 	async function remove(project: Project) {
 		await deleteProject(project.id);
@@ -109,9 +121,7 @@
 		const editable = canAdminister && !project.from_env;
 		const items: MenuItem[] = [];
 
-		if (canAdminister) {
-			items.push({ label: 'Rename', icon: 'edit', action: () => startEdit(project) });
-		}
+		items.push({ label: 'Rename', icon: 'edit', action: () => startEdit(project) });
 
 		items.push({
 			label: 'Show installation code',
@@ -119,21 +129,29 @@
 			href: resolve('/(app)/projects/[id=projectId]/setup', { id })
 		});
 
-		if (canAdminister) {
-			items.push({
-				label: 'Settings',
-				icon: 'settings',
-				href: resolve('/(app)/projects/[id=projectId]', { id }),
-				separatorBefore: true
-			});
-		}
+		items.push({
+			label: 'Settings',
+			icon: 'settings',
+			href: resolve('/(app)/projects/[id=projectId]', { id }),
+			separatorBefore: true
+		});
 
 		items.push({
 			label: 'Logs',
 			icon: 'logs',
-			href: withQuery(resolve('/(app)/logs'), { project: project.name }),
-			separatorBefore: !canAdminister
+			href: withQuery(resolve('/(app)/logs'), { project: project.name })
 		});
+
+		items.push(
+			project.paused
+				? { label: 'Resume recording', icon: 'resume', action: () => setActive(project, true) }
+				: {
+						label: 'Pause recording',
+						icon: 'pause',
+						confirm: pauseConfirmation(project.name),
+						action: () => setActive(project, false)
+					}
+		);
 
 		if (editable) {
 			items.push({
@@ -160,11 +178,7 @@
 <PageHeading title="Projects">
 	{#snippet actions()}
 		<Button icon="history" href={resolve('/(app)/projects/cleanups')}>Cleanup history</Button>
-		{#if canAdminister}
-			<Button variant="primary" icon="add" href={resolve('/(app)/projects/new')}>
-				Add project
-			</Button>
-		{/if}
+		<Button variant="primary" icon="add" href={resolve('/(app)/projects/new')}>Add project</Button>
 	{/snippet}
 </PageHeading>
 
@@ -222,14 +236,11 @@
 		{@const part = usage.get(project.id)}
 		{@const dropped = droppedSummary(part?.dropped)}
 		{#if column.key === 'project'}
-			<!-- Admins open its settings; the others, who cannot, its issues. -->
 			<Badge
 				tone="project"
 				label={project.name}
-				href={canAdminister
-					? resolve('/(app)/projects/[id=projectId]', { id: project.id })
-					: withQuery(resolve('/(app)/issues'), { project: project.name })}
-				title={canAdminister ? `Settings of ${project.name}` : `Issues of ${project.name}`}
+				href={resolve('/(app)/projects/[id=projectId]', { id: project.id })}
+				title={`Settings of ${project.name}`}
 			/>
 			<div class="text-xs text-muted">
 				#{project.id}{project.from_env ? ' · from PROJECTS' : ''}
@@ -265,6 +276,12 @@
 				<Time at={part.last_received} />
 			{:else}
 				<span class="text-xs text-muted">nothing yet</span>
+			{/if}
+		{:else if column.key === 'status'}
+			{#if project.paused}
+				<StatusText tone="muted">Paused</StatusText>
+			{:else}
+				<StatusText tone="success">Active</StatusText>
 			{/if}
 		{:else}
 			<RowMenu label="Actions for {project.name}" items={menuOf(project)} />

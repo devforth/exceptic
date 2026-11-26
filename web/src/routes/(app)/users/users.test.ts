@@ -49,9 +49,8 @@ describe('takeOverLock', () => {
 		);
 	});
 
-	it('names the role, not the superadmin, for a user the viewer does not manage', () => {
-		// An admin's row of another admin: the superadmin is not the only one locked.
+	it('names the role for a user the viewer does not manage', () => {
+		// A user's row of an admin.
 		expect(takeOverLock({ can_manage: false, can_take_over: false })).toBe(roleLocked);
-		expect(roleLocked).not.toMatch(/superadmin/);
 	});
 });

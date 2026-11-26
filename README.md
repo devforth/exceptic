@@ -10,7 +10,7 @@ It collects exceptions and logs from your backend and frontend apps through the 
 - **Issues:** repeated errors are grouped, with resolve/ignore, regression detection and a history of who changed each status.
 - **Logs** with search, linked to the error of the same request.
 - **Notifications** about new and regressed issues by email, Telegram and Slack, with retries that survive restarts.
-- **Web UI** with users and roles (superadmin, admin, user).
+- **Web UI** with users and roles (admin, user), each user limited to their projects.
 - **MCP server** for coding agents (Claude Code, Codex, …) with OAuth sign-in or a personal token.
 - **REST API** for scripts and integrations.
 - **Size-based cleanup**: under `MAX_DATABASE_SIZE`, logs and old repeated events go first, errors last; credentials are scrubbed from incoming data.

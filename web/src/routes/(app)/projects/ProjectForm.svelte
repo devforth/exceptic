@@ -38,9 +38,20 @@ problem beside it. `actions` and `description` go to its PageHeading.
 		save: (values: ProjectFormValues, name: string) => Promise<unknown>;
 		actions?: Snippet;
 		description?: Snippet;
+		/** The disk share is an admin's to change; others do not see it. */
+		shareEditable?: boolean;
 	};
 
-	let { id, name, initial, storage, save, actions, description }: Props = $props();
+	let {
+		id,
+		name,
+		initial,
+		storage,
+		save,
+		actions,
+		description,
+		shareEditable = false
+	}: Props = $props();
 
 	// The form keeps what the user changed; it starts from initial once.
 	// svelte-ignore state_referenced_locally
@@ -98,25 +109,27 @@ problem beside it. `actions` and `description` go to its PageHeading.
 		<AllowedOriginsField bind:value={values.allowedOrigins} error={form.fields.allowed_origins} />
 	</Details>
 
-	<Details title="Disk share" variant="form" open invalid={Boolean(form.fields.disk_share)}>
-		{#snippet summary()}
-			<span class="text-muted">
-				{#if values.diskShare >= diskShare.max}
-					no limit of its own
-				{:else if budget}
-					up to {values.diskShare}% · {formatSize((budget * values.diskShare) / 100)}
-				{:else}
-					up to {values.diskShare}%
-				{/if}
-			</span>
-		{/snippet}
-		<DiskShareField
-			bind:value={values.diskShare}
-			{storage}
-			projectId={id}
-			error={form.fields.disk_share}
-		/>
-	</Details>
+	{#if shareEditable}
+		<Details title="Disk share" variant="form" open invalid={Boolean(form.fields.disk_share)}>
+			{#snippet summary()}
+				<span class="text-muted">
+					{#if values.diskShare >= diskShare.max}
+						no limit of its own
+					{:else if budget}
+						up to {values.diskShare}% · {formatSize((budget * values.diskShare) / 100)}
+					{:else}
+						up to {values.diskShare}%
+					{/if}
+				</span>
+			{/snippet}
+			<DiskShareField
+				bind:value={values.diskShare}
+				{storage}
+				projectId={id}
+				error={form.fields.disk_share}
+			/>
+		</Details>
+	{/if}
 
 	<FormActions {form} cancel={resolve('/(app)/projects')} />
 </form>

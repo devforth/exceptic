@@ -111,7 +111,7 @@ describe('ConnectionForm', () => {
 		expect(options.querySelectorAll('[role="img"]')).toHaveLength(2);
 	});
 
-	it('lists the projects one per line as badges once All projects is off, and the chosen ones in the heading', async () => {
+	it('lists the projects one per line as badges once All projects is off, every one checked, and the chosen ones in the heading', async () => {
 		const user = userEvent.setup();
 		const { container } = render(ConnectionForm, {
 			defaults: defaults(false),
@@ -121,8 +121,6 @@ describe('ConnectionForm', () => {
 
 		await user.click(screen.getByRole('radio', { name: 'Telegram' }));
 		await user.click(screen.getByRole('checkbox', { name: /All projects/ }));
-		await user.click(screen.getByRole('checkbox', { name: 'frontend' }));
-		await user.click(screen.getByRole('checkbox', { name: 'backend' }));
 
 		const summary = container.querySelector('summary');
 		const badges = [...(summary?.querySelectorAll('[data-project]') ?? [])];
@@ -134,14 +132,16 @@ describe('ConnectionForm', () => {
 			[...options.querySelectorAll('[data-project]')].map((badge) => badge.textContent?.trim())
 		).toEqual(['backend', 'frontend']);
 
+		// One project stays: the last one checked cannot be unchecked.
 		await user.click(screen.getByRole('checkbox', { name: 'frontend' }));
-		await user.click(screen.getByRole('checkbox', { name: 'backend' }));
-		expect(summary?.querySelector('[data-project]')).toBeNull();
+		expect(screen.getByRole<HTMLInputElement>('checkbox', { name: /^backend/ }).disabled).toBe(
+			true
+		);
 		expect(
-			[...(summary?.querySelectorAll('span.text-muted') ?? [])].some(
-				(s) => s.textContent === '—No projects'
+			[...(summary?.querySelectorAll('[data-project]') ?? [])].map((badge) =>
+				badge.textContent?.trim()
 			)
-		).toBe(true);
+		).toEqual(['backend']);
 	});
 
 	it('hides the empty list under All projects, so it adds no gap', () => {
@@ -200,7 +200,12 @@ describe('ConnectionForm', () => {
 		await user.type(field(/^Bot token/), '123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ');
 		await user.type(field(/^Chat ID/), '-100');
 		await user.click(screen.getByRole('checkbox', { name: /All projects/ }));
-		await user.click(screen.getByRole('checkbox', { name: 'frontend' }));
+		await user.click(screen.getByRole('checkbox', { name: 'backend' }));
+
+		// The last one left cannot be unchecked.
+		const frontend = screen.getByRole<HTMLInputElement>('checkbox', { name: /^frontend/ });
+
+		expect(frontend.disabled).toBe(true);
 		await user.click(screen.getByRole('button', { name: 'Add' }));
 
 		await waitFor(() => expect(screen.getByText('Enter the chat ID.')).toBeTruthy());
@@ -311,6 +316,6 @@ describe('ConnectionForm', () => {
 
 		expect(all.checked).toBe(false);
 		expect(all.disabled).toBe(true);
-		expect(screen.getByRole<HTMLInputElement>('checkbox', { name: 'backend' }).checked).toBe(true);
+		expect(screen.getByRole<HTMLInputElement>('checkbox', { name: /^backend/ }).checked).toBe(true);
 	});
 });

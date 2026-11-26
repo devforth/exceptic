@@ -42,6 +42,8 @@ type Project struct {
 	// AllowedOrigins are the sites whose browsers may send to it (origins.go);
 	// empty: any.
 	AllowedOrigins []string
+	// Paused: ingest answers its apps but stores nothing.
+	Paused bool
 }
 
 // DSN is what a Sentry SDK is configured with: the server address (base,
@@ -177,8 +179,8 @@ type Config struct {
 	// TrustedProxies are reverse proxies whose X-Forwarded-For header is used
 	// to find the client address. Empty means the header is ignored.
 	TrustedProxies []netip.Prefix
-	// AdminEmail and AdminPassword create the superadmin at the first
-	// start (while there is none); later they are not used. AdminEmail is
+	// AdminEmail and AdminPassword create an admin while there is none;
+	// later they are not used. AdminEmail is
 	// the login as given, an email or not.
 	// An empty password means the UI is closed.
 	AdminEmail    string

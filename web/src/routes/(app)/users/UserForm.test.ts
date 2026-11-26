@@ -24,6 +24,30 @@ const saved = {
 };
 
 describe('UserForm', () => {
+	it('asks no projects of an admin, who has every one', async () => {
+		const save = vi.fn((input: UserInput) => Promise.resolve(input));
+		const user = userEvent.setup();
+
+		render(UserForm, {
+			projects,
+			viewerAll: true,
+			roles: ['admin', 'user'],
+			submitLabel: 'Add user',
+			save
+		});
+
+		expect(checkbox(/All projects/)).toBeTruthy();
+		await user.click(screen.getByRole('radio', { name: /^admin/ }));
+		expect(screen.queryByRole('checkbox', { name: /All projects/ })).toBeNull();
+
+		await user.type(screen.getByLabelText(/^Email/), 'ops@example.com');
+		await user.click(screen.getByRole('button', { name: 'Add user' }));
+
+		await waitFor(() =>
+			expect(save).toHaveBeenCalledWith({ email: 'ops@example.com', name: '', role: 'admin' })
+		);
+	});
+
 	it('starts a new user with the projects of a limited viewer, All not offered', async () => {
 		const save = vi.fn((input: UserInput) => Promise.resolve(input));
 		const user = userEvent.setup();
@@ -94,7 +118,7 @@ describe('UserForm', () => {
 			save
 		});
 
-		expect(checkbox('backend').checked).toBe(true);
+		expect(checkbox(/^backend/).checked).toBe(true);
 		expect(checkbox('frontend').checked).toBe(false);
 		expect(button().getAttribute('aria-disabled')).toBe('true');
 

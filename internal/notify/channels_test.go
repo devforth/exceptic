@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -55,7 +56,7 @@ func recordingServer(t *testing.T, status int, headers map[string]string, body s
 
 func TestSlack(t *testing.T) {
 	server, _, payload := recordingServer(t, http.StatusOK, nil, "ok")
-	slack := Slack{WebhookURL: server.URL}
+	slack := Slack{privateWebhook: true, WebhookURL: server.URL}
 
 	if err := slack.Send(context.Background(), sample); err != nil {
 		t.Fatal(err)
@@ -114,7 +115,7 @@ func TestSlackKeepsTextPlain(t *testing.T) {
 	notification.Title = "@all look ![x](https://tracker.example/pixel.png)"
 	notification.Release = strings.Repeat("r", 2000)
 
-	if err := (Slack{WebhookURL: server.URL, AppName: "Errors <dev>"}).Send(context.Background(), notification); err != nil {
+	if err := (Slack{privateWebhook: true, WebhookURL: server.URL, AppName: "Errors <dev>"}).Send(context.Background(), notification); err != nil {
 		t.Fatal(err)
 	}
 
@@ -133,7 +134,7 @@ func TestSlackKeepsTextPlain(t *testing.T) {
 func TestSlackRateLimit(t *testing.T) {
 	server, _, _ := recordingServer(t, http.StatusTooManyRequests, map[string]string{"Retry-After": "7"}, "rate_limited")
 
-	err := Slack{WebhookURL: server.URL}.Send(context.Background(), sample)
+	err := Slack{privateWebhook: true, WebhookURL: server.URL}.Send(context.Background(), sample)
 
 	var retryAfter *RetryAfterError
 
@@ -149,7 +150,7 @@ func TestSlackErrorHidesWebhook(t *testing.T) {
 	webhook := server.URL + "/services/T000/B000/webhook-secret"
 	server.Close() // nothing listens: the request fails before an answer
 
-	err := Slack{WebhookURL: webhook}.Send(context.Background(), sample)
+	err := Slack{privateWebhook: true, WebhookURL: webhook}.Send(context.Background(), sample)
 
 	if err == nil || strings.Contains(err.Error(), "webhook-secret") {
 		t.Fatalf("error %v, want one without the webhook", err)
@@ -432,7 +433,7 @@ func TestChatSummariesSeparateIssues(t *testing.T) {
 
 	server, _, payload := recordingServer(t, http.StatusOK, nil, "ok")
 
-	if err := (Slack{WebhookURL: server.URL, AppName: "Exceptic"}).SendSummary(context.Background(), summary); err != nil {
+	if err := (Slack{privateWebhook: true, WebhookURL: server.URL, AppName: "Exceptic"}).SendSummary(context.Background(), summary); err != nil {
 		t.Fatal(err)
 	}
 
@@ -457,5 +458,20 @@ func TestChatSummariesSeparateIssues(t *testing.T) {
 			!strings.Contains(blocks[2], "2.") || !strings.Contains(blocks[2], "issue043") || strings.Contains(blocks[2], "issue042") {
 			t.Errorf("%s summary, blocks %d:\n%s", name, len(blocks), text)
 		}
+	}
+}
+
+// A webhook URL is typed by a user: the server posts only to public
+// addresses, so a connection cannot reach its own network (SSRF).
+func TestSlackWebhookOnlyPublic(t *testing.T) {
+	var reached atomic.Bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached.Store(true) }))
+	t.Cleanup(server.Close)
+
+	err := Slack{WebhookURL: server.URL}.Send(context.Background(), sample)
+
+	if err == nil || !strings.Contains(err.Error(), "not a public address") || reached.Load() {
+		t.Errorf("a private webhook: %v, reached %v", err, reached.Load())
 	}
 }

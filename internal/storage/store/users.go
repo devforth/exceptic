@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -10,28 +11,33 @@ import (
 // methods of User below, the one place for these rules: the catalog and
 // services ask them, and the web app shows what they answer.
 const (
-	RoleSuperadmin = "superadmin"
-	RoleAdmin      = "admin"
-	RoleUser       = "user"
+	RoleAdmin = "admin"
+	RoleUser  = "user"
 )
 
 // RoleSummaries say what each role may do, for the user form; they follow
 // the methods below.
 var RoleSummaries = map[string]string{
-	RoleSuperadmin: "everything",
-	RoleAdmin:      "projects, notifications, users of the role user, deleting issues and logs",
-	RoleUser:       "issue statuses, logs, project DSNs and their own coding agents",
+	RoleAdmin: "everything: every project, users, settings, deleting",
+	RoleUser:  "issue statuses, logs, project DSNs and their own coding agents",
 }
 
 var ErrEmailTaken = errors.New("email is taken")
+
+// ErrNoProjects: a user of the role user would see no project, and so nothing.
+var ErrNoProjects = errors.New("a user needs a project")
+
+// ErrLastAdmin: the change would leave no admin, and with none the server
+// opens the first-admin setup to whoever knows ADMIN_EMAIL and ADMIN_PASSWORD.
+var ErrLastAdmin = errors.New("the last admin")
 
 // User is a user of the panel. The password hash is never read with it: only
 // UserPassword and FindLogin return it, where a password is checked.
 type User struct {
 	ID string
 	// Email is the login, unique in any case: an email, or the username of a
-	// user stored before logins were emails (the superadmin's ADMIN_EMAIL as
-	// given too), until it is changed. Stored under its former name.
+	// user stored before logins were emails, until it is changed. Stored
+	// under its former name.
 	Email              string `json:"Username"`
 	Name               string
 	Role               string
@@ -56,19 +62,37 @@ type User struct {
 // Themes are the web app's color themes.
 var Themes = []string{"light", "dark"}
 
-// ProjectAccess is the projects the user sees: every one for the superadmin,
-// whatever is stored.
+// ProjectAccess is the projects the user sees: every one for an admin,
+// whatever is stored; none for a role this code does not know.
 func (user User) ProjectAccess() Access {
-	if user.Role == RoleSuperadmin {
+	switch user.Role {
+	case RoleAdmin:
 		return Access{}
+	case RoleUser:
+		return user.Access
 	}
 
-	return user.Access
+	return OnlyProjects()
 }
 
-// CanGiveAccess: user may give chosen to another user.
+// CanGiveAccess: user may give chosen to another user: only projects they
+// have, every project only an admin.
 func (user User) CanGiveAccess(chosen Access) bool {
-	return user.CanAdminister() && user.ProjectAccess().Covers(chosen)
+	return user.ProjectAccess().Covers(chosen)
+}
+
+// SeesUser: target is in user's list of users: for an admin everyone, for
+// a user themselves and the users of the role user they share a project
+// with (an admin, whom a user cannot change, is not shown).
+func (user User) SeesUser(target User) bool {
+	switch {
+	case user.Role == RoleAdmin || target.ID == user.ID:
+		return true
+	case target.Role != RoleUser:
+		return false
+	}
+
+	return user.ProjectAccess().Shares(target.ProjectAccess())
 }
 
 // CanChangeAccessOf: user may change target's access. A target with every
@@ -97,26 +121,22 @@ func (user User) DisplayName() string {
 
 // CanAdminister: projects, notifications, users and deleting issues.
 func (user User) CanAdminister() bool {
-	return user.Role == RoleSuperadmin || user.Role == RoleAdmin
+	return user.Role == RoleAdmin
 }
 
-// CanManage reports whether user may change target at all (their access,
-// and with CanTakeOver the rest), by the hierarchy: the superadmin every other
-// user, an admin users of the role user, nobody themselves here (they have the
-// account page).
+// CanManage reports whether user may change target at all (their access
+// within user's projects, and with CanTakeOver the rest): an admin every
+// other user, admins included; a user the users they see, never an admin;
+// nobody themselves here (they have the account page).
 func (user User) CanManage(target User) bool {
-	if target.ID == user.ID {
+	switch {
+	case target.ID == user.ID:
 		return false
-	}
-
-	switch user.Role {
-	case RoleSuperadmin:
+	case user.Role == RoleAdmin:
 		return true
-	case RoleAdmin:
-		return target.Role == RoleUser
 	}
 
-	return false
+	return target.Role == RoleUser && user.SeesUser(target)
 }
 
 // CanAccessAgentsOf: one's own MCP agents, or those of a user one may take
@@ -125,21 +145,17 @@ func (user User) CanAccessAgentsOf(owner User) bool {
 	return owner.ID == user.ID || user.CanTakeOver(owner)
 }
 
-// AssignableRoles are the roles an administrator may give: there is one
-// superadmin, so never that one.
+// AssignableRoles are every role, in the order the user form offers them.
 var AssignableRoles = []string{RoleAdmin, RoleUser}
 
-// AssignableRoles are the roles user may give: an admin only the role user,
-// whom he then manages.
+// AssignableRoles are the roles user may give: an admin every one, a user
+// only the role user.
 func (user User) AssignableRoles() []string {
-	switch user.Role {
-	case RoleSuperadmin:
+	if user.Role == RoleAdmin {
 		return slices.Clone(AssignableRoles)
-	case RoleAdmin:
-		return []string{RoleUser}
 	}
 
-	return nil
+	return []string{RoleUser}
 }
 
 // CanAssign reports whether user may give role.
@@ -181,18 +197,26 @@ type PasswordChange struct {
 // previous to email: a name that was the email (saved when none was given)
 // or none follows it.
 func NameAfterEmail(name, previous, email string) string {
-	if name == "" || name == previous {
-		return email
+	if name == "" || name == previous || name == DefaultName(previous) {
+		return DefaultName(email)
 	}
 
 	return name
 }
 
-// displayName is the name to show: the name, or the email without one.
+// DefaultName is a user's name when none is given: the email before the @
+// (the whole login when it is no email), so other users never see the address.
+func DefaultName(email string) string {
+	local, _, _ := strings.Cut(email, "@")
+
+	return local
+}
+
+// displayName is the name to show: the name, or the default one without it.
 func displayName(name, email string) string {
 	if name != "" {
 		return name
 	}
 
-	return email
+	return DefaultName(email)
 }

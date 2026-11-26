@@ -188,10 +188,6 @@ func defineCollections(schema *kv.Schema) collections {
 			Indexes: []kv.Index[userRecord]{
 				// Emails are unique in any case ("name": the stored keys keep the index's former name).
 				{Name: "name", Unique: true, Key: func(user userRecord) kv.Key { return emailKey(user.Email) }},
-				// There is one superadmin.
-				{Name: "superadmin", Unique: true, Key: func(user userRecord) kv.Key {
-					return kv.KIf(user.Role == store.RoleSuperadmin, kv.U8(0))
-				}},
 				// A Google account is linked to one user; users stored before have none, so nothing to backfill.
 				{Name: "google", Unique: true, Key: func(user userRecord) kv.Key {
 					return kv.KIf(user.GoogleSub != "", kv.Text(user.GoogleSub))

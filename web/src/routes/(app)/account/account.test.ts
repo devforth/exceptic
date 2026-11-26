@@ -18,7 +18,7 @@ afterEach(() => {
 });
 
 function renderAccount(user: { email: string; must_change_password?: boolean }) {
-	const session = { user: { display_name: 'Root', role: 'superadmin', ...user } };
+	const session = { user: { display_name: 'Root', role: 'admin', ...user } };
 
 	render(AccountPage, { data: { session } } as never);
 }

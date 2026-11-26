@@ -1,7 +1,7 @@
 <!--
 @component
 The form of a new user (email, name, role, projects) and of an existing one. The projects offered are the viewer's; a user's projects the viewer does not have are
-not shown and stay as they are. save sends it; a refusal shows at its fields.
+not shown and stay as they are. An admin has every project, so the field shows only for the role user. save sends it; a refusal shows at its fields.
 -->
 <script lang="ts">
 	import { help, limits } from '#lib/api/catalog.gen.ts';
@@ -50,8 +50,10 @@ not shown and stay as they are. save sends it; a refusal shows at its fields.
 		user ? user.projectIds.map(String) : viewerAll ? [] : projects.map((p) => String(p.id))
 	);
 	const editable = $derived(user?.accessEditable ?? true);
+	// An admin has every project: nothing to choose or send.
+	const limited = $derived(role !== 'admin');
 	const access = (): ProjectsInput | undefined =>
-		editable ? projectsInput(projects, allProjects, projectIds) : undefined;
+		editable && limited ? projectsInput(projects, allProjects, projectIds) : undefined;
 
 	// A saved user is sent only once changed.
 	// svelte-ignore state_referenced_locally
@@ -88,23 +90,26 @@ not shown and stay as they are. save sends it; a refusal shows at its fields.
 			label="Name"
 			name="name"
 			bind:value={name}
-			note="optional: the email when empty"
+			note="optional: the email before @ when empty"
 			maxlength={limits.displayName}
 			autocomplete="off"
 			error={form.fields.name}
 		/>
 	{/if}
 	<RoleChoices bind:value={role} {roles} error={form.fields.role} locked={user?.takeOverLocked} />
-	<ProjectsChoice
-		{projects}
-		bind:allProjects
-		bind:projectIds
-		legend="Projects the user sees"
-		hint={help.fields.Users.Projects}
-		allowAll={viewerAll}
-		locked={editable ? undefined : (user?.accessReason ?? 'Your projects cannot change this.')}
-		error={form.fields.projects ?? form.fields.all_projects}
-	/>
+	{#if limited}
+		<ProjectsChoice
+			{projects}
+			bind:allProjects
+			bind:projectIds
+			legend="Projects the user sees"
+			hint={help.fields.Users.Projects}
+			allowAll={viewerAll}
+			required
+			locked={editable ? undefined : (user?.accessReason ?? 'Your projects cannot change this.')}
+			error={form.fields.projects ?? form.fields.all_projects}
+		/>
+	{/if}
 	{#if !user}
 		<p class="text-xs text-muted">
 			A temporary password is generated; the user replaces it at the first login.

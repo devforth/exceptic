@@ -9,7 +9,8 @@ A project is one service (backend, frontend, worker) with its own DSN. Projects 
 | Field | |
 |---|---|
 | Color | Marks the project's badge in lists and the header of its emails. |
-| DSN | The address the app's Sentry SDK sends errors and logs to. The key in it only allows sending to this project, so it can be in browser code. |
+| DSN | The address the app's Sentry SDK sends errors and logs to. The key in it only allows sending to this project, so it can be in browser code. Reset DSN on the Installation page gives a new one: the old one is refused from then on. A project from PROJECTS keeps it too, and its key there is no longer read. |
+| Paused | Pause recording in a project's menu: what its apps send is answered as usual but nothing is stored or notified until Resume recording. Admins and users with the project. |
 | Logs | Log levels to store; others are dropped when they arrive. Unchanged, the project follows RECORD_LOG_LEVELS. Errors and messages of every level are stored. |
 | Disk share | The part of MAX_DATABASE_SIZE the project may take. When it reaches 99% of it, even with the database under its limit, the cleanup deletes the project's own data in the usual order, down to 80% of its share, so a flood in one project does not push out the others. A ceiling, not a reservation: shares may add up to more than 100%. At 100% the project has no limit of its own. |
 | Allowed domains | The sites whose browsers may send to the project, e.g. `https://app.example.com` or `https://*.example.com` for its subdomains; a browser on another site is refused. Empty: any site. It stops other sites from using the DSN in their pages; a script outside a browser can still send with any Origin, which only the rate limits hold back. Backend SDKs send no origin and are not checked. |
@@ -42,15 +43,15 @@ With `PUBLIC_URL` set, every email has a link that stops it, and the headers mai
 
 Who may change whom:
 
-- The superadmin changes every other user.
-- An admin changes users of the role user (never other admins or the superadmin), and only those whose projects he all has: he could otherwise reset their password, log in as them and see projects he does not have.
-- A user changes no one. Everyone changes their own name, email and password only on the Account page; the email and the password ask for the current password.
+- An admin changes every other user, other admins too.
+- A user sees the users of the role user they share a project with (not the admins), and changes them only when they have all of their projects: they could otherwise reset their password, log in as them and see projects they do not have.
+- Everyone changes their own name, email and password only on the Account page; the email and the password ask for the current password.
 
-Changing means the email, name and role, resetting the password, deleting the user and disconnecting their coding agents. The Projects field is apart: an admin edits it for any user of the role user (see the table).
+Changing means the email, name and role, resetting the password, deleting the user and disconnecting their coding agents. The Projects field is apart: a user edits it for any user they see (see the table).
 
-Sessions and sign-ins (the Account page for oneself, a user's page for those above them): the browsers signed in now, with the address, how they signed in and when they were last active; the newest 100 sign-ins and, apart, the newest 100 refused attempts (a wrong password, the login limit (once per network and window), another Google account, Google unlinked); and the linked Google account, if any. Disconnecting a session or unlinking Google is changing the user; nobody disconnects the session they use (they log out).
+Sessions and sign-ins (the Account page for oneself, a user's page for those who manage them): the browsers signed in now, with the address, how they signed in and when they were last active; the newest 100 sign-ins and, apart, the newest 100 refused attempts (a wrong password, the login limit (once per network and window), another Google account, Google unlinked); and the linked Google account, if any. Disconnecting a session or unlinking Google is changing the user; nobody disconnects the session they use (they log out).
 
-For an admin with the projects backend and frontend, a user of the role user with:
+For a user with the projects backend and frontend, another user with:
 
 - backend, or backend and frontend: he changes everything.
 - backend and frontend 2: read-only; in the projects field he adds or removes backend and frontend, frontend 2 stays.
@@ -59,5 +60,5 @@ For an admin with the projects backend and frontend, a user of the role user wit
 | Field | |
 |---|---|
 | Email | The login, unique. Users from before emails keep their username until it is changed, then only to an email. No confirmation is sent. |
-| Role | What the user may do. The superadmin gives admin or user; an admin gives user only. |
-| Projects | Projects whose issues, logs and settings the user sees, here and through their coding agents. All projects includes the ones added later; the superadmin always has all. An admin changes only his own projects in this field; the user's other projects stay. Only someone with all projects gives all projects or changes a user who has them. A user without projects sees none. |
+| Role | What the user may do. An admin gives admin or user; a user gives user only. |
+| Projects | Projects whose issues, logs and settings the user sees, here and through their coding agents; asked only for the role user, since an admin has every project. All projects includes the ones added later. A user changes only their own projects in this field; the other user's other projects stay. Only an admin gives all projects or changes a user who has them. A user without projects sees none. |

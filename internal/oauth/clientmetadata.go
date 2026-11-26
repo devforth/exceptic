@@ -4,17 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/devforth/exceptic/internal/platform/textutil"
+	"github.com/devforth/exceptic/internal/server"
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
@@ -29,43 +27,6 @@ const (
 	maxMetadataBytes = 5 * 1024
 	metadataTimeout  = 5 * time.Second
 )
-
-// specialPurpose are the networks a metadata URL must not reach: the
-// client_id is chosen by whoever connects, so fetching it must not become a
-// way to reach this server's own network (SSRF). Loopback, private and
-// link-local addresses are checked with netip's methods.
-var specialPurpose = []netip.Prefix{
-	netip.MustParsePrefix("0.0.0.0/8"),
-	netip.MustParsePrefix("100.64.0.0/10"),
-	netip.MustParsePrefix("192.0.0.0/24"),
-	netip.MustParsePrefix("192.0.2.0/24"),
-	netip.MustParsePrefix("192.88.99.0/24"),
-	netip.MustParsePrefix("198.18.0.0/15"),
-	netip.MustParsePrefix("198.51.100.0/24"),
-	netip.MustParsePrefix("203.0.113.0/24"),
-	netip.MustParsePrefix("240.0.0.0/4"),
-	netip.MustParsePrefix("64:ff9b::/96"),
-	netip.MustParsePrefix("100::/64"),
-	netip.MustParsePrefix("2001::/23"),
-	netip.MustParsePrefix("2001:db8::/32"),
-	netip.MustParsePrefix("2002::/16"),
-}
-
-func publicAddress(address netip.Addr) bool {
-	address = address.Unmap()
-
-	if !address.IsGlobalUnicast() || address.IsPrivate() {
-		return false
-	}
-
-	for _, network := range specialPurpose {
-		if network.Contains(address) {
-			return false
-		}
-	}
-
-	return true
-}
 
 // isClientIDURL: the client_id names a metadata document (an https URL
 // with a host name and a path), not a registered client.
@@ -82,33 +43,10 @@ func isClientIDURL(clientID string) bool {
 	return isAddress != nil
 }
 
-// metadataClient fetches metadata documents: it connects only to public
-// addresses, checked after DNS resolution (so a name that resolves to a
-// private address, even on a second lookup, is refused), follows no
-// redirects, gives up after metadataTimeout and keeps no connection open.
+// metadataClient fetches metadata documents: whoever connects chooses the
+// client_id, so only public addresses (server.PublicClient).
 func metadataClient() *http.Client {
-	dialer := &net.Dialer{
-		Timeout: metadataTimeout,
-		Control: func(_, address string, _ syscall.RawConn) error {
-			host, _, err := net.SplitHostPort(address)
-
-			if err != nil {
-				return err
-			}
-
-			if parsed, err := netip.ParseAddr(host); err != nil || !publicAddress(parsed) {
-				return fmt.Errorf("%s is not a public address", host)
-			}
-
-			return nil
-		},
-	}
-
-	return &http.Client{
-		Timeout:       metadataTimeout,
-		Transport:     &http.Transport{DialContext: dialer.DialContext, TLSHandshakeTimeout: metadataTimeout, Proxy: nil, DisableKeepAlives: true},
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-	}
+	return server.PublicClient(metadataTimeout)
 }
 
 // metadataDocument is what the client publishes at its client_id.

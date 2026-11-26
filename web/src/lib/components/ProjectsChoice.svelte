@@ -3,6 +3,8 @@
 A choice of projects in a form card: All projects (including ones added later) or some, one per
 line as badges; the heading shows what is chosen. `allowAll` false disables All with its reason
 (a viewer without every project cannot give it); `locked` disables the whole field with why.
+`required`: at least one project, so the last one checked cannot be unchecked, and turning All off
+checks every project offered.
 -->
 <script lang="ts">
 	import Badge from './Badge.svelte';
@@ -26,6 +28,8 @@ line as badges; the heading shows what is chosen. `allowAll` false disables All 
 		allowAll?: boolean;
 		/** Why the field cannot change; it is then disabled. */
 		locked?: string;
+		/** At least one project stays chosen. */
+		required?: boolean;
 	};
 
 	let {
@@ -37,10 +41,12 @@ line as badges; the heading shows what is chosen. `allowAll` false disables All 
 		hint,
 		error,
 		allowAll = true,
-		locked
+		locked,
+		required = false
 	}: Props = $props();
 
 	const known = $derived(projects.map((project) => String(project.id)));
+	const lastReason = 'At least one project.';
 	const chosen = $derived(projects.filter((project) => projectIds.includes(String(project.id))));
 	// Without allowAll, All can still be turned off, never on.
 	const allReason = $derived(
@@ -63,17 +69,27 @@ line as badges; the heading shows what is chosen. `allowAll` false disables All 
 				checked={allProjects}
 				disabled={Boolean(allReason)}
 				reason={allReason}
-				onchange={(checked: boolean) => (allProjects = checked)}
+				onchange={(checked: boolean) => {
+					allProjects = checked;
+
+					// Off with nothing chosen: every project, so one stays.
+					if (!checked && required && !chosen.length) {
+						projectIds = known;
+					}
+				}}
 			/>
 		{/snippet}
 		{#if !allProjects}
 			{#each projects as project (project.id)}
+				{@const last =
+					required && chosen.length === 1 && chosen[0].id === project.id ? lastReason : undefined}
 				<Choice
 					type="checkbox"
 					value={String(project.id)}
 					label={project.name}
 					checked={projectIds.includes(String(project.id))}
-					disabled={Boolean(locked)}
+					disabled={Boolean(locked ?? last)}
+					reason={locked ?? last}
 					onchange={(checked: boolean) =>
 						(projectIds = toggled(known, projectIds, String(project.id), checked))}
 				>

@@ -59,6 +59,19 @@ func (access Access) Covers(other Access) bool {
 	return true
 }
 
+// Shares: access and other have a project in common (every project counts
+// as each; no project as none).
+func (access Access) Shares(other Access) bool {
+	switch {
+	case access.All():
+		return other.All() || len(other.ProjectIDs) > 0
+	case other.All():
+		return len(access.ProjectIDs) > 0
+	}
+
+	return slices.ContainsFunc(access.ProjectIDs, other.Sees)
+}
+
 // ChangeableBy: viewer may change this access (a user's). Access to every
 // project is changed only by someone who has it.
 func (access Access) ChangeableBy(viewer Access) bool {

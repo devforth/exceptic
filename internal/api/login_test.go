@@ -22,7 +22,7 @@ import (
 	"github.com/devforth/exceptic/internal/storage/storetest"
 )
 
-// adminPassword is the password of the superadmin "admin" of newLoginServer.
+// adminPassword is the password of the admin "admin" of newLoginServer.
 const adminPassword = "correct horse battery"
 
 // The slow password key derivation would take seconds per login under the race detector.
@@ -30,7 +30,7 @@ func init() {
 	services.PasswordIterations = 1_000
 }
 
-// newLoginServer is a server whose superadmin "admin" logs in with adminPassword.
+// newLoginServer is a server whose admin "admin" logs in with adminPassword.
 func newLoginServer(t *testing.T, configure ...func(settings *config.Config)) *restServer {
 	t.Helper()
 
@@ -467,7 +467,7 @@ func TestUIDeviceCookieOnlyAfterSuccess(t *testing.T) {
 	}
 }
 
-// Without a superadmin nobody can log in; the login page says why.
+// Without an admin nobody can log in; the login page says why.
 func TestUIDisabledWithoutPassword(t *testing.T) {
 	server := startLoginServer(t, storetest.Open(t), "admin", "")
 	client := server.browser()
@@ -483,7 +483,7 @@ func TestUIDisabledWithoutPassword(t *testing.T) {
 	}
 }
 
-// ADMIN_USERNAME/ADMIN_PASSWORD create the superadmin at the first start
+// ADMIN_USERNAME/ADMIN_PASSWORD create an admin at the first start
 // only: later starts with other values change nothing, and sessions survive
 // restarts.
 func TestUISuperadminFromEnvOnce(t *testing.T) {
@@ -503,7 +503,7 @@ func TestUISuperadminFromEnvOnce(t *testing.T) {
 		}
 	}
 
-	users, err := first.server.app.Services.Users.List(context.Background())
+	users, err := first.server.database.ListUsers(context.Background())
 
 	if err != nil || len(users) != 1 || users[0].Email != "admin" {
 		t.Errorf("a restart created a user: %+v %v", users, err)
@@ -521,7 +521,7 @@ func TestUIChangePassword(t *testing.T) {
 
 	client := server.browser().loggedIn("admin", adminPassword)
 	other := server.browser().loggedIn("admin", adminPassword)
-	root := superadmin(t, server)
+	root := server.adminID(t)
 	token, err := server.app.OAuth.NewPersonalToken(context.Background(), root)
 
 	if err != nil {
@@ -616,7 +616,7 @@ func TestUIChangeEmail(t *testing.T) {
 
 	var answer sessionAnswer
 
-	if err := json.Unmarshal(client.call(http.MethodGet, "get_session", nil).Body.Bytes(), &answer); err != nil || answer.User.DisplayName != "root@example.com" {
+	if err := json.Unmarshal(client.call(http.MethodGet, "get_session", nil).Body.Bytes(), &answer); err != nil || answer.User.DisplayName != "root" {
 		t.Errorf("the name that was the login: %+v %v", answer.User, err)
 	}
 
@@ -679,19 +679,6 @@ func TestUITemporaryPassword(t *testing.T) {
 	if response := user.call(http.MethodPost, "logout", struct{}{}); response.Code != http.StatusNoContent || user.open() {
 		t.Errorf("logout: %d", response.Code)
 	}
-}
-
-// superadmin is the id of the superadmin "admin".
-func superadmin(t *testing.T, server *restServer) string {
-	t.Helper()
-
-	user, err := server.database.FindUser(context.Background(), "admin")
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return user.ID
 }
 
 // mcpTools lists the MCP tools with an agent's token.

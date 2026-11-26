@@ -1,11 +1,14 @@
 <!--
 @component
 A row that opens what it names (a dialog): an icon in a square, the label, an optional line under
-it and a chevron, on a card's surface. unavailable is why it does nothing now, shown under the label.
+it and a chevron, on a card's surface. unavailable is why it does nothing now, shown under the label;
+status is a state shown before the chevron, as in a table's Status column (Active, Paused).
 -->
 <script lang="ts">
 	import type { IconName } from '#lib/icons.ts';
 	import Icon from './Icon.svelte';
+	import type { StatusTone } from './status.ts';
+	import StatusText from './StatusText.svelte';
 	import { cardClasses } from './surface.ts';
 
 	type Props = {
@@ -17,9 +20,19 @@ it and a chevron, on a card's surface. unavailable is why it does nothing now, s
 		popup?: 'dialog';
 		/** Why it does nothing now (aria-disabled, so it keeps the focus). */
 		unavailable?: string;
+		/** The state of what it changes, before the chevron. */
+		status?: { label: string; tone: StatusTone };
 	};
 
-	let { icon, label, description, onclick, popup = 'dialog', unavailable }: Props = $props();
+	let {
+		icon,
+		label,
+		description,
+		onclick,
+		popup = 'dialog',
+		unavailable,
+		status
+	}: Props = $props();
 </script>
 
 <button
@@ -43,5 +56,6 @@ it and a chevron, on a card's surface. unavailable is why it does nothing now, s
 				{unavailable ?? description}
 			</span>{/if}
 	</span>
+	{#if status}<StatusText tone={status.tone}>{status.label}</StatusText>{/if}
 	<span class="text-muted"><Icon name="chevronRight" size={16} /></span>
 </button>

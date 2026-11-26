@@ -96,12 +96,14 @@
 		<FormGroup title="Allowed domains">
 			<AllowedOriginsField bind:value={values.allowedOrigins} error={form.fields.allowed_origins} />
 		</FormGroup>
-		<FormGroup title="Disk share">
-			<DiskShareField
-				bind:value={values.diskShare}
-				storage={data.storage}
-				error={form.fields.disk_share}
-			/>
-		</FormGroup>
+		{#if data.session.can_administer}
+			<FormGroup title="Disk share">
+				<DiskShareField
+					bind:value={values.diskShare}
+					storage={data.storage}
+					error={form.fields.disk_share}
+				/>
+			</FormGroup>
+		{/if}
 	</Details>
 </form>

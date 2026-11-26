@@ -170,6 +170,7 @@ export interface Endpoints {
 			dsn?: string;
 			from_env?: boolean;
 			log_levels: string[] | null;
+			paused?: boolean;
 			color?: string;
 			shown_color: string;
 			disk_share: number;
@@ -476,6 +477,7 @@ export interface Endpoints {
 			dsn?: string;
 			from_env?: boolean;
 			log_levels: string[] | null;
+			paused?: boolean;
 			color?: string;
 			shown_color: string;
 			disk_share: number;
@@ -512,6 +514,9 @@ export interface Endpoints {
 				test: string;
 				agent_prompt: string;
 			}[] | null;
+			paused: boolean;
+			key_changed_at: IsoTime | null;
+			created_at: IsoTime;
 		};
 	};
 	get_session: {
@@ -879,6 +884,7 @@ export interface Endpoints {
 				dsn?: string;
 				from_env?: boolean;
 				log_levels: string[] | null;
+				paused?: boolean;
 				unresolved_issues: number;
 			})[] | null;
 			next_cursor?: string;
@@ -910,6 +916,32 @@ export interface Endpoints {
 				access_reason?: string;
 			})[] | null;
 			next_cursor?: string;
+		};
+	};
+	reset_project_key: {
+		in: {
+			/** Project ID. */
+			project: number;
+		};
+		out: {
+			id: number;
+			name: string;
+			dsn: string;
+			connected: boolean;
+			connected_at: IsoTime | null;
+			received: boolean;
+			platforms: {
+				id: string;
+				label: string;
+				install: string;
+				where: string;
+				init: string;
+				test: string;
+				agent_prompt: string;
+			}[] | null;
+			paused: boolean;
+			key_changed_at: IsoTime | null;
+			created_at: IsoTime;
 		};
 	};
 	reset_user_password: {
@@ -982,6 +1014,22 @@ export interface Endpoints {
 				last_error?: string;
 				failing?: boolean;
 			} | null;
+		};
+	};
+	set_project_active: {
+		in: {
+			/** Project name or ID. */
+			project: string;
+			/** false pauses recording, true resumes it. */
+			active: boolean;
+		};
+		out: {
+			id: number;
+			name: string;
+			dsn?: string;
+			from_env?: boolean;
+			log_levels: string[] | null;
+			paused?: boolean;
 		};
 	};
 	set_theme: {
@@ -1131,6 +1179,7 @@ export interface Endpoints {
 			dsn?: string;
 			from_env?: boolean;
 			log_levels: string[] | null;
+			paused?: boolean;
 			color?: string;
 			shown_color: string;
 			disk_share: number;
@@ -1173,53 +1222,55 @@ export interface Endpoints {
 /** How each request is sent, and what the app must know before offering it. */
 export const endpoints = {
 	apply_issue_action: { method: 'POST', admin: false, destructive: false, confirm: false },
-	confirm_email: { method: 'POST', admin: true, destructive: false, confirm: false },
-	count_deliveries: { method: 'GET', admin: true, destructive: false, confirm: false },
+	confirm_email: { method: 'POST', admin: false, destructive: false, confirm: false },
+	count_deliveries: { method: 'GET', admin: false, destructive: false, confirm: false },
 	count_issues: { method: 'GET', admin: false, destructive: false, confirm: false },
 	count_logs: { method: 'GET', admin: false, destructive: false, confirm: false },
-	create_connection: { method: 'POST', admin: true, destructive: false, confirm: true },
-	create_project: { method: 'POST', admin: true, destructive: false, confirm: false },
-	create_user: { method: 'POST', admin: true, destructive: false, confirm: true },
-	delete_connection: { method: 'POST', admin: true, destructive: true, confirm: false },
+	create_connection: { method: 'POST', admin: false, destructive: false, confirm: true },
+	create_project: { method: 'POST', admin: false, destructive: false, confirm: false },
+	create_user: { method: 'POST', admin: false, destructive: false, confirm: true },
+	delete_connection: { method: 'POST', admin: false, destructive: true, confirm: false },
 	delete_logs: { method: 'POST', admin: true, destructive: true, confirm: false },
 	delete_project: { method: 'POST', admin: true, destructive: true, confirm: false },
-	delete_user: { method: 'POST', admin: true, destructive: true, confirm: false },
+	delete_user: { method: 'POST', admin: false, destructive: true, confirm: false },
 	disconnect_agent: { method: 'POST', admin: false, destructive: true, confirm: false },
 	end_session: { method: 'POST', admin: false, destructive: false, confirm: true },
 	get_activity: { method: 'GET', admin: false, destructive: false, confirm: false },
-	get_connection: { method: 'GET', admin: true, destructive: false, confirm: false },
-	get_connection_defaults: { method: 'GET', admin: true, destructive: false, confirm: false },
+	get_connection: { method: 'GET', admin: false, destructive: false, confirm: false },
+	get_connection_defaults: { method: 'GET', admin: false, destructive: false, confirm: false },
 	get_issue_details: { method: 'GET', admin: false, destructive: false, confirm: false },
 	get_mcp_setup: { method: 'GET', admin: false, destructive: false, confirm: false },
-	get_project: { method: 'GET', admin: true, destructive: false, confirm: false },
-	get_project_defaults: { method: 'GET', admin: true, destructive: false, confirm: false },
+	get_project: { method: 'GET', admin: false, destructive: false, confirm: false },
+	get_project_defaults: { method: 'GET', admin: false, destructive: false, confirm: false },
 	get_project_setup: { method: 'GET', admin: false, destructive: false, confirm: false },
 	get_session: { method: 'GET', admin: false, destructive: false, confirm: false },
 	get_storage: { method: 'GET', admin: false, destructive: false, confirm: false },
-	get_user: { method: 'GET', admin: true, destructive: false, confirm: false },
+	get_user: { method: 'GET', admin: false, destructive: false, confirm: false },
 	list_agents: { method: 'GET', admin: false, destructive: false, confirm: false },
 	list_cleanups: { method: 'GET', admin: false, destructive: false, confirm: false },
-	list_connections: { method: 'GET', admin: true, destructive: false, confirm: false },
-	list_deliveries: { method: 'GET', admin: true, destructive: false, confirm: false },
+	list_connections: { method: 'GET', admin: false, destructive: false, confirm: false },
+	list_deliveries: { method: 'GET', admin: false, destructive: false, confirm: false },
 	list_issue_events: { method: 'GET', admin: false, destructive: false, confirm: false },
 	list_issue_levels: { method: 'GET', admin: false, destructive: false, confirm: false },
 	list_issues: { method: 'GET', admin: false, destructive: false, confirm: false },
 	list_log_levels: { method: 'GET', admin: false, destructive: false, confirm: false },
 	list_logs: { method: 'GET', admin: false, destructive: false, confirm: false },
 	list_projects: { method: 'GET', admin: false, destructive: false, confirm: false },
-	list_users: { method: 'GET', admin: true, destructive: false, confirm: false },
-	reset_user_password: { method: 'POST', admin: true, destructive: true, confirm: false },
-	retry_connection: { method: 'POST', admin: true, destructive: false, confirm: false },
-	send_test_message: { method: 'POST', admin: true, destructive: false, confirm: false },
-	set_connection_active: { method: 'POST', admin: true, destructive: false, confirm: true },
+	list_users: { method: 'GET', admin: false, destructive: false, confirm: false },
+	reset_project_key: { method: 'POST', admin: false, destructive: false, confirm: true },
+	reset_user_password: { method: 'POST', admin: false, destructive: true, confirm: false },
+	retry_connection: { method: 'POST', admin: false, destructive: false, confirm: false },
+	send_test_message: { method: 'POST', admin: false, destructive: false, confirm: false },
+	set_connection_active: { method: 'POST', admin: false, destructive: false, confirm: true },
+	set_project_active: { method: 'POST', admin: false, destructive: false, confirm: true },
 	set_theme: { method: 'POST', admin: false, destructive: false, confirm: false },
-	start_email_verification: { method: 'POST', admin: true, destructive: false, confirm: false },
-	test_chat: { method: 'POST', admin: true, destructive: false, confirm: false },
+	start_email_verification: { method: 'POST', admin: false, destructive: false, confirm: false },
+	test_chat: { method: 'POST', admin: false, destructive: false, confirm: false },
 	unlink_google: { method: 'POST', admin: false, destructive: false, confirm: true },
 	update_account_name: { method: 'POST', admin: false, destructive: false, confirm: false },
-	update_connection: { method: 'POST', admin: true, destructive: false, confirm: true },
-	update_project: { method: 'POST', admin: true, destructive: false, confirm: true },
-	update_user: { method: 'POST', admin: true, destructive: false, confirm: true },
+	update_connection: { method: 'POST', admin: false, destructive: false, confirm: true },
+	update_project: { method: 'POST', admin: false, destructive: false, confirm: true },
+	update_user: { method: 'POST', admin: false, destructive: false, confirm: true },
 } as const;
 
 /** Inputs and outputs of the plain requests: logins and credentials, which no endpoint handles. */
@@ -1466,8 +1517,7 @@ export const diskShare = { min: 5, max: 100, step: 5 } as const;
 
 /** What each role may do. */
 export const roleSummaries = {
-	admin: 'projects, notifications, users of the role user, deleting issues and logs',
-	superadmin: 'everything',
+	admin: 'everything: every project, users, settings, deleting',
 	user: 'issue statuses, logs, project DSNs and their own coding agents',
 } as const;
 
@@ -1490,16 +1540,17 @@ export const help = {
 		'Projects': {
 			'Allowed domains': 'The sites whose browsers may send to the project, e.g. https://app.example.com or https://*.example.com for its subdomains; a browser on another site is refused. Empty: any site. It stops other sites from using the DSN in their pages; a script outside a browser can still send with any Origin, which only the rate limits hold back. Backend SDKs send no origin and are not checked.',
 			'Color': 'Marks the project\'s badge in lists and the header of its emails.',
-			'DSN': 'The address the app\'s Sentry SDK sends errors and logs to. The key in it only allows sending to this project, so it can be in browser code.',
+			'DSN': 'The address the app\'s Sentry SDK sends errors and logs to. The key in it only allows sending to this project, so it can be in browser code. Reset DSN on the Installation page gives a new one: the old one is refused from then on. A project from PROJECTS keeps it too, and its key there is no longer read.',
 			'Disk share': 'The part of MAX_DATABASE_SIZE the project may take. When it reaches 99% of it, even with the database under its limit, the cleanup deletes the project\'s own data in the usual order, down to 80% of its share, so a flood in one project does not push out the others. A ceiling, not a reservation: shares may add up to more than 100%. At 100% the project has no limit of its own.',
 			'Dropped': 'What the project sent in the last 24 hours that was not stored: over its rate limit, refused while the server was busy, too large, unreadable or not received whole, and what its SDK reports it held back. Resets on restart.',
 			'History kept': 'The oldest record of each kind still stored; Errors counts events of every level. When the database nears its limit, the cleanup deletes the least useful data first, in the order of the cleanup by size.',
 			'Logs': 'Log levels to store; others are dropped when they arrive. Unchanged, the project follows RECORD_LOG_LEVELS. Errors and messages of every level are stored.',
+			'Paused': 'Pause recording in a project\'s menu: what its apps send is answered as usual but nothing is stored or notified until Resume recording. Admins and users with the project.',
 		},
 		'Users': {
 			'Email': 'The login, unique. Users from before emails keep their username until it is changed, then only to an email. No confirmation is sent.',
-			'Projects': 'Projects whose issues, logs and settings the user sees, here and through their coding agents. All projects includes the ones added later; the superadmin always has all. An admin changes only his own projects in this field; the user\'s other projects stay. Only someone with all projects gives all projects or changes a user who has them. A user without projects sees none.',
-			'Role': 'What the user may do. The superadmin gives admin or user; an admin gives user only.',
+			'Projects': 'Projects whose issues, logs and settings the user sees, here and through their coding agents; asked only for the role user, since an admin has every project. All projects includes the ones added later. A user changes only their own projects in this field; the other user\'s other projects stay. Only an admin gives all projects or changes a user who has them. A user without projects sees none.',
+			'Role': 'What the user may do. An admin gives admin or user; a user gives user only.',
 		},
 	},
 	settings: {

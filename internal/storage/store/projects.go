@@ -18,7 +18,11 @@ type Project struct {
 	DiskShare int
 	// AllowedOrigins: the sites whose browsers may send to it; none: any.
 	AllowedOrigins []string `json:",omitempty"`
-	CreatedAt      time.Time
+	// Paused: what its apps send is answered but not stored, until resumed.
+	Paused bool `json:",omitempty"`
+	// KeyChangedAt is when the DSN key was last replaced; nil: never since the project was added.
+	KeyChangedAt *time.Time `json:",omitempty"`
+	CreatedAt    time.Time
 }
 
 // A disk share goes from MinDiskShare to MaxDiskShare percent in steps of DiskShareStep.

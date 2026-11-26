@@ -255,7 +255,7 @@ func TestDeviceStamp(t *testing.T) {
 	ctx := context.Background()
 	database := openStore(t)
 	users := NewUsers(slog.New(slog.DiscardHandler), database)
-	root := store.User{ID: "root", Email: "root", Role: store.RoleSuperadmin}
+	root := store.User{ID: "root", Email: "root", Role: store.RoleAdmin}
 
 	create := func() string {
 		id, _, problems, err := users.Create(ctx, root, UserInput{Email: "Dev@example.com", Role: store.RoleUser})
@@ -307,6 +307,11 @@ func TestDeviceStamp(t *testing.T) {
 	}
 
 	changed("role change")
+
+	// Another admin, so this one is not the last.
+	if _, err := database.CreateUser(ctx, store.User{Email: "other@example.com", Role: store.RoleAdmin}, "x"); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := users.Delete(ctx, root, id); err != nil {
 		t.Fatal(err)

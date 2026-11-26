@@ -15,6 +15,7 @@ import (
 	"github.com/devforth/exceptic/internal/agentprompt"
 	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/platform/textutil"
+	"github.com/devforth/exceptic/internal/server"
 )
 
 // Slack posts to an incoming webhook
@@ -29,6 +30,22 @@ type Slack struct {
 	AppName    string // APP_NAME, in the MCP request of an issue
 	// apiURL is replaced in tests with a fake server.
 	apiURL string
+	// privateWebhook lets the webhook be a private address: tests' fake servers only.
+	privateWebhook bool
+}
+
+// webhookTimeout bounds a post to a webhook.
+const webhookTimeout = 30 * time.Second
+
+// webhookClient posts to the webhook URL a user typed: only to public
+// addresses, without redirects (server.PublicClient), so a connection
+// cannot make the server reach its own network.
+func (slack Slack) webhookClient() *http.Client {
+	if slack.privateWebhook {
+		return &http.Client{Timeout: webhookTimeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	}
+
+	return server.PublicClient(webhookTimeout)
 }
 
 // maxSlackText keeps a message under Slack's 40,000-character limit.
@@ -208,7 +225,7 @@ func (slack Slack) post(ctx context.Context, text string) error {
 
 	request.Header.Set("Content-Type", "application/json")
 
-	return doRequest(request)
+	return doRequest(slack.webhookClient(), request)
 }
 
 // slackErrorHint says what to do about the errors a bot setup runs into,
@@ -250,8 +267,8 @@ func slackLink(link, text string) string {
 
 // doRequest sends an HTTP request and turns a non-2xx answer into an error;
 // 429 becomes a RetryAfterError with the delay from Retry-After.
-func doRequest(request *http.Request) error {
-	response, err := http.DefaultClient.Do(request)
+func doRequest(client *http.Client, request *http.Request) error {
+	response, err := client.Do(request)
 
 	// The URL of a webhook is its secret: errors are stored, shown and logged.
 	if err != nil {

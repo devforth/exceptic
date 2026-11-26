@@ -97,6 +97,9 @@ func (service *Projects) Find(access store.Access, nameOrID string) (config.Proj
 	}
 }
 
+// diskShareProblem: a user may change the rest of a project's settings.
+const diskShareProblem = "Only an admin changes the disk share."
+
 // Save applies the form to project and stores it as viewer: a new one when
 // its ID is 0 (it joins a limited viewer's access), the stored one
 // otherwise (ErrHidden outside viewer's access). A taken name is
@@ -116,11 +119,17 @@ func (service *Projects) Save(ctx context.Context, viewer store.User, form url.V
 		paletteColor = service.Color(store.Project{ID: project.ID})
 	}
 
+	share := project.Share()
 	problems := readProjectForm(form, &project, service.recording, paletteColor)
 	access := viewer.ProjectAccess()
 
 	if len(problems) > 0 {
 		return project, problems, nil
+	}
+
+	// The disk share divides the space every project shares: an admin's.
+	if project.Share() != share && !viewer.CanAdminister() {
+		return project, nil, Refusal{Kind: ErrForbidden, Problems: Problems{"disk_share": diskShareProblem}}
 	}
 
 	var err error
@@ -145,6 +154,25 @@ func (service *Projects) nameProblem(access store.Access, name string) string {
 	}
 
 	return "This name cannot be used."
+}
+
+// SetPaused pauses or resumes recording a project within access.
+func (service *Projects) SetPaused(ctx context.Context, access store.Access, id int, paused bool) error {
+	if err := service.Check(access, id); err != nil {
+		return err
+	}
+
+	return service.registry.SetPaused(ctx, id, paused)
+}
+
+// ResetKey replaces the DSN key of a project within access; the apps using
+// the old DSN are refused from now on.
+func (service *Projects) ResetKey(ctx context.Context, access store.Access, id int) error {
+	if err := service.Check(access, id); err != nil {
+		return err
+	}
+
+	return service.registry.RotateKey(ctx, id)
 }
 
 // Delete removes a project added in the web app with its data; one from

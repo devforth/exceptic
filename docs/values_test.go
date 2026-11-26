@@ -113,7 +113,6 @@ func TestDocsValues(t *testing.T) {
 		value{Phrase: "may hold {} MB together", Value: ingest.MaxReadingBytes >> 20},
 		value{Phrase: "half of it or {} MB", Value: ingest.MaxProjectReadingBytes >> 20},
 		value{Phrase: "a body must arrive within {} seconds", Value: seconds(ingest.BodyReadTimeout)},
-		value{Phrase: "**superadmin** ({})", Value: store.RoleSummaries[store.RoleSuperadmin]},
 		value{Phrase: "**admin** ({})", Value: store.RoleSummaries[store.RoleAdmin]},
 		value{Phrase: "**user** ({})", Value: store.RoleSummaries[store.RoleUser]},
 		value{Phrase: "About {} MB at the peak (the default `GOMEMLIMIT`)", Value: config.DefaultMemoryLimit >> 20},

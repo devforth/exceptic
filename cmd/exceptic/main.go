@@ -32,7 +32,7 @@ const usage = `usage: exceptic [command]
 
 Without a command it runs the server. Commands:
   healthcheck               exit 0 when the server answers /health (Docker HEALTHCHECK)
-  reset-password [email]    print a temporary password (the superadmin by default); the server must be stopped
+  reset-password [email]    print a temporary password (the only admin by default); the server must be stopped
   backup [dir]              copy the database (default DATA_DIR/backups/<time>)
   version                   print the version`
 
@@ -275,7 +275,7 @@ func healthcheck() int {
 	return 0
 }
 
-// resetPassword gives a user (the superadmin when no email is given) a
+// resetPassword gives a user (the only admin when no email is given) a
 // temporary password and prints it: they choose their own at the next
 // login. Their sessions end; connected agents keep working.
 func resetPassword(args []string) error {
@@ -314,13 +314,18 @@ func resetPassword(args []string) error {
 	if len(args) == 1 {
 		email = args[0]
 	} else {
-		superadmin, err := db.Superadmin(ctx)
+		admins, err := db.Admins(ctx)
 
-		if err != nil {
-			return fmt.Errorf("no superadmin yet: set ADMIN_PASSWORD and start the server: %w", err)
+		switch {
+		case err != nil:
+			return err
+		case len(admins) == 0:
+			return errors.New("no admin yet: set ADMIN_PASSWORD and start the server")
+		case len(admins) > 1:
+			return fmt.Errorf("%d admins: name the one, exceptic reset-password <email>", len(admins))
 		}
 
-		email = superadmin.Email
+		email = admins[0].Email
 	}
 
 	users := services.NewUsers(logger, db)

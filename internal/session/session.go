@@ -303,8 +303,8 @@ type Auth struct {
 	knownChecks chan struct{}
 	checkWait   time.Duration
 	now         func() time.Time
-	// opened: a superadmin exists, so the UI is open; it never stops
-	// existing, so the database is asked only until then.
+	// opened: an admin exists, so the UI is open; the last one cannot be
+	// removed (store.ErrLastAdmin), so the database is asked only until then.
 	opened atomic.Bool
 	// touched: when each session's activity was last written, so a session
 	// writes it at most every store.SessionActiveEvery.
@@ -373,7 +373,7 @@ func (auth *Auth) waitForCheck(ctx context.Context, knownDevice bool) (done func
 	}
 }
 
-// Disabled: there is no superadmin yet (ADMIN_PASSWORD was never set), so
+// Disabled: there is no admin yet (ADMIN_PASSWORD was never set), so
 // nobody can log in.
 func (auth *Auth) Disabled(ctx context.Context) bool {
 	if auth.opened.Load() {

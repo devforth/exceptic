@@ -14,7 +14,6 @@ describe('RoleChoices', () => {
 			'admin',
 			'user'
 		]);
-		expect(screen.queryByRole('radio', { name: /superadmin/ })).toBeNull();
 		expect(screen.getByText(roleSummaries.admin)).toBeTruthy();
 		expect(screen.getByRole<HTMLInputElement>('radio', { name: /^user/ }).checked).toBe(true);
 		expect(screen.getByText('Choose a role.')).toBeTruthy();

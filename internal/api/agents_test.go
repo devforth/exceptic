@@ -188,11 +188,11 @@ func (list agentsList) owns(id string) bool {
 	return false
 }
 
-// Admins choose whose agents to list among the users they manage; users
-// see only their own. An unused personal token is no connected app.
+// Admins choose whose agents to list among everyone, other admins too; a
+// user never reaches an admin's. An unused personal token is no connected app.
 func TestUIAgentsOfOtherUsers(t *testing.T) {
 	server := newRESTServer(t)
-	root := server.webUser(store.RoleSuperadmin, false)
+	root := server.webUser(store.RoleAdmin, false)
 	admin := server.webUser(store.RoleAdmin, false)
 	user := server.webUser(store.RoleUser, false)
 
@@ -200,7 +200,7 @@ func TestUIAgentsOfOtherUsers(t *testing.T) {
 	list := decoded[agentsList](t, root.call(http.MethodGet, "list_agents", ""), http.StatusOK)
 
 	if list.UserID != root.id || !list.owns(root.id) || !list.owns(admin.id) || !list.owns(user.id) || len(list.Agents) != 1 || list.Agents[0].Connected {
-		t.Fatalf("superadmin: %+v", list)
+		t.Fatalf("an admin: %+v", list)
 	}
 
 	server.mcpAccess(unused, http.StatusOK)
@@ -216,7 +216,7 @@ func TestUIAgentsOfOtherUsers(t *testing.T) {
 
 	list = decoded[agentsList](t, admin.call(http.MethodGet, "list_agents?user_id="+user.id, ""), http.StatusOK)
 
-	if list.UserID != user.id || list.owns(root.id) || !list.owns(admin.id) || len(list.Agents) != 1 {
+	if list.UserID != user.id || !list.owns(root.id) || !list.owns(admin.id) || len(list.Agents) != 1 {
 		t.Fatalf("admin listing a user: %+v", list)
 	}
 
@@ -231,12 +231,11 @@ func TestUIAgentsOfOtherUsers(t *testing.T) {
 		response *httptest.ResponseRecorder
 		status   int
 	}{
-		"user lists the superadmin's":        {user.call(http.MethodGet, "list_agents?user_id="+root.id, ""), http.StatusForbidden},
-		"admin lists the superadmin's":       {admin.call(http.MethodGet, "list_agents?user_id="+root.id, ""), http.StatusForbidden},
-		"user disconnects the superadmin's":  {user.call(http.MethodPost, "disconnect_agent", `{"grant_id":"`+rootGrant.GrantID+`"}`), http.StatusForbidden},
-		"admin disconnects the superadmin's": {admin.call(http.MethodPost, "disconnect_agent", `{"grant_id":"`+rootGrant.GrantID+`"}`), http.StatusForbidden},
-		"user disconnects nothing":           {user.call(http.MethodPost, "disconnect_agent", `{"grant_id":"zzzzzzzz"}`), http.StatusNotFound},
-		"admin lists nobody's":               {admin.call(http.MethodGet, "list_agents?user_id=zzzzzzzz", ""), http.StatusNotFound},
+		"user lists an admin's":       {user.call(http.MethodGet, "list_agents?user_id="+root.id, ""), http.StatusForbidden},
+		"admin lists another admin's": {admin.call(http.MethodGet, "list_agents?user_id="+root.id, ""), http.StatusOK},
+		"user disconnects an admin's": {user.call(http.MethodPost, "disconnect_agent", `{"grant_id":"`+rootGrant.GrantID+`"}`), http.StatusForbidden},
+		"user disconnects nothing":    {user.call(http.MethodPost, "disconnect_agent", `{"grant_id":"zzzzzzzz"}`), http.StatusNotFound},
+		"admin lists nobody's":        {admin.call(http.MethodGet, "list_agents?user_id=zzzzzzzz", ""), http.StatusNotFound},
 	} {
 		if test.response.Code != test.status {
 			t.Errorf("%s: %d %s", label, test.response.Code, test.response.Body)
@@ -262,7 +261,7 @@ func TestUIAgentsOfOtherUsers(t *testing.T) {
 // and scripts never reach them.
 func TestPersonalTokenIsNoTool(t *testing.T) {
 	server := newRESTServer(t)
-	user := server.webUser(store.RoleSuperadmin, false)
+	user := server.webUser(store.RoleAdmin, false)
 	personal := user.newPersonalToken()
 
 	request := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))

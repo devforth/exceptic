@@ -16,6 +16,7 @@
 	import {
 		connectionState,
 		deleteConfirmation,
+		pauseConnectionConfirmation,
 		deleteConnection,
 		deliveryHealth,
 		shortError,
@@ -61,6 +62,7 @@
 			items.push({
 				label: 'Pause notifications',
 				icon: 'pause',
+				confirm: pauseConnectionConfirmation(connection.name),
 				action: () => setActive(connection, false)
 			});
 		} else if (connection.confirmed) {

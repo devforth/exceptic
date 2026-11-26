@@ -80,7 +80,12 @@ type Store interface {
 	GetProject(ctx context.Context, id int) (Project, error)
 	// CreateProject adds a project; a limited owner (a user id, or "") gets it in the same batch.
 	CreateProject(ctx context.Context, project Project, now time.Time, ownerID string) (int, error)
+	// UpdateProject saves a project's settings; its key changes only by SeedProject and RotateProjectKey.
 	UpdateProject(ctx context.Context, project Project) error
+	// RotateProjectKey gives a project a new DSN key at now; ErrProjectConflict when another project has it.
+	RotateProjectKey(ctx context.Context, id int, key string, now time.Time) error
+	// SetProjectPaused pauses or resumes storing what the project's apps send.
+	SetProjectPaused(ctx context.Context, id int, paused bool) error
 	// DeleteProject deletes a project at once, also from connections and
 	// users' access; PurgeProjects then deletes its data.
 	DeleteProject(ctx context.Context, id int) error
@@ -162,8 +167,10 @@ type Store interface {
 	FindUser(ctx context.Context, email string) (User, error)
 	FindLogin(ctx context.Context, email string) (User, string, error)
 	UserPassword(ctx context.Context, id string) (string, error)
-	Superadmin(ctx context.Context) (User, error)
+	// Admins are the users of the role admin; none before the first is set up.
+	Admins(ctx context.Context) ([]User, error)
 	ListUsers(ctx context.Context) ([]User, error)
+	// UpdateUser and DeleteUser return ErrLastAdmin rather than leave no admin.
 	UpdateUser(ctx context.Context, id string, change UserChange) error
 	UpdateUserName(ctx context.Context, id string, name string) error
 	// UpdateUserEmail changes the login; a name that was the email follows it.

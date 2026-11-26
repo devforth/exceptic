@@ -177,10 +177,19 @@ func Endpoints(projects config.ProjectList, all *services.All) []Endpoint {
 			Transports:  TransportUI,
 		}, handler.getProjectSetup),
 		Define(Endpoint{
+			Name:        "set_project_active",
+			Description: "Pause or resume recording a project: while paused, what its apps send is answered but not stored (errors and logs), and nothing is notified.",
+			Idempotent:  true, Transports: ActsAsUser, Confirm: true,
+		}, handler.setProjectActive),
+		Define(Endpoint{
+			Name:        "reset_project_key",
+			Description: "Give a project a new DSN: apps still using the old one are refused from now on and must be configured with the new one. A project from PROJECTS keeps the new key too; its key there is no longer read.",
+			Transports:  TransportUI, Confirm: true,
+		}, handler.resetProjectKey),
+		Define(Endpoint{
 			Name:        "get_project_defaults",
 			Description: "What the form of a new project starts with: the color it would show and the levels recorded by default.",
 			ReadOnly:    true,
-			Admin:       true,
 			Transports:  TransportUI,
 		}, handler.getProjectDefaults),
 

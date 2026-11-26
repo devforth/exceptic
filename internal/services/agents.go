@@ -96,18 +96,16 @@ func codexCommand(serverName, endpoint string) string {
 func (agents *Agents) Page(ctx context.Context, viewer store.User, ownerID string) (AgentsPage, error) {
 	page := AgentsPage{Owner: viewer, Owners: []store.User{viewer}}
 
-	if viewer.CanAdminister() {
-		users, err := agents.store.ListUsers(ctx)
+	users, err := agents.store.ListUsers(ctx)
 
-		if err != nil {
-			return page, err
-		}
+	if err != nil {
+		return page, err
+	}
 
-		page.Owners = slices.DeleteFunc(users, func(user store.User) bool { return !viewer.CanAccessAgentsOf(user) })
+	page.Owners = slices.DeleteFunc(users, func(user store.User) bool { return !viewer.CanAccessAgentsOf(user) })
 
-		if index := slices.IndexFunc(page.Owners, func(user store.User) bool { return user.ID == ownerID }); index >= 0 {
-			page.Owner = page.Owners[index]
-		}
+	if index := slices.IndexFunc(page.Owners, func(user store.User) bool { return user.ID == ownerID }); index >= 0 {
+		page.Owner = page.Owners[index]
 	}
 
 	if ownerID != "" && page.Owner.ID != ownerID {
@@ -123,8 +121,6 @@ func (agents *Agents) Page(ctx context.Context, viewer store.User, ownerID strin
 
 		return page, agentsRefusal(viewer, owner)
 	}
-
-	var err error
 
 	page.Grants, err = agents.authorization.Grants(ctx, page.Owner.ID)
 
@@ -151,7 +147,10 @@ func (agents *Agents) NewPersonalToken(ctx context.Context, viewer store.User, a
 
 // agentsRefusal: why viewer may not see or disconnect the agents of owner.
 func agentsRefusal(viewer, owner store.User) error {
-	if viewer.CanManage(owner) {
+	switch {
+	case !viewer.SeesUser(owner):
+		return Hidden("user", owner.ID)
+	case viewer.CanManage(owner):
 		return Forbidden(TakeOverProblem)
 	}
 

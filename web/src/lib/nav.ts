@@ -20,7 +20,6 @@ export type NavEntry = {
 	label: string;
 	title?: string;
 	icon: IconName;
-	adminOnly?: boolean;
 	/** The unresolved issues are counted on it. */
 	countsUnresolved?: boolean;
 	route: AppRoute;
@@ -52,10 +51,9 @@ export const navGroups: NavGroup[] = [
 				id: 'notifications',
 				label: 'Notifications',
 				icon: 'notifications',
-				route: '/(app)/notifications',
-				adminOnly: true
+				route: '/(app)/notifications'
 			},
-			{ id: 'users', label: 'Users', icon: 'users', route: '/(app)/users', adminOnly: true },
+			{ id: 'users', label: 'Users', icon: 'users', route: '/(app)/users' },
 			{
 				id: 'mcp',
 				label: 'MCP',

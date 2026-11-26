@@ -63,7 +63,7 @@ func TestToolsFollowTheRole(t *testing.T) {
 
 	for _, name := range []string{"create_user", "delete_issue", "create_connection", "update_project", "get_account"} {
 		if !slices.Contains(admin, name) {
-			t.Errorf("superadmin is not offered %s", name)
+			t.Errorf("an admin is not offered %s", name)
 		}
 	}
 
@@ -78,25 +78,21 @@ func TestToolsFollowTheRole(t *testing.T) {
 	user, userID := server.as(store.RoleUser)
 	names := toolNames(t, user.connect())
 
-	for _, name := range []string{"create_user", "list_users", "delete_issue", "create_connection", "set_connection_active", "update_project", "get_project"} {
+	for _, name := range []string{"delete_issue", "delete_project"} {
 		if slices.Contains(names, name) {
 			t.Errorf("user is offered %s", name)
 		}
 	}
 
-	for _, name := range []string{"get_account", "update_account_name", "list_agents", "update_issue_status"} {
+	for _, name := range []string{"get_account", "update_account_name", "list_agents", "update_issue_status", "create_user", "create_connection", "update_project"} {
 		if !slices.Contains(names, name) {
 			t.Errorf("user is not offered %s", name)
 		}
 	}
 
 	// Calling an admin tool anyway does not run it.
-	if result, err := user.connect().CallTool(context.Background(), &mcp.CallToolParams{Name: "create_user", Arguments: map[string]any{"email": "x@example.com", "role": "admin"}}); err == nil && !result.IsError {
-		t.Fatal("a user's agent created a user")
-	}
-
-	if _, err := server.database.FindUser(context.Background(), "x"); err == nil {
-		t.Fatal("the user was created")
+	if result, err := user.connect().CallTool(context.Background(), &mcp.CallToolParams{Name: "delete_project", Arguments: map[string]any{"project": "backend"}}); err == nil && !result.IsError {
+		t.Fatal("a user's agent deleted a project")
 	}
 
 	// Made an admin: the next request offers the admin tools.
@@ -104,7 +100,7 @@ func TestToolsFollowTheRole(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if names := toolNames(t, user.connect()); !slices.Contains(names, "create_user") {
+	if names := toolNames(t, user.connect()); !slices.Contains(names, "delete_project") {
 		t.Errorf("tools after promotion: %v", names)
 	}
 }
@@ -137,7 +133,7 @@ func TestDestructiveToolsAskForConfirmation(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		sensitive := slices.Contains([]string{"create_user", "update_user", "create_connection", "update_connection", "set_connection_active", "update_project"}, tool.Name)
+		sensitive := slices.Contains([]string{"create_user", "update_user", "create_connection", "update_connection", "set_connection_active", "update_project", "set_project_active"}, tool.Name)
 
 		if sensitive != strings.Contains(tool.Description, "Changes who can access") {
 			t.Errorf("%s: %s", tool.Name, tool.Description)
@@ -224,7 +220,7 @@ func TestManageUsers(t *testing.T) {
 	var me userOutput
 	server.decode("get_account", nil, &me)
 
-	if me.Email != "admin" || me.Role != store.RoleSuperadmin {
+	if me.Email != "admin" || me.Role != store.RoleAdmin {
 		t.Fatalf("account = %+v", me)
 	}
 

@@ -50,6 +50,8 @@ type Factory struct {
 	// TelegramURL replaces the Telegram API (tests point it to a fake
 	// server); empty means https://api.telegram.org.
 	TelegramURL string
+	// PrivateWebhooks lets Slack webhooks be private addresses: tests only.
+	PrivateWebhooks bool
 	// PublicURL and Unsubscribe give every email to a connection a link that stops them.
 	PublicURL   string
 	Unsubscribe Unsubscriber
@@ -168,6 +170,7 @@ func (factory Factory) channel(connection store.Connection) (Channel, error) {
 
 		return Slack{
 			WebhookURL: tokens.WebhookURL, BotToken: tokens.BotToken, Channel: tokens.Channel, AppName: factory.AppName,
+			privateWebhook: factory.PrivateWebhooks,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unknown connection type %q", connection.Type)

@@ -22,7 +22,7 @@ func (handler *handlers) management() []Endpoint {
 	return append([]Endpoint{
 		Define(Endpoint{
 			Name:        "get_account",
-			Description: "Who the agent acts for: email, name, role (superadmin, admin or user), which decides the tools offered, and the projects they see.",
+			Description: "Who the agent acts for: email, name, role (admin or user), which decides the tools offered, and the projects they see.",
 			ReadOnly:    true, Transports: TransportMCP,
 		}, handler.getAccount),
 		Define(Endpoint{
@@ -70,18 +70,18 @@ func (handler *handlers) management() []Endpoint {
 		Define(Endpoint{
 			Name:        "get_project",
 			Description: "Settings of a project: DSN, color (missing when it follows the palette), the color it shows and recorded levels.",
-			ReadOnly:    true, Admin: true, Transports: ActsAsUser,
+			ReadOnly:    true, Transports: ActsAsUser,
 		}, handler.getProject),
 		Define(Endpoint{
 			Name:        "create_project",
 			Description: "Add a project (one per service sending errors); returns its DSN for the app's Sentry SDK.",
-			Admin:       true, Transports: ActsAsUser,
-			Choices: projectChoices,
+			Transports:  ActsAsUser,
+			Choices:     projectChoices,
 		}, handler.createProject),
 		Define(Endpoint{
 			Name:        "update_project",
 			Description: "Change a project's settings; fields not given keep their values, an empty string returns a setting to the default.",
-			Idempotent:  true, Admin: true, Transports: ActsAsUser, Confirm: true,
+			Idempotent:  true, Transports: ActsAsUser, Confirm: true,
 			Choices: projectChoices,
 		}, handler.updateProject),
 		Define(Endpoint{
@@ -93,34 +93,34 @@ func (handler *handlers) management() []Endpoint {
 		Define(Endpoint{
 			Name:        "list_users",
 			Description: "Users of the panel with their role, last login, projects and whether you may change their projects (can_manage, access_editable), and their name, role and password or delete them (can_take_over: only when you have all their projects). With only some projects yourself, you see only those of each user's projects.",
-			ReadOnly:    true, Admin: true, Transports: ActsAsUser,
+			ReadOnly:    true, Transports: ActsAsUser,
 		}, handler.listUsers),
 		Define(Endpoint{
 			Name:        "get_user",
 			Description: "A user with whether the viewer may change them and their projects.",
-			ReadOnly:    true, Admin: true, Transports: TransportUI,
+			ReadOnly:    true, Transports: TransportUI,
 		}, handler.getUser),
 		Define(Endpoint{
 			Name:        "create_user",
 			Description: "Add a user with a role (admin or user) and the projects they see (default: yours). Returns a temporary password, shown only this once, that the user must change at the first login: give it to the user privately.",
-			Admin:       true, Transports: ActsAsUser, Confirm: true,
+			Transports:  ActsAsUser, Confirm: true,
 			Choices: map[string][]string{"role": store.AssignableRoles},
 		}, handler.createUser),
 		Define(Endpoint{
 			Name:        "update_user",
-			Description: "Change another user's email, name, role (admin or user) or projects; fields not given keep their values. projects replaces only the user's projects you see; the others stay. Email, name and role change only when you have all the user's projects (can_take_over). Not the superadmin, not yourself (update_account_name).",
-			Idempotent:  true, Admin: true, Transports: ActsAsUser, Confirm: true,
+			Description: "Change another user's email, name, role (admin or user) or projects; fields not given keep their values. projects replaces only the user's projects you see; the others stay. Email, name and role change only when you have all the user's projects (can_take_over). Not yourself (update_account_name).",
+			Idempotent:  true, Transports: ActsAsUser, Confirm: true,
 			Choices: map[string][]string{"role": store.AssignableRoles},
 		}, handler.updateUser),
 		Define(Endpoint{
 			Name:        "reset_user_password",
 			Description: "Give another user a new temporary password (returned once): their sessions end and their connected agents are disconnected. Only for a user whose projects you all have (can_take_over).",
-			Destructive: true, Admin: true, Transports: ActsAsUser,
+			Destructive: true, Transports: ActsAsUser,
 		}, handler.resetUserPassword),
 		Define(Endpoint{
 			Name:        "delete_user",
 			Description: "Delete another user; their sessions and connected agents end. Their past status changes keep their name. Only for a user whose projects you all have (can_take_over).",
-			Destructive: true, Admin: true, Transports: ActsAsUser,
+			Destructive: true, Transports: ActsAsUser,
 		}, handler.deleteUser),
 	}, handler.notificationEndpoints()...)
 }
@@ -379,6 +379,11 @@ type projectSetup struct {
 	// Received: the project has stored an error or a log.
 	Received  bool          `json:"received"`
 	Platforms []sdkPlatform `json:"platforms"`
+	// Paused: what its apps send is answered but not stored.
+	Paused bool `json:"paused"`
+	// KeyChangedAt is when the DSN was last reset; null before the first reset (CreatedAt then).
+	KeyChangedAt *time.Time `json:"key_changed_at"`
+	CreatedAt    time.Time  `json:"created_at"`
 }
 
 type sdkPlatform struct {
@@ -403,10 +408,17 @@ func (handler *handlers) getProjectSetup(ctx context.Context, call Call, input p
 		return projectSetup{}, err
 	}
 
+	stored, err := handler.services.Projects.Get(ctx, call.Access(), input.Project)
+
+	if err != nil {
+		return projectSetup{}, err
+	}
+
 	project, _ := handler.projects.List().ByID(input.Project)
 	setup := projectSetup{
 		ID: project.ID, Name: project.Name, DSN: project.DSN(call.Address),
 		Connected: contact.Connected, ConnectedAt: contact.ConnectedAt, Received: contact.Received, Platforms: []sdkPlatform{},
+		KeyChangedAt: stored.KeyChangedAt, CreatedAt: stored.CreatedAt, Paused: stored.Paused,
 	}
 
 	for _, sdk := range services.SDKSetups(setup.DSN) {
@@ -536,7 +548,7 @@ func (handler *handlers) deleteProject(ctx context.Context, call Call, input pro
 // Users.
 
 func (handler *handlers) listUsers(ctx context.Context, call Call, _ noInput) (Page[managedUser], error) {
-	users, err := handler.services.Users.List(ctx)
+	users, err := handler.services.Users.List(ctx, call.Viewer)
 	output := Page[managedUser]{Items: []managedUser{}}
 
 	for _, user := range users {
@@ -547,7 +559,7 @@ func (handler *handlers) listUsers(ctx context.Context, call Call, _ noInput) (P
 }
 
 func (handler *handlers) getUser(ctx context.Context, call Call, input userInput) (managedUser, error) {
-	user, err := handler.services.Users.Get(ctx, input.UserID)
+	user, err := handler.services.Users.Visible(ctx, call.Viewer, input.UserID)
 
 	return handler.managedView(call.Viewer, user), err
 }
@@ -639,7 +651,7 @@ type updateUserInput struct {
 }
 
 func (handler *handlers) updateUser(ctx context.Context, call Call, input updateUserInput) (userOutput, error) {
-	user, err := handler.services.Users.Get(ctx, input.UserID)
+	user, err := handler.services.Users.Visible(ctx, call.Viewer, input.UserID)
 
 	if err != nil {
 		return userOutput{}, err
@@ -696,4 +708,35 @@ func (handler *handlers) deleteUser(ctx context.Context, call Call, input userIn
 	}
 
 	return doneOutput{Done: "deleted user " + input.UserID}, nil
+}
+
+// resetProjectKey gives the project a new DSN and answers its setup with it.
+func (handler *handlers) resetProjectKey(ctx context.Context, call Call, input projectIDInput) (projectSetup, error) {
+	if err := handler.services.Projects.ResetKey(ctx, call.Access(), input.Project); err != nil {
+		return projectSetup{}, err
+	}
+
+	return handler.getProjectSetup(ctx, call, input)
+}
+
+type setProjectActiveInput struct {
+	Project string `json:"project" jsonschema:"Project name or ID."`
+	Active  bool   `json:"active" jsonschema:"false pauses recording, true resumes it."`
+}
+
+// setProjectActive pauses or resumes recording a project.
+func (handler *handlers) setProjectActive(ctx context.Context, call Call, input setProjectActiveInput) (projectView, error) {
+	project, err := handler.services.Projects.Find(call.Access(), input.Project)
+
+	if err != nil {
+		return projectView{}, err
+	}
+
+	if err := handler.services.Projects.SetPaused(ctx, call.Access(), project.ID, !input.Active); err != nil {
+		return projectView{}, err
+	}
+
+	project, _ = handler.projects.List().ByID(project.ID)
+
+	return handler.projectView(call, project), nil
 }

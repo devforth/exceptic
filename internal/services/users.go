@@ -32,19 +32,19 @@ func NewUsers(logger *slog.Logger, database store.Store) *Users {
 	return &Users{logger: logger, store: database, now: time.Now}
 }
 
-// EnsureSuperadmin creates the superadmin from ADMIN_EMAIL (the login as
-// given, an email or not) and ADMIN_PASSWORD when there is none: once, at
-// the first start. Later the variables are not used.
-func (users *Users) EnsureSuperadmin(ctx context.Context, email, password string) error {
-	_, err := users.store.Superadmin(ctx)
+// EnsureAdmin creates an admin from ADMIN_EMAIL (the login as given, an
+// email or not) and ADMIN_PASSWORD while there is none. Later the variables
+// are not used.
+func (users *Users) EnsureAdmin(ctx context.Context, email, password string) error {
+	admins, err := users.store.Admins(ctx)
 
 	switch {
-	case err == nil:
-		return nil
-	case !errors.Is(err, store.ErrNotFound):
+	case err != nil:
 		return err
+	case len(admins) > 0:
+		return nil
 	case password == "":
-		users.logger.Warn("no superadmin yet: set ADMIN_PASSWORD (and ADMIN_EMAIL) to create one, the UI is closed until then")
+		users.logger.Warn("no admin yet: set ADMIN_PASSWORD (and ADMIN_EMAIL) to create one, the UI is closed until then")
 
 		return nil
 	}
@@ -55,23 +55,37 @@ func (users *Users) EnsureSuperadmin(ctx context.Context, email, password string
 		return err
 	}
 
-	_, err = users.store.CreateUser(ctx, store.User{Email: email, Name: email, Role: store.RoleSuperadmin, CreatedAt: users.now()}, hash)
+	_, err = users.store.CreateUser(ctx, store.User{Email: email, Name: store.DefaultName(email), Role: store.RoleAdmin, CreatedAt: users.now()}, hash)
 
 	if errors.Is(err, store.ErrEmailTaken) {
-		return fmt.Errorf("ADMIN_EMAIL %q belongs to an existing user: choose another email for the superadmin", email)
+		return fmt.Errorf("ADMIN_EMAIL %q belongs to an existing user: choose another email for the admin", email)
 	}
 
 	if err != nil {
 		return err
 	}
 
-	users.logger.Info("superadmin created", "email", email)
+	users.logger.Info("admin created", "email", email)
 
 	return nil
 }
 
-func (users *Users) List(ctx context.Context) ([]store.User, error) {
-	return users.store.ListUsers(ctx)
+// List is the users viewer sees (store.User.SeesUser).
+func (users *Users) List(ctx context.Context, viewer store.User) ([]store.User, error) {
+	all, err := users.store.ListUsers(ctx)
+
+	return slices.DeleteFunc(all, func(user store.User) bool { return !viewer.SeesUser(user) }), err
+}
+
+// Visible is the user id as viewer sees them: one outside their list is hidden.
+func (users *Users) Visible(ctx context.Context, viewer store.User, id string) (store.User, error) {
+	target, err := users.Get(ctx, id)
+
+	if err == nil && !viewer.SeesUser(target) {
+		err = Hidden("user", id)
+	}
+
+	return target, err
 }
 
 // Get is the user id; an id of another shape is not found without a lookup.
@@ -85,10 +99,6 @@ func (users *Users) Get(ctx context.Context, id string) (store.User, error) {
 
 // Create adds a user with a temporary password, returned to be shown once.
 func (users *Users) Create(ctx context.Context, viewer store.User, input UserInput) (string, string, Problems, error) {
-	if !viewer.CanAdminister() {
-		return "", "", nil, ErrForbidden
-	}
-
 	email, emailOK := config.ParseEmail(input.Email)
 	access := viewer.ProjectAccess()
 
@@ -97,7 +107,7 @@ func (users *Users) Create(ctx context.Context, viewer store.User, input UserInp
 	}
 
 	problems := checkUserInput(input)
-	users.checkAccess(problems, access)
+	users.checkAccess(problems, input.Role, access)
 
 	if !emailOK {
 		problems["email"] = enterEmail
@@ -175,7 +185,7 @@ func (users *Users) Update(ctx context.Context, viewer store.User, id string, in
 	change := store.UserChange{Email: email, Name: store.NameAfterEmail(strings.TrimSpace(input.Name), target.Email, email), Role: input.Role, By: viewer.ProjectAccess(), Access: input.Access}
 
 	if input.Access != nil {
-		users.checkAccess(problems, *input.Access)
+		users.checkAccess(problems, "", *input.Access) // empty is checked merged, in the batch
 	}
 
 	forbidden := Problems{}
@@ -198,6 +208,10 @@ func (users *Users) Update(ctx context.Context, viewer store.User, id string, in
 		return nil, emailTaken()
 	case errors.Is(err, store.ErrAccessLocked):
 		return nil, Refusal{Kind: ErrForbidden, Problems: Problems{"projects": accessLockedProblem}}
+	case errors.Is(err, store.ErrNoProjects):
+		return Problems{"projects": noProjectsProblem}, nil
+	case errors.Is(err, store.ErrLastAdmin):
+		return nil, Refusal{Kind: ErrForbidden, Problems: Problems{"role": lastAdminProblem}}
 	case errors.Is(err, store.ErrTakeOverLocked):
 		// The user gained a project meanwhile: say it at the fields changed.
 		problems = Problems{"role": TakeOverProblem}
@@ -266,8 +280,18 @@ func (users *Users) AccessEditable(viewer, target store.User) (bool, string) {
 const accessLockedProblem = "Only someone with access to all projects can give or change access to all projects."
 
 // checkAccess adds a problem when access names a project that does not exist.
-func (users *Users) checkAccess(problems Problems, access store.Access) {
-	if users.projects == nil || access.All() {
+func (users *Users) checkAccess(problems Problems, role string, access store.Access) {
+	if access.All() {
+		return
+	}
+
+	if role == store.RoleUser && len(access.ProjectIDs) == 0 {
+		problems["projects"] = noProjectsProblem
+
+		return
+	}
+
+	if users.projects == nil {
 		return
 	}
 
@@ -279,6 +303,9 @@ func (users *Users) checkAccess(problems Problems, access store.Access) {
 		}
 	}
 }
+
+// noProjectsProblem: a user without projects would see nothing.
+const noProjectsProblem = "Choose at least one project."
 
 // ResetPassword gives a user a temporary password (returned to be shown
 // once); their sessions end and their agents are disconnected.
@@ -309,8 +336,17 @@ func (users *Users) Delete(ctx context.Context, viewer store.User, id string) er
 		return Forbidden(TakeOverProblem)
 	}
 
-	return users.store.DeleteUser(ctx, id)
+	err = users.store.DeleteUser(ctx, id)
+
+	if errors.Is(err, store.ErrLastAdmin) {
+		return Forbidden(lastAdminProblem)
+	}
+
+	return err
 }
+
+// lastAdminProblem: without an admin nobody could manage the server.
+const lastAdminProblem = "This is the last admin: make another user an admin first."
 
 // UpdateName changes the viewer's own name.
 func (users *Users) UpdateName(ctx context.Context, viewer store.User, name string) (Problems, error) {
@@ -334,7 +370,7 @@ func (users *Users) SetTheme(ctx context.Context, viewer store.User, theme strin
 }
 
 // SetPasswordByOperator is the reset-password command: run with the server
-// stopped by whoever runs it, usually the superadmin who forgot the password.
+// stopped by whoever runs it, usually an admin who forgot the password.
 // Sessions end, agents stay; the new password is temporary.
 func (users *Users) SetPasswordByOperator(ctx context.Context, email string) (string, error) {
 	user, err := users.store.FindUser(ctx, email)
@@ -355,7 +391,7 @@ func (users *Users) setTemporaryPassword(ctx context.Context, id string, revokeA
 // manageable returns user id when the viewer may change them (ErrForbidden
 // otherwise).
 func (users *Users) manageable(ctx context.Context, viewer store.User, id string) (store.User, error) {
-	target, err := users.Get(ctx, id)
+	target, err := users.Visible(ctx, viewer, id)
 
 	switch {
 	case err != nil:
@@ -472,7 +508,7 @@ func (users *Users) ChangeOwnEmail(ctx context.Context, viewer store.User, curre
 
 // nameOr is the display name as saved: the email when none is given.
 func nameOr(name, email string) string {
-	return cmp.Or(strings.TrimSpace(name), email)
+	return cmp.Or(strings.TrimSpace(name), store.DefaultName(email))
 }
 
 // setPassword stores a new password hash with what the change ends. It

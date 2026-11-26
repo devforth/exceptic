@@ -23,7 +23,7 @@ func testFactory(t *testing.T) Factory {
 		t.Fatal(err)
 	}
 
-	return Factory{Box: box}
+	return Factory{Box: box, PrivateWebhooks: true}
 }
 
 func TestChatTokensAreStoredEncrypted(t *testing.T) {

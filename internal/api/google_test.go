@@ -335,10 +335,10 @@ func TestSignInActivity(t *testing.T) {
 		t.Errorf("ending one's current session: %d", response.Code)
 	}
 
-	adminID := server.superadminID(t)
+	adminID := server.adminID(t)
 
 	if _, code := activityOf(user, "?user_id="+adminID); code != http.StatusForbidden {
-		t.Errorf("a user reading the superadmin's activity: %d", code)
+		t.Errorf("a user reading an admin's activity: %d", code)
 	}
 
 	if response := admin.call(http.MethodPost, "end_session", map[string]string{"user_id": userID, "session_id": own.Sessions[0].ID}); response.Code != http.StatusOK {
@@ -350,15 +350,15 @@ func TestSignInActivity(t *testing.T) {
 	}
 }
 
-// superadminID is the id of the superadmin the server was started with.
-func (server *restServer) superadminID(t *testing.T) string {
+// adminID is the id of the admin the server was started with.
+func (server *restServer) adminID(t *testing.T) string {
 	t.Helper()
 
-	user, err := server.database.Superadmin(t.Context())
+	admins, err := server.database.Admins(t.Context())
 
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || len(admins) == 0 {
+		t.Fatal(err, admins)
 	}
 
-	return user.ID
+	return admins[0].ID
 }

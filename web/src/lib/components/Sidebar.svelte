@@ -41,7 +41,7 @@ theme (Dark mode), the account and Log out below a line. It collapses to icons (
 	const groups = $derived(
 		navGroups.map((group) => ({
 			...group,
-			entries: group.entries.filter((entry) => !entry.adminOnly || session.can_administer)
+			entries: group.entries
 		}))
 	);
 

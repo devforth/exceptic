@@ -87,7 +87,7 @@ type PersonalToken struct {
 // wrongLogin is the answer to a wrong password and to an unknown email alike.
 const wrongLogin = "Wrong email or password."
 
-// loginDisabled is why nobody can log in to a server without a superadmin.
+// loginDisabled is why nobody can log in to a server without an admin.
 const loginDisabled = "The web UI is disabled: set ADMIN_PASSWORD to enable it."
 
 // LoginRequests are the handlers of the login's plain requests (login_state,
