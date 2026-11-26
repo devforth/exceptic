@@ -3,7 +3,8 @@
 #
 # Checks that main is clean, pushed and green on CI, that the image keeps its size, then builds
 # devforth/exceptic for amd64 and arm64 and pushes :1.2.3, :1.2 and :latest (a pre-release only
-# its own tag) with the docker login of this machine, and tags the commit v1.2.3 on GitHub.
+# its own tag) with the docker login of this machine, tags the commit v1.2.3 and makes its GitHub
+# release (the commits since the previous tag).
 # With DOCKERHUB_USERNAME and DOCKERHUB_TOKEN (a token with Read, Write & Delete) in the
 # environment or .env.local, a release also replaces the repository's description on Docker Hub
 # with docs/dockerhub.md.
@@ -54,6 +55,25 @@ docker buildx build --builder exceptic-release --platform linux/amd64,linux/arm6
 git tag -a "$tag" -m "$tag"
 git push --quiet origin "$tag"
 echo "published $image:$version and tagged $tag"
+
+# The GitHub release: the commits since the previous tag, without the task reference.
+previous=$(git describe --tags --abbrev=0 "$tag^" 2>/dev/null || true)
+notes=$(mktemp)
+
+if [ -n "$previous" ]; then
+	git log --format='- %s' "$previous..$tag" | sed 's/ DevFo-OSS\/17$//' >"$notes"
+else
+	echo "The first release. Run it with Docker: https://github.com/devforth/exceptic/blob/main/docs/deployment.md" >"$notes"
+fi
+
+printf '\nImage: `docker pull %s:%s`\n' "$image" "$version" >>"$notes"
+prerelease=""
+
+case $version in *-*) prerelease="--prerelease" ;; esac
+
+# shellcheck disable=SC2086 # empty or one flag
+gh release create "$tag" --title "$tag" --notes-file "$notes" $prerelease
+rm -f "$notes"
 
 case $version in *-*) exit 0 ;; esac
 
