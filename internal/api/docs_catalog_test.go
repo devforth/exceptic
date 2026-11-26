@@ -11,16 +11,15 @@ import (
 	"time"
 )
 
-// The tables of the tools (docs/mcp.md) and the REST endpoints (docs/api.md)
-// and the list of the agents' skills are generated from the catalog and the
+// The table of the REST endpoints and the MCP tools (docs/api.md) and the
+// list of the agents' skills (docs/mcp.md) are generated from the catalog and the
 // skills' front matter, the one source of what agents and readers are told:
 // a stale document fails, UPDATE_API_TYPES=1 (make api-types) rewrites it.
 func TestDocsCatalog(t *testing.T) {
 	endpoints := append(Endpoints(nil, nil), fetchSkill)
 	blocks := []struct{ file, name, content string }{
-		{"../../docs/mcp.md", "tools", endpointTable(endpoints, TransportMCP)},
 		{"../../docs/mcp.md", "skills", skillList()},
-		{"../../docs/api.md", "endpoints", endpointTable(endpoints, TransportREST)},
+		{"../../docs/api.md", "endpoints", endpointTable(endpoints)},
 	}
 
 	for _, block := range blocks {
@@ -64,43 +63,49 @@ func replaceBlock(text, name, content string) (string, error) {
 	return text[:start+len(begin)] + content + text[finish:], nil
 }
 
-// endpointTable is a table of the endpoints a transport serves, in the catalog's order.
-func endpointTable(endpoints []Endpoint, transport Transport) string {
+// endpointTable is one table of the endpoints of the REST API and the MCP
+// tools, in the catalog's order: who may call them as a user (an agent; the
+// REST token runs every REST endpoint) and through which transport.
+func endpointTable(endpoints []Endpoint) string {
 	var table strings.Builder
 
-	if transport == TransportMCP {
-		table.WriteString("| Tool | Who | Input (required first) | Output | |\n|---|---|---|---|---|\n")
-	} else {
-		table.WriteString("| Endpoint | Input (required first) | Output | |\n|---|---|---|---|\n")
+	table.WriteString("| Endpoint | Who | REST | MCP | Input (required first) | Output | |\n|---|---|---|---|---|---|---|\n")
+
+	mark := func(served bool) string {
+		if served {
+			return "✓"
+		}
+
+		return ""
 	}
 
 	for _, endpoint := range endpoints {
-		if !endpoint.Serves(transport) {
+		rest, mcp := endpoint.Serves(TransportREST), endpoint.Serves(TransportMCP)
+
+		if !rest && !mcp {
 			continue
 		}
 
-		inputs, output := inputNames(endpoint), outputFields(endpoint.output, 0)
-		description := strings.ReplaceAll(endpoint.Description, "|", "\\|")
+		name := "`" + endpoint.Name + "`"
 
-		if transport == TransportMCP {
-			who := "all"
+		if rest {
+			method := "POST"
 
-			if endpoint.Admin {
-				who = "admin"
+			if endpoint.ReadOnly {
+				method = "GET"
 			}
 
-			fmt.Fprintf(&table, "| `%s` | %s | %s | %s | %s |\n", endpoint.Name, who, inputs, output, description)
-
-			continue
+			name = "`" + method + " " + endpoint.Name + "`"
 		}
 
-		method := "POST"
+		who := "all"
 
-		if endpoint.ReadOnly {
-			method = "GET"
+		if endpoint.Admin {
+			who = "admin"
 		}
 
-		fmt.Fprintf(&table, "| `%s %s` | %s | %s | %s |\n", method, endpoint.Name, inputs, output, description)
+		fmt.Fprintf(&table, "| %s | %s | %s | %s | %s | %s | %s |\n", name, who, mark(rest), mark(mcp),
+			inputNames(endpoint), outputFields(endpoint.output, 0), strings.ReplaceAll(endpoint.Description, "|", "\\|"))
 	}
 
 	return table.String()
