@@ -161,8 +161,10 @@ type Store interface {
 
 	// Users.
 
-	// CreateUser, UpdateUser and UpdateUserEmail return ErrEmailTaken for an email taken in any case.
+	// CreateUser returns ErrEmailTaken for an email taken in any case.
 	CreateUser(ctx context.Context, user User, passwordHash string) (string, error)
+	// CreateFirstAdmin creates the first admin; ErrAdminExists once there is one.
+	CreateFirstAdmin(ctx context.Context, user User, passwordHash string) (string, error)
 	GetUser(ctx context.Context, id string) (User, error)
 	FindUser(ctx context.Context, email string) (User, error)
 	FindLogin(ctx context.Context, email string) (User, string, error)
@@ -173,8 +175,6 @@ type Store interface {
 	// UpdateUser and DeleteUser return ErrLastAdmin rather than leave no admin.
 	UpdateUser(ctx context.Context, id string, change UserChange) error
 	UpdateUserName(ctx context.Context, id string, name string) error
-	// UpdateUserEmail changes the login; a name that was the email follows it.
-	UpdateUserEmail(ctx context.Context, id string, email string) error
 	UpdateUserTheme(ctx context.Context, id string, theme string) error
 	// SetPassword ends the user's other sessions.
 	SetPassword(ctx context.Context, id string, change PasswordChange) error

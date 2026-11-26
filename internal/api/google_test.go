@@ -222,21 +222,6 @@ func TestGoogleSignIn(t *testing.T) {
 
 		return false
 	})
-
-	// A changed email drops the link: the next sign-in links by the new email only.
-	user, err := server.database.FindUser(t.Context(), "dev@example.com")
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := server.database.UpdateUserEmail(t.Context(), user.ID, "ops@example.com"); err != nil {
-		t.Fatal(err)
-	}
-
-	if next := server.browser().signInWithGoogle(google, verified, nil); next != "/login?error=google_no_user" {
-		t.Errorf("after the email changed: %q", next)
-	}
 }
 
 // An unlink disconnects the Google sessions and keeps the account from

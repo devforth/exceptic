@@ -21,7 +21,7 @@ Image tags: `latest` (newest release), `X.Y` (newest patch of a minor version), 
 
    Behind a reverse proxy, also publish the port on localhost and set `TRUSTED_PROXIES`: [HTTPS and a reverse proxy](#https-and-a-reverse-proxy).
 
-3. `docker compose up -d`, then open the UI and log in as `admin`.
+3. `docker compose up -d`, then open the UI and log in as `admin`. While there is no admin, this login with `ADMIN_EMAIL` and `ADMIN_PASSWORD` opens a form for your email and a password of your own, which creates the first admin and logs you in; from then on the two variables no longer log in.
 4. Add projects on the **Projects** page (or with `PROJECTS`) and give their DSNs to your apps: [Connecting apps](sdk.md).
 
 The container runs as an unprivileged user (uid 65534) without a shell. A bind-mounted data directory must be writable by it: `sudo chown 65534:65534 ./data`. A named volume, as in the example, needs nothing.
@@ -106,6 +106,14 @@ Events and logs are kept until the database nears [its size limit](configuration
 
 ## Resources
 
+| | Minimum | Recommended |
+|---|---|---|
+| CPU | 0.5 core | 1–2 cores |
+| Memory | 256 MB | 512 MB – 1 GB |
+| Disk | 1.3 × `MAX_DATABASE_SIZE`, an SSD | the same |
+
+Measured in Docker with these limits on an NVMe disk, with the official `@sentry/node` SDK sending errors with logs: memory stays about 200 MB at any limit (the default `GOMEMLIMIT`), 8 MB when idle. The CPU sets only the speed: about 900 small errors a second are stored on half a core, 1,750 on one; a burst over that waits in the queue and is stored within a minute or two after it. The cleanup of a database 25% over its limit took 90 s on half a core and 16 s on four, during which new envelopes were answered `429` for the moments its compaction holds the writes.
+
 Measured on a laptop with 20 threads and an NVMe disk, with the peak of 50 projects each sending 1,000 errors and 2,200 log lines at once:
 
 | | |
@@ -153,9 +161,9 @@ Users the admins added may also sign in with Google; nobody signs up that way.
 1. In Google Cloud, APIs & Services › Credentials, create an OAuth client ID of type Web application, with the authorized redirect URI `<PUBLIC_URL>/auth/google/callback` (for example `https://errors.example.com/auth/google/callback`).
 2. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `PUBLIC_URL`, and restart. The login page shows Sign in with Google.
 
-The first Google sign-in links the Google account to the user with its email, if Google has verified it; later sign-ins find the user by that account, whatever its email. An admin changing the user's email unlinks it and disconnects the sessions opened through it; the user or an admin can also unlink it on the account or user page, which disconnects those sessions too and keeps that user from linking a Google account by email again until they sign in with the password once. A new user still replaces the temporary password the admin gave them.
+The first Google sign-in links the Google account to the user with its email, if Google has verified it; later sign-ins find the user by that account, whatever its email. The user or an admin can unlink it on the account or user page, which disconnects the sessions opened through Google and keeps that user from linking a Google account by email again until they sign in with the password once. A new user still replaces the temporary password the admin gave them.
 
-Any Google account whose email Google has verified links this way: Gmail, Google Workspace (`you@company.com`) and a Google account made for another address alike. For an address Google does not host, it checked that the owner received mail there when the account was made, not that they still do: someone who left a company keeps a Google account made with their work email. Add a user only with an address that is theirs now, and unlink Google when an address changes hands.
+Any Google account whose email Google has verified links this way: Gmail, Google Workspace (`you@company.com`) and a Google account made for another address alike. For an address Google does not host, it checked that the owner received mail there when the account was made, not that they still do: someone who left a company keeps a Google account made with their work email. Add a user only with an address that is theirs now, and when an address changes hands, delete the user and add a new one.
 
 ## Forgotten password
 

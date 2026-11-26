@@ -1,6 +1,6 @@
 <!--
-The viewer's own name, under Profile the email and under Security the password, each changed in a
-dialog.
+The viewer's own name and, under Security, the password (in a dialog) and the sessions. The email
+is set once, when the user is added.
 With a temporary password it is the only page open, and only the password form shows.
 -->
 <script lang="ts">
@@ -37,28 +37,9 @@ With a temporary password it is the only page open, and only the password form s
 		if (await nameForm.submit(() => post('update_account_name', { name }))) {
 			toast.show('Name saved.');
 			await invalidate('app:session');
-			// An empty name shows the email once saved.
+			// An empty name shows the email before @ once saved.
 			nameForm.reset();
 		}
-	}
-
-	let emailOpen = $state(false);
-	let email = $state('');
-	let emailPassword = $state('');
-	// Sends nothing while the email is the saved one.
-	const emailForm = new FormState(() => ({ email: email.trim() }));
-
-	function openEmail() {
-		email = user.email;
-		emailPassword = '';
-		emailForm.reset();
-		emailOpen = true;
-	}
-
-	async function changeEmail() {
-		await send('change_email', { email, current_password: emailPassword });
-		toast.show('Email changed: log in with it from now on.');
-		await invalidate('app:session');
 	}
 
 	let activityOpen = $state(false);
@@ -157,7 +138,7 @@ With a temporary password it is the only page open, and only the password form s
 				label="Name"
 				name="name"
 				bind:value={name}
-				note="shown in the menu and in issue histories; empty: your email"
+				note="shown in the menu and in issue histories; empty: your email before @"
 				maxlength={limits.displayName}
 				autocomplete="name"
 				error={nameForm.fields.name}
@@ -165,10 +146,6 @@ With a temporary password it is the only page open, and only the password form s
 			<FormActions form={nameForm}>Save name</FormActions>
 		</form>
 	</Card>
-
-	<ActionList title="Profile">
-		<ActionRow icon="email" label="Change email" description={user.email} onclick={openEmail} />
-	</ActionList>
 
 	<ActionList title="Security">
 		<ActionRow icon="password" label="Change password" onclick={openPassword} />
@@ -179,36 +156,6 @@ With a temporary password it is the only page open, and only the password form s
 			onclick={() => (activityOpen = true)}
 		/>
 	</ActionList>
-
-	<FormDialog
-		title="Change email"
-		bind:open={emailOpen}
-		form={emailForm}
-		save={changeEmail}
-		submitLabel="Change email"
-	>
-		<!-- A login from before emails is shown as it is: the server checks a changed one. -->
-		<TextField
-			label="Email"
-			name="email"
-			type="text"
-			bind:value={email}
-			note="you log in with it"
-			maxlength={limits.email}
-			autocomplete="email"
-			required
-			error={emailForm.fields.email}
-		/>
-		<TextField
-			label="Current password"
-			name="current_password"
-			type="password"
-			bind:value={emailPassword}
-			autocomplete="current-password"
-			required
-			error={emailForm.fields.current_password}
-		/>
-	</FormDialog>
 
 	<FormDialog
 		title="Change password"

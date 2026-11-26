@@ -27,7 +27,7 @@ docker run -d --name exceptic -p 8000:8000 -v exceptic-data:/data \
   devforth/exceptic:latest
 ```
 
-Open http://localhost:8000 and log in as `admin` with that password. On the **Projects** page add a project and copy its DSN.
+Open http://localhost:8000 and log in as `admin` with that password, then set up the first admin with your email and a password of your own. On the **Projects** page add a project and copy its DSN.
 <!-- /docker-run -->
 
 For a real deployment use [compose.yml](compose.yml) with an `.env` file and put the server behind HTTPS: see [Deployment](docs/deployment.md).
@@ -72,7 +72,7 @@ Or copy the folder to `~/.claude/skills/` (Claude Code) or `~/.agents/skills/` (
 Needs Go (see `go.mod`), [golangci-lint](https://golangci-lint.run) v2, and for the web app (`web/`, SvelteKit) Node 24 with pnpm (`corepack enable`).
 
 ```sh
-cp .env.example .env.local   # works as is: log in as admin / admin-password
+cp .env.example .env.local   # works as is: log in as admin / admin-password to set up the first admin
 make run                     # http://localhost:8000
 make dev                     # server and web app with hot reload, both at http://localhost:8000 (Ctrl+C stops both)
 make test lint web-check     # what CI runs

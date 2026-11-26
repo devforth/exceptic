@@ -126,7 +126,7 @@ func TestCatalogNeverChangesCredentials(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		for _, method := range []string{"ChangeOwnPassword", "NewPersonalToken", "Authenticate"} {
+		for _, method := range []string{"ChangeOwnPassword", "NewPersonalToken", "Authenticate", "SetupAdmin"} {
 			if strings.Contains(string(source), method) {
 				t.Errorf("%s uses %s", file, method)
 			}

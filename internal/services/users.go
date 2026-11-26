@@ -32,43 +32,65 @@ func NewUsers(logger *slog.Logger, database store.Store) *Users {
 	return &Users{logger: logger, store: database, now: time.Now}
 }
 
-// EnsureAdmin creates an admin from ADMIN_EMAIL (the login as given, an
-// email or not) and ADMIN_PASSWORD while there is none. Later the variables
-// are not used.
-func (users *Users) EnsureAdmin(ctx context.Context, email, password string) error {
+// LogSetup says at start, while there is no admin, how to set one up.
+func (users *Users) LogSetup(ctx context.Context, adminPassword string) error {
 	admins, err := users.store.Admins(ctx)
 
 	switch {
 	case err != nil:
 		return err
 	case len(admins) > 0:
-		return nil
-	case password == "":
-		users.logger.Warn("no admin yet: set ADMIN_PASSWORD (and ADMIN_EMAIL) to create one, the UI is closed until then")
+	case adminPassword == "":
+		users.logger.Warn("no admin yet: set ADMIN_PASSWORD (and ADMIN_EMAIL), the UI is closed until then")
+	default:
+		users.logger.Info("no admin yet: log in with ADMIN_EMAIL and ADMIN_PASSWORD to set one up")
+	}
 
-		return nil
+	return nil
+}
+
+// SetupAdmin creates the first admin from the setup form, which only the
+// login of ADMIN_EMAIL and ADMIN_PASSWORD opens: an email and a password
+// other than ADMIN_PASSWORD. Forbidden once an admin exists.
+func (users *Users) SetupAdmin(ctx context.Context, entered, password, confirm, adminPassword string) (store.User, Problems, error) {
+	problems := Problems{}
+	email, emailOK := config.ParseEmail(entered)
+
+	if !emailOK {
+		problems["email"] = enterEmail
+	}
+
+	checkNewPassword(problems, adminPassword, password, confirm, "ADMIN_PASSWORD")
+
+	if len(problems) > 0 {
+		return store.User{}, problems, nil
 	}
 
 	hash, err := hashPassword(password)
 
 	if err != nil {
-		return err
+		return store.User{}, nil, err
 	}
 
-	_, err = users.store.CreateUser(ctx, store.User{Email: email, Name: store.DefaultName(email), Role: store.RoleAdmin, CreatedAt: users.now()}, hash)
+	user := store.User{Email: email, Name: store.DefaultName(email), Role: store.RoleAdmin, CreatedAt: users.now()}
+	user.ID, err = users.store.CreateFirstAdmin(ctx, user, hash)
 
-	if errors.Is(err, store.ErrEmailTaken) {
-		return fmt.Errorf("ADMIN_EMAIL %q belongs to an existing user: choose another email for the admin", email)
+	switch {
+	case errors.Is(err, store.ErrEmailTaken):
+		return store.User{}, Problems{"email": emailTakenProblem}, nil
+	case errors.Is(err, store.ErrAdminExists):
+		return store.User{}, nil, Forbidden(AdminExistsProblem)
+	case err != nil:
+		return store.User{}, nil, err
 	}
 
-	if err != nil {
-		return err
-	}
+	users.logger.Info("admin set up", "email", email)
 
-	users.logger.Info("admin created", "email", email)
-
-	return nil
+	return user, nil, nil
 }
+
+// AdminExistsProblem refuses the setup form once an admin exists.
+const AdminExistsProblem = "An admin exists already: log in."
 
 // List is the users viewer sees (store.User.SeesUser).
 func (users *Users) List(ctx context.Context, viewer store.User) ([]store.User, error) {
@@ -153,21 +175,6 @@ const emailTakenProblem = "This email is taken."
 
 // newEmail is the email a form sets: the stored one when unchanged (in any
 // case; a login stored before emails stays), else a valid email.
-func newEmail(problems Problems, stored, entered string) string {
-	entered = strings.TrimSpace(entered)
-
-	if strings.EqualFold(entered, stored) {
-		return stored
-	}
-
-	email, ok := config.ParseEmail(entered)
-
-	if !ok {
-		problems["email"] = enterEmail
-	}
-
-	return email
-}
 
 // Update changes a user's email, name, role and access. The access chosen
 // replaces only the part the viewer sees (store.Access.Replace): the
@@ -180,9 +187,9 @@ func (users *Users) Update(ctx context.Context, viewer store.User, id string, in
 		return nil, err
 	}
 
+	// The email is set once, when the user is added.
 	problems := checkUserInput(input)
-	email := newEmail(problems, target.Email, input.Email)
-	change := store.UserChange{Email: email, Name: store.NameAfterEmail(strings.TrimSpace(input.Name), target.Email, email), Role: input.Role, By: viewer.ProjectAccess(), Access: input.Access}
+	change := store.UserChange{Name: store.NameAfterEmail(strings.TrimSpace(input.Name), target.Email, target.Email), Role: input.Role, By: viewer.ProjectAccess(), Access: input.Access}
 
 	if input.Access != nil {
 		users.checkAccess(problems, "", *input.Access) // empty is checked merged, in the batch
@@ -245,10 +252,6 @@ func checkRole(problems Problems, viewer store.User, role string) {
 // takeOverProblems adds a problem at the email, the name and the role when
 // change changes them.
 func takeOverProblems(problems Problems, target store.User, change store.UserChange) {
-	if change.Email != target.Email {
-		problems["email"] = TakeOverProblem
-	}
-
 	if change.Name != target.DisplayName() {
 		problems["name"] = TakeOverProblem
 	}
@@ -461,49 +464,13 @@ func (users *Users) ChangeOwnPassword(ctx context.Context, viewer store.User, cu
 		problems["current_password"] = "The current password is wrong."
 	}
 
-	checkNewPassword(problems, current, password, confirm)
+	checkNewPassword(problems, current, password, confirm, "the current one")
 
 	if len(problems) > 0 {
 		return problems, wrongCurrent, nil
 	}
 
 	return nil, false, setPassword(ctx, users.store, viewer.ID, password, store.PasswordChange{KeepSession: keepSession})
-}
-
-// ChangeOwnEmail replaces the viewer's own email after checking the current
-// password (wrongCurrent counts as a failed login) and returns the email
-// the user has now. Sessions and agents stay.
-func (users *Users) ChangeOwnEmail(ctx context.Context, viewer store.User, current, entered string) (problems Problems, wrongCurrent bool, email string, err error) {
-	hash, err := users.store.UserPassword(ctx, viewer.ID)
-
-	if err != nil {
-		return nil, false, viewer.Email, err
-	}
-
-	problems = Problems{}
-
-	if !checkPassword(hash, current) {
-		wrongCurrent = true
-		problems["current_password"] = "The current password is wrong."
-	}
-
-	email = newEmail(problems, viewer.Email, entered)
-
-	if len(problems) > 0 || email == viewer.Email {
-		return problems, wrongCurrent, viewer.Email, nil
-	}
-
-	err = users.store.UpdateUserEmail(ctx, viewer.ID, email)
-
-	if errors.Is(err, store.ErrEmailTaken) {
-		return Problems{"email": emailTakenProblem}, false, viewer.Email, nil
-	}
-
-	if err != nil {
-		return nil, false, viewer.Email, err
-	}
-
-	return nil, false, email, nil
 }
 
 // nameOr is the display name as saved: the email when none is given.
@@ -543,13 +510,14 @@ func checkName(problems Problems, name string) bool {
 	return true
 }
 
-// checkNewPassword adds a problem when a new password is not acceptable.
-func checkNewPassword(problems Problems, current, password, confirm string) {
+// checkNewPassword adds a problem when a new password is not acceptable;
+// it must differ from current, called currentName.
+func checkNewPassword(problems Problems, current, password, confirm, currentName string) {
 	switch {
 	case !config.ValidPasswordLength(password):
 		problems["password"] = fmt.Sprintf("%d to %d characters.", config.MinPasswordLength, config.MaxPasswordLength)
 	case password == current:
-		problems["password"] = "Choose a password different from the current one."
+		problems["password"] = "Choose a password different from " + currentName + "."
 	case password != confirm:
 		problems["confirm_password"] = "The passwords do not match."
 	}

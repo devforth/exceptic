@@ -180,30 +180,13 @@ func TestUIUsers(t *testing.T) {
 		}
 	}
 
-	// An admin changes a user's email: an email, not taken in any case; the login follows it.
-	for email, want := range map[string]int{"developer": http.StatusBadRequest, "OPS2@example.com": http.StatusConflict} {
-		response = other.call(http.MethodPost, "update_user", map[string]string{"user_id": devID, "email": email})
-
-		if body := errorOf(t, response); response.Code != want || body.Fields["email"] == "" {
-			t.Errorf("update_user email %q: %d %s", email, response.Code, response.Body)
-		}
+	// The email is set once: update_user has no such field; a name changes.
+	if response := other.call(http.MethodPost, "update_user", map[string]string{"user_id": devID, "email": "developer@example.com"}); response.Code != http.StatusBadRequest {
+		t.Errorf("an email change: %d %s", response.Code, response.Body)
 	}
 
-	if response := other.call(http.MethodPost, "update_user", map[string]string{"user_id": devID, "email": " Developer@Example.com ", "name": "Developer"}); response.Code != http.StatusOK {
-		t.Fatalf("an admin changes a user's email: %d %s", response.Code, response.Body)
-	}
-
-	var page managedUser
-
-	decodeOK(t, "get_user", other.call(http.MethodGet, "get_user?user_id="+devID, nil), &page)
-
-	if page.User.Email != "developer@example.com" || page.User.DisplayName != "Developer" {
-		t.Errorf("after the email change: %+v", page.User)
-	}
-
-	if server.browser().login("dev@example.com", "user password 123").Code != http.StatusUnauthorized ||
-		server.browser().login("developer@example.com", "user password 123").Code != http.StatusOK {
-		t.Error("the login did not move to the new email")
+	if response := other.call(http.MethodPost, "update_user", map[string]string{"user_id": devID, "name": "Developer"}); response.Code != http.StatusOK {
+		t.Fatalf("an admin renames a user: %d %s", response.Code, response.Body)
 	}
 
 	// An admin makes another admin a user.

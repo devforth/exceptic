@@ -1,12 +1,14 @@
 <!--
 @component
-How a user signs in: the Google account linked to them, their sessions and their sign-in log,
+How a user signs in: the Google account linked to them, their sessions, their connected coding
+agents (another user's only, when there are any) and their sign-in log,
 read from get_activity (the viewer's own without userId). changeable allows disconnecting a session and
 unlinking Google (one's own, or a user the viewer may take over); reason says why not.
 -->
 <script lang="ts">
 	import { get, post, type Out } from '#lib/api/client.ts';
 	import { browserName } from '#lib/format.ts';
+	import AgentsTable from './AgentsTable.svelte';
 	import Button from './Button.svelte';
 	import ConfirmButton from './ConfirmButton.svelte';
 	import Notice from './Notice.svelte';
@@ -23,12 +25,22 @@ unlinking Google (one's own, or a user the viewer may take over); reason says wh
 	type Session = NonNullable<Activity['sessions']>[number];
 	type SignIn = NonNullable<Activity['sign_ins']>[number];
 
+	type Agent = NonNullable<Out<'list_agents'>['agents']>[number];
+
 	let activity: Activity | undefined = $state();
+	// Another user's connected coding agents (one's own are on the MCP page).
+	let agents: Agent[] = $state([]);
 	let failure = $state('');
 
 	async function load() {
 		try {
-			activity = await get('get_activity', userId ? { user_id: userId } : {});
+			const [read, owned] = await Promise.all([
+				get('get_activity', userId ? { user_id: userId } : {}),
+				userId ? get('list_agents', { user_id: userId }).catch(() => undefined) : undefined
+			]);
+
+			activity = read;
+			agents = (owned?.agents ?? []).filter((agent) => agent.connected);
 			failure = '';
 		} catch {
 			failure = 'The sessions could not be read.';
@@ -145,6 +157,18 @@ unlinking Google (one's own, or a user the viewer may take over); reason says wh
 				{#snippet empty()}No active session.{/snippet}
 			</Table>
 		</section>
+
+		{#if agents.length}
+			<section class="flex flex-col gap-2">
+				<h3 class="font-semibold">Coding agents</h3>
+				<AgentsTable
+					{agents}
+					compact
+					unavailable={changeable ? undefined : reason}
+					ondisconnect={() => void load()}
+				/>
+			</section>
+		{/if}
 
 		<section class="flex flex-col gap-2">
 			<h3 class="font-semibold">Sign-in log</h3>

@@ -104,7 +104,7 @@ func TestUpdateUserMergesAccess(t *testing.T) {
 
 	for _, project := range []int{1, 2} {
 		wait.Go(func() {
-			change := store.UserChange{Email: "target", Name: "target", Role: store.RoleUser, By: store.OnlyProjects(project), Access: new(store.OnlyProjects(project))}
+			change := store.UserChange{Name: "target", Role: store.RoleUser, By: store.OnlyProjects(project), Access: new(store.OnlyProjects(project))}
 
 			if err := database.UpdateUser(ctx, target, change); err != nil {
 				t.Error(err)
@@ -118,7 +118,7 @@ func TestUpdateUserMergesAccess(t *testing.T) {
 		t.Errorf("access: %+v", access)
 	}
 
-	locked := store.UserChange{Email: "target", Name: "target", Role: store.RoleUser, By: store.OnlyProjects(1), Access: &store.Access{}}
+	locked := store.UserChange{Name: "target", Role: store.RoleUser, By: store.OnlyProjects(1), Access: &store.Access{}}
 
 	if err := database.UpdateUser(ctx, target, locked); !errors.Is(err, store.ErrAccessLocked) {
 		t.Errorf("a limited administrator gave every project: %v", err)
@@ -126,9 +126,8 @@ func TestUpdateUserMergesAccess(t *testing.T) {
 
 	// Name and role change only by someone who has all the user's projects.
 	for _, change := range []store.UserChange{
-		{Email: "target", Name: "target", Role: store.RoleAdmin},
-		{Email: "target", Name: "renamed", Role: store.RoleUser},
-		{Email: "target@example.com", Name: "target", Role: store.RoleUser},
+		{Name: "target", Role: store.RoleAdmin},
+		{Name: "renamed", Role: store.RoleUser},
 	} {
 		change.By = store.OnlyProjects(1, 2)
 
@@ -137,7 +136,7 @@ func TestUpdateUserMergesAccess(t *testing.T) {
 		}
 	}
 
-	if err := database.UpdateUser(ctx, target, store.UserChange{Email: "target", Name: "renamed", Role: store.RoleAdmin, By: store.OnlyProjects(1, 2, 3)}); err != nil {
+	if err := database.UpdateUser(ctx, target, store.UserChange{Name: "renamed", Role: store.RoleAdmin, By: store.OnlyProjects(1, 2, 3)}); err != nil {
 		t.Errorf("a role change by an administrator with all of them: %v", err)
 	}
 }

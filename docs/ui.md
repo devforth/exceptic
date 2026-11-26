@@ -45,9 +45,9 @@ Who may change whom:
 
 - An admin changes every other user, other admins too.
 - A user sees the users of the role user they share a project with (not the admins), and changes them only when they have all of their projects: they could otherwise reset their password, log in as them and see projects they do not have.
-- Everyone changes their own name, email and password only on the Account page; the email and the password ask for the current password.
+- Everyone changes their own name and password only on the Account page; the password asks for the current one. The email is set once, when the user is added: for another one, delete the user and add a new one.
 
-Changing means the email, name and role, resetting the password, deleting the user and disconnecting their coding agents. The Projects field is apart: a user edits it for any user they see (see the table).
+Changing means the name and role, resetting the password, deleting the user and disconnecting their coding agents. The Projects field is apart: a user edits it for any user they see (see the table).
 
 Sessions and sign-ins (the Account page for oneself, a user's page for those who manage them): the browsers signed in now, with the address, how they signed in and when they were last active; the newest 100 sign-ins and, apart, the newest 100 refused attempts (a wrong password, the login limit (once per network and window), another Google account, Google unlinked); and the linked Google account, if any. Disconnecting a session or unlinking Google is changing the user; nobody disconnects the session they use (they log out).
 
@@ -59,6 +59,6 @@ For a user with the projects backend and frontend, another user with:
 
 | Field | |
 |---|---|
-| Email | The login, unique. Users from before emails keep their username until it is changed, then only to an email. No confirmation is sent. |
+| Email | The login, unique; set when the user is added and never changed: for another email, delete the user and add a new one. No confirmation is sent. |
 | Role | What the user may do. An admin gives admin or user; a user gives user only. |
 | Projects | Projects whose issues, logs and settings the user sees, here and through their coding agents; asked only for the role user, since an admin has every project. All projects includes the ones added later. A user changes only their own projects in this field; the other user's other projects stay. Only an admin gives all projects or changes a user who has them. A user without projects sees none. |

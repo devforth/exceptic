@@ -139,24 +139,4 @@ func TestLinkGoogleChecksInItsBatch(t *testing.T) {
 	if err := database.LinkGoogle(ctx, id, "dev@example.com", "google-1", now); err != nil {
 		t.Errorf("after a password sign-in: %v", err)
 	}
-
-	// An admin's change of the email drops the link and its sessions.
-	google = session(store.SignInGoogle, 4)
-	user, _ := database.GetUser(ctx, id)
-
-	if err := database.UpdateUser(ctx, id, store.UserChange{Email: "ops@example.com", Name: user.Name, Role: user.Role, By: store.Access{}}); err != nil {
-		t.Fatal(err)
-	}
-
-	sessions, _ = database.Sessions(ctx, id, now)
-
-	for _, session := range sessions {
-		if session.ID == google {
-			t.Error("a Google session outlived the email change")
-		}
-	}
-
-	if user, _ := database.GetUser(ctx, id); user.GoogleSub != "" {
-		t.Error("the link outlived the email change")
-	}
 }

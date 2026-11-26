@@ -241,21 +241,9 @@ func TestManageUsers(t *testing.T) {
 		t.Fatalf("updated = %+v", updated)
 	}
 
-	server.decode("update_user", map[string]any{"user_id": created.User.ID, "email": "developer@example.com"}, &updated)
-
-	if updated.Email != "developer@example.com" || updated.Role != store.RoleAdmin {
-		t.Fatalf("after the email change = %+v", updated)
-	}
-
-	if text, isError := server.try("update_user", map[string]any{"user_id": created.User.ID, "email": "developer"}); !isError || !strings.HasPrefix(text, "invalid: email") {
-		t.Fatalf("a login that is no email: %s", text)
-	}
-
-	var other struct{}
-	server.decode("create_user", map[string]any{"email": "ops@example.com", "role": "user"}, &other)
-
-	if text, isError := server.try("update_user", map[string]any{"user_id": created.User.ID, "email": "OPS@example.com"}); !isError || !strings.HasPrefix(text, "conflict: email") {
-		t.Fatalf("a taken login: %s", text)
+	// The email is set once: update_user has no such field.
+	if text, isError := server.try("update_user", map[string]any{"user_id": created.User.ID, "email": "developer@example.com"}); !isError || !strings.HasPrefix(text, "invalid: ") {
+		t.Fatalf("an email change: %s", text)
 	}
 
 	// Nobody changes the superadmin or themselves here.

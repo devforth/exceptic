@@ -310,6 +310,10 @@ type Auth struct {
 	// writes it at most every store.SessionActiveEvery.
 	touchedMutex sync.Mutex
 	touched      map[string]time.Time
+	// setup creates the first admin; adminEmail and adminPassword (env) open
+	// its form while there is none (setup.go).
+	setup                     adminSetup
+	adminEmail, adminPassword string
 	// google is the Google sign-in; nil without GOOGLE_CLIENT_ID.
 	google *googleSignIn
 	// recording holds a place per refused attempt being written (maxRecording).
@@ -324,7 +328,6 @@ type passwordChecker interface {
 	Authenticate(ctx context.Context, email, password string) (store.User, bool, error)
 	DeviceStamp(ctx context.Context, email string) (string, error)
 	ChangeOwnPassword(ctx context.Context, viewer store.User, current, password, confirm, keepSession string) (services.Problems, bool, error)
-	ChangeOwnEmail(ctx context.Context, viewer store.User, current, email string) (services.Problems, bool, string, error)
 }
 
 func NewAuth(logger *slog.Logger, settings *config.Config, users *services.Users, sessions *services.Sessions) *Auth {
@@ -333,6 +336,7 @@ func NewAuth(logger *slog.Logger, settings *config.Config, users *services.Users
 		limiter: newLoginLimiter(logger), deviceKey: deviceKey(settings.Notifications.SecretKey),
 		checks: make(chan struct{}, passwordChecks()), knownChecks: make(chan struct{}, 1), checkWait: passwordCheckWait, now: time.Now,
 		google: newGoogleSignIn(settings, users), recording: make(chan struct{}, maxRecording),
+		setup: users, adminEmail: settings.AdminEmail, adminPassword: settings.AdminPassword,
 	}
 }
 
@@ -373,17 +377,27 @@ func (auth *Auth) waitForCheck(ctx context.Context, knownDevice bool) (done func
 	}
 }
 
-// Disabled: there is no admin yet (ADMIN_PASSWORD was never set), so
-// nobody can log in.
+// Disabled: there is no admin yet and no ADMIN_PASSWORD to set one up
+// with, so nobody can log in.
 func (auth *Auth) Disabled(ctx context.Context) bool {
+	open, err := auth.open(ctx)
+
+	return err == nil && !open && auth.adminPassword == ""
+}
+
+// open reports whether an admin exists.
+func (auth *Auth) open(ctx context.Context) (bool, error) {
 	if auth.opened.Load() {
-		return false
+		return true, nil
 	}
 
 	open, err := auth.sessions.Open(ctx)
-	auth.opened.Store(open)
 
-	return err == nil && !open
+	if open {
+		auth.opened.Store(true)
+	}
+
+	return open, err
 }
 
 // TooManyAttempts is what a blocked address is told, at login and when
@@ -400,6 +414,7 @@ const (
 	LoginOK               LoginResult = iota // a new session was started
 	LoginWrongCredentials                    // the attempt was counted
 	LoginBlocked                             // the limit or a busy server refused it; the password was not checked
+	LoginSetup                               // ADMIN_EMAIL and ADMIN_PASSWORD while there is no admin: the setup form opens
 )
 
 // Login checks the typed credentials of a login form and starts a new
@@ -430,11 +445,19 @@ func (auth *Auth) Login(w http.ResponseWriter, r *http.Request, email, password 
 	}
 
 	user, ok, err := auth.passwords.Authenticate(r.Context(), email, password)
+	setup := !ok && err == nil && auth.setupLogin(r.Context(), email, password)
 
 	done()
 
 	if err != nil {
 		return LoginWrongCredentials, err
+	}
+
+	if setup {
+		auth.limiter.succeeded(attempt)
+		auth.setSetupCookie(w, r, now)
+
+		return LoginSetup, nil
 	}
 
 	if !ok {
@@ -526,15 +549,6 @@ func (auth *Auth) ChangePassword(w http.ResponseWriter, r *http.Request, viewer 
 		problems, wrongCurrent, err := auth.passwords.ChangeOwnPassword(r.Context(), viewer, current, password, confirm, SessionHash(r))
 
 		return problems, wrongCurrent, viewer.Email, err
-	})
-}
-
-// ChangeEmail replaces the viewer's own email after checking the current
-// password, under the same limit as ChangePassword; sessions and agents
-// stay, and this browser becomes the known device of the new email.
-func (auth *Auth) ChangeEmail(w http.ResponseWriter, r *http.Request, viewer store.User, current, email string) (services.Problems, error) {
-	return auth.withCurrentPassword(w, r, viewer, func() (services.Problems, bool, string, error) {
-		return auth.passwords.ChangeOwnEmail(r.Context(), viewer, current, email)
 	})
 }
 

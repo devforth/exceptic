@@ -28,8 +28,8 @@ The id is part of the DSN (`https://<public_key>@errors.example.com/<id>`) and o
 
 | Variable | Default | |
 |---|---|---|
-| `ADMIN_EMAIL` | `admin` | The first admin's login, created while there is no admin: an email, or up to 254 letters, digits and `. _ @ -` (changed later on the Account page, then to an email only). `ADMIN_USERNAME`, its former name, is read while it is not set, with a warning. |
-| `ADMIN_PASSWORD` | | 12 to 256 characters. Needed for the first start; later changes are ignored (change the password in the UI, or see [forgotten password](deployment.md#forgotten-password)). Until it is set, nobody can log in. |
+| `ADMIN_EMAIL` | `admin` | The login that sets up the first admin, with `ADMIN_PASSWORD`, while there is no admin: an email, or up to 254 letters, digits and `. _ @ -`. `ADMIN_USERNAME`, its former name, is read while it is not set, with a warning. |
+| `ADMIN_PASSWORD` | | 12 to 256 characters. While there is no admin, logging in with `ADMIN_EMAIL` and it starts no session but opens a form for the first admin's email and own password (another than this one); the form must be sent within 10 minutes. Once an admin exists both are ignored and log in as nothing (see [forgotten password](deployment.md#forgotten-password)). Until it is set, nobody can log in to a server without an admin. |
 | `SESSION_LIFETIME` | `1d` | How long a login to the UI lasts (`12h`, `7d`); not extended by use. |
 | `GOOGLE_CLIENT_ID` | | With `GOOGLE_CLIENT_SECRET`, users may also sign in with Google: an OAuth client of Google Cloud ([Sign in with Google](deployment.md#sign-in-with-google)). Needs `PUBLIC_URL`. |
 | `GOOGLE_CLIENT_SECRET` | | The secret of that OAuth client. |

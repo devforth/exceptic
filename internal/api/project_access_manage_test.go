@@ -527,9 +527,8 @@ func TestProjectAccessTakeOver(t *testing.T) {
 		}
 
 		for field, body := range map[string]string{
-			"role":  fmt.Sprintf(`{"user_id":%q,"role":%q}`, target.id, store.RoleAdmin),
-			"name":  fmt.Sprintf(`{"user_id":%q,"name":"Renamed"}`, target.id),
-			"email": fmt.Sprintf(`{"user_id":%q,"email":"renamed@example.com"}`, target.id),
+			"role": fmt.Sprintf(`{"user_id":%q,"role":%q}`, target.id, store.RoleAdmin),
+			"name": fmt.Sprintf(`{"user_id":%q,"name":"Renamed"}`, target.id),
 		} {
 			response := admin.call(http.MethodPost, "update_user", body)
 
@@ -549,16 +548,10 @@ func TestProjectAccessTakeOver(t *testing.T) {
 		}
 	}
 
-	// The part of the access he sees still changes, email, name and role sent
-	// back as they are (the email a login from before emails, in another case).
+	// The part of the access he sees still changes, name and role sent back as they are.
 	both := targets["both"]
-	stored, err := server.database.GetUser(context.Background(), both.id)
 
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if code := admin.call(http.MethodPost, "update_user", fmt.Sprintf(`{"user_id":%q,"email":%q,"name":"Web user","role":"user","projects":[]}`, both.id, strings.ToUpper(stored.Email))).Code; code != http.StatusOK {
+	if code := admin.call(http.MethodPost, "update_user", fmt.Sprintf(`{"user_id":%q,"name":"Web user","role":"user","projects":[]}`, both.id)).Code; code != http.StatusOK {
 		t.Errorf("taking backend from a user with both: %d", code)
 	}
 
@@ -572,11 +565,11 @@ func TestProjectAccessTakeOver(t *testing.T) {
 
 	covered := targets["backend, for a role"]
 
-	if code := admin.call(http.MethodPost, "update_user", fmt.Sprintf(`{"user_id":%q,"role":"user","name":"Renamed","email":"renamed@example.com"}`, covered.id)).Code; code != http.StatusOK {
+	if code := admin.call(http.MethodPost, "update_user", fmt.Sprintf(`{"user_id":%q,"role":"user","name":"Renamed"}`, covered.id)).Code; code != http.StatusOK {
 		t.Errorf("renaming a backend user: %d", code)
 	}
 
-	if user, err := server.database.GetUser(context.Background(), covered.id); err != nil || user.Email != "renamed@example.com" || user.Name != "Renamed" {
+	if user, err := server.database.GetUser(context.Background(), covered.id); err != nil || user.Name != "Renamed" {
 		t.Errorf("a backend user after the change: %+v %v", user, err)
 	}
 

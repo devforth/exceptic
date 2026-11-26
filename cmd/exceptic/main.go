@@ -320,7 +320,7 @@ func resetPassword(args []string) error {
 		case err != nil:
 			return err
 		case len(admins) == 0:
-			return errors.New("no admin yet: set ADMIN_PASSWORD and start the server")
+			return errors.New("no admin yet: set ADMIN_PASSWORD, start the server and log in with ADMIN_EMAIL and it to set one up")
 		case len(admins) > 1:
 			return fmt.Errorf("%d admins: name the one, exceptic reset-password <email>", len(admins))
 		}

@@ -101,10 +101,6 @@ describe('McpSetup', () => {
 const agents: Out<'list_agents'> = {
 	user: 'admin',
 	user_id: 'viewer01',
-	owners: [
-		{ id: 'viewer01', name: 'Admin' },
-		{ id: 'dev00001', name: 'Dev' }
-	],
 	agents: [
 		{
 			grant_id: 'grant001',
@@ -125,49 +121,23 @@ const agents: Out<'list_agents'> = {
 
 describe('ConnectedApps', () => {
 	it('lists connected apps only, names as text', () => {
-		render(ConnectedApps, { agents, viewerId: 'viewer01' });
+		render(ConnectedApps, { agents });
 
 		expect(screen.getByText('Codex <test>')).toBeTruthy();
 		expect(screen.getByText('Not used yet')).toBeTruthy();
 		expect(screen.queryByText('Personal token')).toBeNull();
 	});
 
-	it('chooses whose apps by the address, the own ones without ?user=', async () => {
-		const view = render(ConnectedApps, { agents, viewerId: 'viewer01' });
-		const owner = () => screen.getByRole('button', { name: /^Whose apps/ });
-
-		expect(owner().textContent).toContain('Admin (you)');
-
-		await userEvent.click(owner());
-		await userEvent.click(screen.getByRole('option', { name: 'Dev' }));
-		expect(app.goto).toHaveBeenLastCalledWith('/agents?client=other&user=dev00001');
-
-		app.url = new URL('http://localhost/agents?client=codex&user=dev00001');
-		await view.rerender({ agents: { ...agents, user_id: 'dev00001' }, viewerId: 'viewer01' });
-		await userEvent.click(owner());
-		await userEvent.click(screen.getByRole('option', { name: 'Admin (you)' }));
-		expect(app.goto).toHaveBeenLastCalledWith('/agents?client=codex');
-	});
-
 	it('says when no app is connected, without an empty table', () => {
-		render(ConnectedApps, {
-			agents: { ...agents, agents: [agents.agents![1]] },
-			viewerId: 'viewer01'
-		});
+		render(ConnectedApps, { agents: { ...agents, agents: [agents.agents![1]] } });
 
 		expect(screen.getByText('No apps connected yet.')).toBeTruthy();
 		expect(screen.queryByRole('table')).toBeNull();
 	});
 
-	it('shows no choice to a user', () => {
-		render(ConnectedApps, { agents: { ...agents, owners: undefined }, viewerId: 'viewer01' });
-
-		expect(screen.queryByRole('button', { name: /^Whose apps/ })).toBeNull();
-	});
-
 	it('disconnects after a confirmation', async () => {
 		app.post.mockResolvedValue({ done: 'disconnected' });
-		render(ConnectedApps, { agents, viewerId: 'viewer01' });
+		render(ConnectedApps, { agents });
 
 		await userEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
 		expect(app.post).not.toHaveBeenCalled();

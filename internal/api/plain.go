@@ -31,9 +31,9 @@ type NoContent struct{}
 var PlainRequests = []PlainRequest{
 	plainRequest[LoginStateInput, LoginState]("login_state", http.MethodGet),
 	plainRequest[LoginInput, LoginOutput]("login", http.MethodPost),
+	plainRequest[SetupAdminInput, NoContent]("setup_admin", http.MethodPost),
 	plainRequest[noInput, NoContent]("logout", http.MethodPost),
 	plainRequest[ChangePasswordInput, NoContent]("change_password", http.MethodPost),
-	plainRequest[ChangeEmailInput, NoContent]("change_email", http.MethodPost),
 	plainRequest[noInput, PersonalToken]("personal_token", http.MethodPost),
 	plainRequest[AuthorizationInput, Authorization]("authorization_request", http.MethodGet),
 	plainRequest[AuthorizationDecision, AuthorizationTarget]("authorization_decision", http.MethodPost),
@@ -61,20 +61,25 @@ type LoginInput struct {
 	Next     string `json:"next,omitempty"`
 }
 
-// LoginOutput: Next is the local path to open.
+// LoginOutput: Next is the local path to open; Setup, instead, that the
+// login was ADMIN_EMAIL and ADMIN_PASSWORD while there is no admin, so the
+// page shows the setup form (setup_admin) and no session was started.
 type LoginOutput struct {
-	Next string `json:"next"`
+	Next  string `json:"next"`
+	Setup bool   `json:"setup,omitempty"`
+}
+
+// SetupAdminInput is the first admin's email and password.
+type SetupAdminInput struct {
+	Email           string `json:"email"`
+	Password        string `json:"password"`
+	ConfirmPassword string `json:"confirm_password"`
 }
 
 type ChangePasswordInput struct {
 	CurrentPassword string `json:"current_password"`
 	Password        string `json:"password"`
 	ConfirmPassword string `json:"confirm_password"`
-}
-
-type ChangeEmailInput struct {
-	CurrentPassword string `json:"current_password"`
-	Email           string `json:"email"`
 }
 
 // PersonalToken is a new personal token, shown once; SetupPrompt has an
@@ -91,7 +96,7 @@ const wrongLogin = "Wrong email or password."
 const loginDisabled = "The web UI is disabled: set ADMIN_PASSWORD to enable it."
 
 // LoginRequests are the handlers of the login's plain requests (login_state,
-// login, logout, change_password, change_email) for NewUI. Every password check goes
+// login, setup_admin, logout, change_password) for NewUI. Every password check goes
 // through auth, so the login's limits apply to each.
 func LoginRequests(logger *slog.Logger, auth *session.Auth, appName string) map[string]http.Handler {
 	failed := func(w http.ResponseWriter, r *http.Request, name string, err error) {
@@ -137,9 +142,36 @@ func LoginRequests(logger *slog.Logger, auth *session.Auth, appName string) map[
 				failed(w, r, "login", tooManyAttempts(nil))
 			case result == session.LoginWrongCredentials:
 				server.JSONError(w, http.StatusUnauthorized, wrongLogin)
+			case result == session.LoginSetup:
+				server.WriteJSON(w, http.StatusOK, LoginOutput{Next: server.SafeNext(input.Next), Setup: true})
 			default:
 				server.WriteJSON(w, http.StatusOK, LoginOutput{Next: server.SafeNext(input.Next)})
 			}
+		}),
+
+		// The first admin, from the form the setup login opened (its cookie).
+		"setup_admin": http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var input SetupAdminInput
+
+			if !readPlain(w, r, &input) {
+				return
+			}
+
+			problems, err := auth.SetupAdmin(w, r, input.Email, input.Password, input.ConfirmPassword)
+
+			if errors.Is(err, session.ErrTooManyAttempts) {
+				err = tooManyAttempts(nil)
+			} else if err == nil {
+				err = problemsError(problems, nil)
+			}
+
+			if err != nil {
+				failed(w, r, "setup_admin", err)
+
+				return
+			}
+
+			noContent(w)
 		}),
 
 		// Also without a valid session: the cookie is cleared either way.
@@ -167,28 +199,6 @@ func LoginRequests(logger *slog.Logger, auth *session.Auth, appName string) map[
 		}),
 
 		// Not with a temporary password: only replacing it is open then.
-		"change_email": http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			viewer, ok := sessionViewer(logger, auth, w, r)
-
-			if !ok {
-				return
-			}
-
-			if viewer.MustChangePassword {
-				failed(w, r, "change_email", errPasswordChange)
-
-				return
-			}
-
-			var input ChangeEmailInput
-
-			if !readPlain(w, r, &input) {
-				return
-			}
-
-			problems, err := auth.ChangeEmail(w, r, viewer, input.CurrentPassword, input.Email)
-			answerPasswordChecked(w, r, "change_email", problems, err, failed)
-		}),
 	}
 }
 

@@ -14,6 +14,6 @@
 <div class="max-w-230">
 	<Card>
 		<McpSetup setup={data.setup} appName={data.session.app_name} />
-		<ConnectedApps agents={data.agents} viewerId={data.session.user.id} />
+		<ConnectedApps agents={data.agents} />
 	</Card>
 </div>

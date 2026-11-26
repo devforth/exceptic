@@ -374,13 +374,13 @@ func TestNewPasswordLength(t *testing.T) {
 	long := strings.Repeat("п", config.MaxPasswordLength) // 2 bytes each
 
 	problems := Problems{}
-	checkNewPassword(problems, "current", long, long)
+	checkNewPassword(problems, "current", long, long, "the current one")
 
 	if len(problems) > 0 {
 		t.Errorf("%d characters refused: %v", config.MaxPasswordLength, problems)
 	}
 
-	checkNewPassword(problems, "current", long+"п", long+"п")
+	checkNewPassword(problems, "current", long+"п", long+"п", "the current one")
 
 	if problems["password"] == "" {
 		t.Error("a password over the maximum accepted")

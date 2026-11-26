@@ -62,6 +62,45 @@ describe('the login page', () => {
 		expect(mocks.assign).not.toHaveBeenCalled();
 	});
 
+	it('shows the setup form after the env login, then opens the app', async () => {
+		mocks.send.mockResolvedValueOnce({ next: '/logs', setup: true });
+		renderLogin();
+
+		await userEvent.type(field('Email'), 'admin');
+		await userEvent.type(field('Password'), 'env password 123');
+		await userEvent.click(screen.getByRole('button', { name: 'Log in' }));
+
+		await screen.findByRole('button', { name: 'Create admin' });
+		expect(screen.getByText(/This creates the first admin/)).toBeTruthy();
+		expect(screen.queryByRole('button', { name: 'Log in' })).toBeNull();
+		expect(mocks.assign).not.toHaveBeenCalled();
+
+		mocks.send.mockRejectedValueOnce(
+			new ApiError(400, 'The passwords do not match.', {
+				fields: { confirm_password: 'The passwords do not match.' }
+			})
+		);
+		await userEvent.type(field('Email'), 'owner@example.com');
+		await userEvent.type(field('Password'), 'owner password 1');
+		await userEvent.type(field('Repeat the password'), 'owner password 2');
+		await userEvent.click(screen.getByRole('button', { name: 'Create admin' }));
+
+		expect(await screen.findByText('The passwords do not match.')).toBeTruthy();
+		expect(mocks.assign).not.toHaveBeenCalled();
+
+		mocks.send.mockResolvedValueOnce(undefined);
+		await userEvent.clear(field('Repeat the password'));
+		await userEvent.type(field('Repeat the password'), 'owner password 1');
+		await userEvent.click(screen.getByRole('button', { name: 'Create admin' }));
+
+		expect(mocks.send).toHaveBeenLastCalledWith('setup_admin', {
+			email: 'owner@example.com',
+			password: 'owner password 1',
+			confirm_password: 'owner password 1'
+		});
+		await waitFor(() => expect(mocks.assign).toHaveBeenCalledWith('/'));
+	});
+
 	it('says why nobody can log in without an admin', () => {
 		renderLogin('The web UI is disabled: set ADMIN_PASSWORD to enable it.');
 

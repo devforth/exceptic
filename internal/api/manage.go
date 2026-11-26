@@ -108,7 +108,7 @@ func (handler *handlers) management() []Endpoint {
 		}, handler.createUser),
 		Define(Endpoint{
 			Name:        "update_user",
-			Description: "Change another user's email, name, role (admin or user) or projects; fields not given keep their values. projects replaces only the user's projects you see; the others stay. Email, name and role change only when you have all the user's projects (can_take_over). Not yourself (update_account_name).",
+			Description: "Change another user's name, role (admin or user) or projects; fields not given keep their values. The email is set when the user is added and never changes: for another one, delete the user and add a new one. projects replaces only the user's projects you see; the others stay. Name and role change only when you have all the user's projects (can_take_over). Not yourself (update_account_name).",
 			Idempotent:  true, Transports: ActsAsUser, Confirm: true,
 			Choices: map[string][]string{"role": store.AssignableRoles},
 		}, handler.updateUser),
@@ -644,7 +644,6 @@ type userInput struct {
 
 type updateUserInput struct {
 	UserID string  `json:"user_id" jsonschema:"id from list_users."`
-	Email  *string `json:"email,omitempty" jsonschema:"Email address, the login."`
 	Name   *string `json:"name,omitempty" jsonschema:"Display name."`
 	Role   *string `json:"role,omitempty" jsonschema:"The role."`
 	accessFields
@@ -664,10 +663,6 @@ func (handler *handlers) updateUser(ctx context.Context, call Call, input update
 	}
 
 	change := services.UserInput{Email: user.Email, Name: user.Name, Role: user.Role, Access: access}
-
-	if input.Email != nil {
-		change.Email = *input.Email
-	}
 
 	if input.Name != nil {
 		change.Name = *input.Name

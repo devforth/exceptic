@@ -1190,8 +1190,6 @@ export interface Endpoints {
 		in: {
 			/** id from list_users. */
 			user_id: string;
-			/** Email address, the login. */
-			email?: string | null;
 			/** Display name. */
 			name?: string | null;
 			/** The role. */
@@ -1294,7 +1292,16 @@ export interface PlainRequests {
 		};
 		out: {
 			next: string;
+			setup?: boolean;
 		};
+	};
+	setup_admin: {
+		in: {
+			email: string;
+			password: string;
+			confirm_password: string;
+		};
+		out: void;
 	};
 	logout: {
 		in: Record<string, never>;
@@ -1305,13 +1312,6 @@ export interface PlainRequests {
 			current_password: string;
 			password: string;
 			confirm_password: string;
-		};
-		out: void;
-	};
-	change_email: {
-		in: {
-			current_password: string;
-			email: string;
 		};
 		out: void;
 	};
@@ -1349,9 +1349,9 @@ export interface PlainRequests {
 export const plainRequests = {
 	login_state: { method: 'GET' },
 	login: { method: 'POST' },
+	setup_admin: { method: 'POST' },
 	logout: { method: 'POST' },
 	change_password: { method: 'POST' },
-	change_email: { method: 'POST' },
 	personal_token: { method: 'POST' },
 	authorization_request: { method: 'GET' },
 	authorization_decision: { method: 'POST' },
@@ -1548,7 +1548,7 @@ export const help = {
 			'Paused': 'Pause recording in a project\'s menu: what its apps send is answered as usual but nothing is stored or notified until Resume recording. Admins and users with the project.',
 		},
 		'Users': {
-			'Email': 'The login, unique. Users from before emails keep their username until it is changed, then only to an email. No confirmation is sent.',
+			'Email': 'The login, unique; set when the user is added and never changed: for another email, delete the user and add a new one. No confirmation is sent.',
 			'Projects': 'Projects whose issues, logs and settings the user sees, here and through their coding agents; asked only for the role user, since an admin has every project. All projects includes the ones added later. A user changes only their own projects in this field; the other user\'s other projects stay. Only an admin gives all projects or changes a user who has them. A user without projects sees none.',
 			'Role': 'What the user may do. An admin gives admin or user; a user gives user only.',
 		},

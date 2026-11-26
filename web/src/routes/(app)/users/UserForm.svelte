@@ -58,7 +58,7 @@ not shown and stay as they are. An admin has every project, so the field shows o
 	// A saved user is sent only once changed.
 	// svelte-ignore state_referenced_locally
 	const form = new FormState(
-		user ? () => ({ email: email.trim(), name: name.trim(), role, access: access() }) : undefined
+		user ? () => ({ name: name.trim(), role, access: access() }) : undefined
 	);
 
 	function submit(event: SubmitEvent) {
@@ -71,21 +71,24 @@ not shown and stay as they are. An admin has every project, so the field shows o
 </script>
 
 <form onsubmit={submit} class={formClasses}>
-	{#if user?.takeOverLocked}
+	{#if user}
+		<!-- The email is set once, when the user is added: to use another, add a new user. -->
 		<TextField label="Email" name="email" value={email} readonly />
-		<TextField label="Name" name="name" value={name} readonly description={user.takeOverLocked} />
 	{:else}
-		<!-- A saved user may still have a login from before emails: the server checks a changed one. -->
 		<TextField
 			label="Email"
 			name="email"
-			type={user ? 'text' : 'email'}
+			type="email"
 			bind:value={email}
 			maxlength={limits.email}
 			autocomplete="off"
 			required
 			error={form.fields.email}
 		/>
+	{/if}
+	{#if user?.takeOverLocked}
+		<TextField label="Name" name="name" value={name} readonly description={user.takeOverLocked} />
+	{:else}
 		<TextField
 			label="Name"
 			name="name"

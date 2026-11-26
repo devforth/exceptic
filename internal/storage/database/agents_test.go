@@ -99,47 +99,6 @@ func TestOAuthClientCapacityAndCleanup(t *testing.T) {
 	}
 }
 
-// A changed email is the login from then on, unique in any case; a name
-// that was the email follows it, and the old one finds nobody.
-func TestUpdateUserEmail(t *testing.T) {
-	ctx := context.Background()
-	database := openTest(t)
-
-	taken, err := database.CreateUser(ctx, store.User{Email: "ops@example.com", Name: "Ops", Role: store.RoleUser}, "hash")
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	user, err := database.CreateUser(ctx, store.User{Email: "dev", Name: "dev", Role: store.RoleUser}, "hash")
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := database.UpdateUserEmail(ctx, user, "OPS@example.com"); !errors.Is(err, store.ErrEmailTaken) {
-		t.Fatalf("an email taken in another case: %v", err)
-	}
-
-	if err := database.UpdateUserEmail(ctx, user, "dev@example.com"); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, _, err := database.FindLogin(ctx, "dev"); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("the old login still finds the user: %v", err)
-	}
-
-	found, hash, err := database.FindLogin(ctx, "DEV@example.com")
-
-	if err != nil || found.ID != user || hash != "hash" || found.Name != "dev" {
-		t.Fatalf("the new email: %+v, %q, %v", found, hash, err)
-	}
-
-	if other, err := database.GetUser(ctx, taken); err != nil || other.Email != "ops@example.com" || other.Name != "Ops" {
-		t.Fatalf("the other user changed: %+v, %v", other, err)
-	}
-}
-
 // Emails are unique in any case, the last admin stays, and deleting a user
 // ends their sessions and disconnects their agents.
 func TestUserRules(t *testing.T) {
@@ -161,7 +120,7 @@ func TestUserRules(t *testing.T) {
 		t.Fatalf("deleting the last admin: %v", err)
 	}
 
-	if err := database.UpdateUser(ctx, root, store.UserChange{Email: "Root", Name: "Root", Role: store.RoleUser}); !errors.Is(err, store.ErrLastAdmin) {
+	if err := database.UpdateUser(ctx, root, store.UserChange{Name: "Root", Role: store.RoleUser}); !errors.Is(err, store.ErrLastAdmin) {
 		t.Fatalf("demoting the last admin: %v", err)
 	}
 
@@ -172,7 +131,7 @@ func TestUserRules(t *testing.T) {
 	}
 
 	// With another admin, one may go.
-	if err := database.UpdateUser(ctx, second, store.UserChange{Email: "second", Name: "second", Role: store.RoleUser}); err != nil {
+	if err := database.UpdateUser(ctx, second, store.UserChange{Name: "second", Role: store.RoleUser}); err != nil {
 		t.Fatalf("demoting one of two admins: %v", err)
 	}
 

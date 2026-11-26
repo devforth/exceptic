@@ -53,9 +53,10 @@ A temporary password made here or on the way here is shown once.
 		return handed ? { owner, secret: handed } : undefined;
 	}
 
-	async function save({ email, name, role, access }: UserInput) {
+	// The email is set once, when the user is added.
+	async function save({ name, role, access }: UserInput) {
 		await refreshingOnRefusal(() =>
-			post('update_user', { user_id: user.id, email, name, role, ...access })
+			post('update_user', { user_id: user.id, name, role, ...access })
 		);
 		toast.show('Saved.');
 		await invalidateAll();

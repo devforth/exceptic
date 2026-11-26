@@ -17,6 +17,7 @@ to go after it (a local path only); a full load opens that page with a fresh ses
 	import { FormState } from '#lib/form.svelte.ts';
 	import type { PageProps } from './$types';
 	import { googleRefusal } from './login.ts';
+	import SetupAdminForm from './SetupAdminForm.svelte';
 
 	let { data }: PageProps = $props();
 
@@ -24,6 +25,8 @@ to go after it (a local path only); a full load opens that page with a fresh ses
 	const refusal = $derived(googleRefusal(page.url));
 	let email = $state('');
 	let password = $state('');
+	/** The login was ADMIN_EMAIL and ADMIN_PASSWORD while there is no admin. */
+	let setup = $state(false);
 	let element: HTMLFormElement | undefined = $state();
 
 	function focus(name: string) {
@@ -36,13 +39,20 @@ to go after it (a local path only); a full load opens that page with a fresh ses
 		event.preventDefault();
 
 		let next = '';
+		let setupNext = false;
 		const loggedIn = await form.submit(async () => {
-			({ next } = await send('login', {
+			({ next, setup: setupNext = false } = await send('login', {
 				email,
 				password,
 				next: page.url.searchParams.get('next') ?? ''
 			}));
 		});
+
+		if (loggedIn && setupNext) {
+			setup = true;
+
+			return;
+		}
 
 		if (loggedIn) {
 			location.assign(next);
@@ -62,6 +72,8 @@ to go after it (a local path only); a full load opens that page with a fresh ses
 		<h1 class={titleClasses}>{data.state.app_name}</h1>
 		{#if data.state.disabled}
 			<Notice tone="info">{data.state.disabled}</Notice>
+		{:else if setup}
+			<SetupAdminForm />
 		{:else}
 			<form bind:this={element} onsubmit={submit} class={formClasses}>
 				<TextField label="Email" name="email" bind:value={email} autocomplete="username" required />

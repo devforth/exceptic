@@ -81,9 +81,8 @@ func New(ctx context.Context, options Options) (*App, error) {
 		Dropped: pipeline.Dropped(),
 	})
 
-	// While there is no admin, one is created from env; later starts do not
-	// use ADMIN_EMAIL/ADMIN_PASSWORD.
-	if err := all.Users.EnsureAdmin(ctx, settings.AdminEmail, settings.AdminPassword); err != nil {
+	// Nothing creates users at start: the first admin is set up on the login page.
+	if err := all.Users.LogSetup(ctx, settings.AdminPassword); err != nil {
 		_ = notifier.Close(ctx)
 
 		return nil, err

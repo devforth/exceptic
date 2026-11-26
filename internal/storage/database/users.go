@@ -69,6 +69,38 @@ func (database *Store) CreateUser(_ context.Context, user store.User, passwordHa
 	return user.ID, emailTaken(err)
 }
 
+// CreateFirstAdmin stores user as an admin while there is none: checked in
+// the batch of the insert, so two setups at once create one admin.
+// ErrAdminExists otherwise.
+func (database *Store) CreateFirstAdmin(_ context.Context, user store.User, passwordHash string) (string, error) {
+	user.Role, user.Access = store.RoleAdmin, store.Access{}
+
+	err := database.db.Update(true, func(batch *kv.Batch) error {
+		admin := false
+
+		err := database.users.Primary().Each(batch, func(entry kv.Entry[userRecord]) (bool, error) {
+			admin = entry.Record.Role == store.RoleAdmin
+
+			return !admin, nil
+		})
+
+		switch {
+		case err != nil:
+			return err
+		case admin:
+			return store.ErrAdminExists
+		}
+
+		if user.ID, err = freeID(batch, database.users); err != nil {
+			return err
+		}
+
+		return database.users.Insert(batch, userRecord{User: user, PasswordHash: passwordHash})
+	})
+
+	return user.ID, emailTaken(err)
+}
+
 func (database *Store) GetUser(_ context.Context, id string) (store.User, error) {
 	user, err := database.user(database.db, id)
 
@@ -176,7 +208,7 @@ func emailTaken(err error) error {
 // given, merged with the stored one (store.Access.Replace).
 func (database *Store) UpdateUser(_ context.Context, id string, change store.UserChange) error {
 	return emailTaken(database.changeUser(id, func(batch *kv.Batch, user *userRecord) error {
-		if (user.Role != change.Role || user.DisplayName() != change.Name || user.Email != change.Email) && !user.CoveredBy(change.By) {
+		if (user.Role != change.Role || user.DisplayName() != change.Name) && !user.CoveredBy(change.By) {
 			return store.ErrTakeOverLocked
 		}
 
@@ -186,16 +218,7 @@ func (database *Store) UpdateUser(_ context.Context, id string, change store.Use
 			}
 		}
 
-		// An address that changed hands: its Google account and sessions go.
-		if user.Email != change.Email && user.GoogleSub != "" {
-			user.GoogleSub, user.GoogleLinkedAt = "", nil
-
-			if err := database.deleteGoogleSessions(batch, id, ""); err != nil {
-				return err
-			}
-		}
-
-		user.Email, user.Name, user.Role = change.Email, change.Name, change.Role
+		user.Name, user.Role = change.Name, change.Role
 
 		if change.Access == nil {
 			return nil
@@ -239,19 +262,6 @@ func (database *Store) addProjectToUser(batch *kv.Batch, userID string, projectI
 	user.Access = store.OnlyProjects(append(slices.Clone(user.Access.ProjectIDs), projectID)...)
 
 	return database.users.Save(batch, user)
-}
-
-// UpdateUserEmail changes only the email (the viewer's own, on the account
-// page); a name that was the email follows it.
-func (database *Store) UpdateUserEmail(_ context.Context, id string, email string) error {
-	return emailTaken(database.changeUser(id, func(_ *kv.Batch, user *userRecord) error {
-		user.Name = store.NameAfterEmail(user.Name, user.Email, email)
-		user.Email = email
-		// The link was made through the old email: another address, another check.
-		user.GoogleSub, user.GoogleLinkedAt = "", nil
-
-		return nil
-	}))
 }
 
 // UpdateUserName changes only the name, so a role changed meanwhile stays.

@@ -31,6 +31,9 @@ var ErrNoProjects = errors.New("a user needs a project")
 // opens the first-admin setup to whoever knows ADMIN_EMAIL and ADMIN_PASSWORD.
 var ErrLastAdmin = errors.New("the last admin")
 
+// ErrAdminExists: the first-admin setup is over, an admin exists.
+var ErrAdminExists = errors.New("an admin exists")
+
 // User is a user of the panel. The password hash is never read with it: only
 // UserPassword and FindLogin return it, where a password is checked.
 type User struct {
@@ -176,9 +179,9 @@ func (user User) Actor(source string) Actor {
 // Access, when set (what By chose of what it was shown), merged with the
 // stored access (Access.Replace).
 type UserChange struct {
-	Email, Name, Role string
-	By                Access
-	Access            *Access
+	Name, Role string
+	By         Access
+	Access     *Access
 }
 
 // PasswordChange is a new password hash and what it ends.

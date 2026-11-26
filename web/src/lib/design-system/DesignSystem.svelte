@@ -1369,9 +1369,9 @@ Every component with its variants, on sample data. Served only by the dev server
 		<Row caption="ActionList and ActionRow: rows that open a dialog (the account's Security)" wide>
 			<ActionList title="Security">
 				<ActionRow
-					icon="email"
-					label="Change email"
-					description="developer@example.com"
+					icon="sessions"
+					label="Sessions and sign-ins"
+					description="Where you are signed in, every attempt and Google"
 					onclick={() => (sampleNarrowDialog = true)}
 				/>
 				<ActionRow

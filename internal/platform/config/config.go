@@ -179,10 +179,10 @@ type Config struct {
 	// TrustedProxies are reverse proxies whose X-Forwarded-For header is used
 	// to find the client address. Empty means the header is ignored.
 	TrustedProxies []netip.Prefix
-	// AdminEmail and AdminPassword create an admin while there is none;
-	// later they are not used. AdminEmail is
-	// the login as given, an email or not.
-	// An empty password means the UI is closed.
+	// AdminEmail and AdminPassword, typed on the login page while there is
+	// no admin, open the form that sets up the first one; later they are not
+	// used. AdminEmail is the login as typed, an email or not. An empty
+	// password keeps the UI closed until then.
 	AdminEmail    string
 	AdminPassword string
 	// SessionLifetime (SESSION_LIFETIME) is how long a UI login lasts; it
