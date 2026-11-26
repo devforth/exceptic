@@ -327,7 +327,7 @@ func writeRateLimited(w http.ResponseWriter, rejection *requestError) {
 	rateLimits := rejection.rateLimits
 
 	if rateLimits == "" {
-		rateLimits = rejection.retryAfter + "::project"
+		rateLimits = pauseEverything(rejection.retryAfter)
 	}
 
 	w.Header().Set("Retry-After", rejection.retryAfter)

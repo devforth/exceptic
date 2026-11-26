@@ -59,6 +59,16 @@ type itemCounts [categoryCount]int
 // with it; logs are log_item.
 var sdkCategories = [categoryCount]string{"error;default;security", "log_item"}
 
+// pauseEverything is the X-Sentry-Rate-Limits of a pause of every category:
+// empty categories, as the protocol has it, and the stored ones named too.
+// The JavaScript SDK reads a category's own limit before the one of every
+// category, even when it has ended, so after a rate limit of errors it would
+// go on sending them through a pause of everything (@sentry/core 11
+// disabledUntil); named, they are paused as well.
+func pauseEverything(seconds string) string {
+	return seconds + "::project," + seconds + ":" + strings.Join(sdkCategories[:], ";") + ":project"
+}
+
 var categoryLabels = [categoryCount]string{"events", "logs"}
 
 // rateLimiter allows up to a number of events and of logs per project per

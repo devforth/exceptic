@@ -176,7 +176,7 @@ func TestRateLimitCountsOnlyAccepted(t *testing.T) {
 	server, _ := limitedServer(t, 1, 2)
 	server.pipeline.MaxInboxBytes = -1
 
-	expectAnswer(t, server.post("1", fixtures.BackendKey, logEnvelope(2, true)), http.StatusTooManyRequests, "10::project", "10")
+	expectAnswer(t, server.post("1", fixtures.BackendKey, logEnvelope(2, true)), http.StatusTooManyRequests, "10::project,10:error;default;security;log_item:project", "10")
 
 	server.pipeline.MaxInboxBytes = 1 << 30
 
