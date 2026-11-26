@@ -2,7 +2,7 @@ IMAGE ?= devforth/exceptic
 VERSION ?= dev
 MAX_IMAGE_MB ?= 50
 
-.PHONY: test lint vulncheck fix build api-types web web-deps web-check dev run backup docker image-size
+.PHONY: test lint vulncheck fix build api-types web web-deps web-check dev run backup docker image-size release
 
 test:
 	go test -race ./...
@@ -66,3 +66,7 @@ image-size:
 	mb=$$((size / 1024 / 1024)); \
 	echo "image $(IMAGE):$(VERSION): $${mb} MB (limit $(MAX_IMAGE_MB) MB)"; \
 	test $$mb -le $(MAX_IMAGE_MB)
+
+# Publishes devforth/exceptic:VERSION for amd64 and arm64 from main once CI passed, and tags it (tools/release.sh).
+release:
+	tools/release.sh $(VERSION)
