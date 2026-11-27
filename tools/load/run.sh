@@ -4,22 +4,29 @@
 # the container listens on 127.0.0.1 only.
 #
 #   tools/load/run.sh <cpus> <memory> <seconds> [database dir]
-#   tools/load/run.sh 1 512m 120 data/flood-run4-start
+#   tools/load/run.sh 1 512m 120
+#   DSN=http://<key>@127.0.0.1:18000/<id> tools/load/run.sh 1 512m 120 data/flood-run4-start
 #
 # Environment: IMAGE (default exceptic:load, built from this checkout when missing), WORKERS (8 SDK
 # processes), MAX_DATABASE_SIZE (1500MB), LIMITS=off (no per-project rate limits), PORT (18000),
-# SENTRY_NODE_DIR (a directory whose node_modules has @sentry/node; default ../sentry-playground).
+# SENTRY_NODE_DIR (a directory whose node_modules has @sentry/node; default ../sentry-playground),
+# DSN (a project of the database dir, required with one; without a database dir the script sets up
+# an admin and adds a project). Needs curl and jq.
 # Results go to data/load-runs/<time>-<cpus>-<memory>/.
 set -eu
 
 [ $# -ge 3 ] || { echo "usage: tools/load/run.sh <cpus> <memory> <seconds> [database dir]" >&2; exit 2; }
 
 cpus=$1 memory=$2 seconds=$3 source=${4:-}
+dsn=${DSN:-}
+[ -z "$source" ] || [ -n "$dsn" ] || {
+	echo "DSN is required with a database dir: the DSN of one of its projects, with host 127.0.0.1:${PORT:-18000}" >&2
+	exit 2
+}
 cd "$(dirname "$0")/../.."
 image=${IMAGE:-exceptic:load}
 port=${PORT:-18000}
 workers=${WORKERS:-8}
-key=0123456789abcdef0123456789abcdef
 out=data/load-runs/$(date +%Y%m%d-%H%M%S)-$cpus-$memory
 data=$out/data
 name=exceptic-load
@@ -35,11 +42,34 @@ docker rm -f "$name" >/dev/null 2>&1 || true
 # shellcheck disable=SC2086 # limits are several words or none
 docker run -d --name "$name" --user "$(id -u):$(id -g)" -v "$PWD/$data:/data" \
 	--cpus "$cpus" --memory "$memory" --memory-swap "$memory" -p "127.0.0.1:$port:8000" \
-	-e LOG_LEVEL=debug -e LOG_FORMAT=json -e PROJECTS="9:loadtest:$key" \
+	-e LOG_LEVEL=debug -e LOG_FORMAT=json \
 	-e ADMIN_EMAIL=admin -e ADMIN_PASSWORD=load-password-123 -e MAX_DATABASE_SIZE="${MAX_DATABASE_SIZE:-1500MB}" $limits \
 	"$image" >/dev/null
 
 until curl -fs "http://127.0.0.1:$port/health" >/dev/null; do sleep 0.5; done
+
+# post <request> <json>: a request of the web app's API, as its page sends it.
+post() {
+	curl -fsS -b "$out/cookies" -c "$out/cookies" -H 'Content-Type: application/json' \
+		-H "Origin: http://127.0.0.1:$port" -d "$2" "http://127.0.0.1:$port/api/ui/$1"
+}
+
+# fail <message>: stops the container and the script.
+fail() {
+	echo "$1" >&2
+	docker rm -f "$name" >/dev/null 2>&1 || true
+	exit 1
+}
+
+if [ -z "$dsn" ]; then
+	# The env login opens the first admin's setup, which starts a session.
+	post login '{"email":"admin","password":"load-password-123"}' >/dev/null || fail "the env login failed"
+	post setup_admin '{"email":"load@example.com","password":"load-admin-password","confirm_password":"load-admin-password"}' >/dev/null ||
+		fail "the first admin was not set up"
+	dsn=$(post create_project '{"name":"loadtest"}' | jq -r '.dsn // empty') || true
+	[ -n "$dsn" ] || fail "the project was not added"
+fi
+
 echo "server up; $workers SDK processes for ${seconds}s"
 
 (while docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null | grep -q true; do
@@ -49,7 +79,7 @@ sampler=$!
 pids=""
 
 for worker in $(seq 0 $((workers - 1))); do
-	node tools/load/sdk-load.mjs "http://$key@127.0.0.1:$port/9" "$seconds" "$worker" >"$out/sdk$worker" 2>&1 &
+	node tools/load/sdk-load.mjs "$dsn" "$seconds" "$worker" >"$out/sdk$worker" 2>&1 &
 	pids="$pids $!"
 done
 

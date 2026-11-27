@@ -80,7 +80,7 @@ type Store interface {
 	GetProject(ctx context.Context, id int) (Project, error)
 	// CreateProject adds a project; a limited owner (a user id, or "") gets it in the same batch.
 	CreateProject(ctx context.Context, project Project, now time.Time, ownerID string) (int, error)
-	// UpdateProject saves a project's settings; its key changes only by SeedProject and RotateProjectKey.
+	// UpdateProject saves a project's settings; its key changes only by RotateProjectKey.
 	UpdateProject(ctx context.Context, project Project) error
 	// RotateProjectKey gives a project a new DSN key at now; ErrProjectConflict when another project has it.
 	RotateProjectKey(ctx context.Context, id int, key string, now time.Time) error
@@ -90,8 +90,6 @@ type Store interface {
 	// users' access; PurgeProjects then deletes its data.
 	DeleteProject(ctx context.Context, id int) error
 	PurgeProjects(ctx context.Context) error
-	// SeedProject writes a project from PROJECTS: env sets its key, and its name when it creates it.
-	SeedProject(ctx context.Context, project Project, now time.Time) error
 
 	// Reading issues, events and logs.
 

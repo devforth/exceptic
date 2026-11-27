@@ -63,13 +63,14 @@ func startRESTServer(t *testing.T, database *database.Store, configure ...func(s
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	settings := &config.Config{
 		AppName:  config.DefaultAppName,
-		Projects: fixtures.Projects(),
 		APIToken: token,
 	}
 
 	for _, change := range configure {
 		change(settings)
 	}
+
+	storetest.AddProjects(t, database, fixtures.Projects())
 
 	built, err := app.New(context.Background(), app.Options{Settings: settings, Logger: logger, Store: database, Version: "test", Web: fixtures.WebApp(t)})
 

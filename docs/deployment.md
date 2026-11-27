@@ -22,7 +22,7 @@ Image tags: `latest` (newest release), `X.Y` (newest patch of a minor version), 
    Behind a reverse proxy, also publish the port on localhost and set `TRUSTED_PROXIES`: [HTTPS and a reverse proxy](#https-and-a-reverse-proxy).
 
 3. `docker compose up -d`, then open the UI and log in as `admin`. While there is no admin, this login with `ADMIN_EMAIL` and `ADMIN_PASSWORD` opens a form for your email and a password of your own, which creates the first admin and logs you in; from then on the two variables no longer log in.
-4. Add projects on the **Projects** page (or with `PROJECTS`) and give their DSNs to your apps: [Connecting apps](sdk.md).
+4. Add projects on the **Projects** page and give their DSNs to your apps: [Connecting apps](sdk.md).
 
 The container runs as an unprivileged user (uid 65534) without a shell. A bind-mounted data directory must be writable by it: `sudo chown 65534:65534 ./data`. A named volume, as in the example, needs nothing.
 
@@ -102,7 +102,7 @@ server {
 
 ## Data
 
-Events and logs are kept until the database nears [its size limit](configuration.md#retention). What takes effort to set up again lives in the same database: projects and their keys (keep them in `PROJECTS` and the DSNs survive any loss), users, notification connections and connected agents. Keep the `data` volume on a disk you trust, and back it up.
+Events and logs are kept until the database nears [its size limit](configuration.md#retention). What takes effort to set up again lives in the same database: projects and their keys (the DSNs your apps are configured with), users, notification connections and connected agents. Keep the `data` volume on a disk you trust, and back it up.
 
 ## Resources
 

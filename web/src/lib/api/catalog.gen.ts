@@ -168,7 +168,6 @@ export interface Endpoints {
 			id: number;
 			name: string;
 			dsn?: string;
-			from_env?: boolean;
 			log_levels: string[] | null;
 			paused?: boolean;
 			color?: string;
@@ -475,7 +474,6 @@ export interface Endpoints {
 			id: number;
 			name: string;
 			dsn?: string;
-			from_env?: boolean;
 			log_levels: string[] | null;
 			paused?: boolean;
 			color?: string;
@@ -882,7 +880,6 @@ export interface Endpoints {
 				id: number;
 				name: string;
 				dsn?: string;
-				from_env?: boolean;
 				log_levels: string[] | null;
 				paused?: boolean;
 				unresolved_issues: number;
@@ -1027,7 +1024,6 @@ export interface Endpoints {
 			id: number;
 			name: string;
 			dsn?: string;
-			from_env?: boolean;
 			log_levels: string[] | null;
 			paused?: boolean;
 		};
@@ -1177,7 +1173,6 @@ export interface Endpoints {
 			id: number;
 			name: string;
 			dsn?: string;
-			from_env?: boolean;
 			log_levels: string[] | null;
 			paused?: boolean;
 			color?: string;
@@ -1540,7 +1535,7 @@ export const help = {
 		'Projects': {
 			'Allowed domains': 'The sites whose browsers may send to the project, e.g. https://app.example.com or https://*.example.com for its subdomains; a browser on another site is refused. Empty: any site. It stops other sites from using the DSN in their pages; a script outside a browser can still send with any Origin, which only the rate limits hold back. Backend SDKs send no origin and are not checked.',
 			'Color': 'Marks the project\'s badge in lists and the header of its emails.',
-			'DSN': 'The address the app\'s Sentry SDK sends errors and logs to. The key in it only allows sending to this project, so it can be in browser code. Reset DSN on the Installation page gives a new one: the old one is refused from then on. A project from PROJECTS keeps it too, and its key there is no longer read.',
+			'DSN': 'The address the app\'s Sentry SDK sends errors and logs to. The key in it only allows sending to this project, so it can be in browser code. Reset DSN on the Installation page gives a new one: the old one is refused from then on.',
 			'Disk share': 'The part of MAX_DATABASE_SIZE the project may take. When it reaches 99% of it, even with the database under its limit, the cleanup deletes the project\'s own data in the usual order, down to 80% of its share, so a flood in one project does not push out the others. A ceiling, not a reservation: shares may add up to more than 100%. At 100% the project has no limit of its own.',
 			'Dropped': 'What the project sent in the last 24 hours that was not stored: over its rate limit, refused while the server was busy, too large, unreadable or not received whole, and what its SDK reports it held back. Resets on restart.',
 			'History kept': 'The oldest record of each kind still stored; Errors counts events of every level. When the database nears its limit, the cleanup deletes the least useful data first, in the order of the cleanup by size.',

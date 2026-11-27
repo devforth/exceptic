@@ -63,9 +63,9 @@ func TestPipelineStoresEnvelopes(t *testing.T) {
 
 	t.Cleanup(func() { _ = database.Close() })
 
-	settings := &config.Config{Projects: benchProjects(1)}
+	projects := benchProjects(1)
 	notifier := &recordingNotifier{}
-	pipeline := NewPipeline(slog.New(slog.DiscardHandler), settings, settings.Projects, database, StoreSink{Logger: slog.New(slog.DiscardHandler), Notifier: notifier})
+	pipeline := NewPipeline(slog.New(slog.DiscardHandler), &config.Config{}, projects, database, StoreSink{Logger: slog.New(slog.DiscardHandler), Notifier: notifier})
 	handler := pipeline.Handler()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -73,7 +73,7 @@ func TestPipelineStoresEnvelopes(t *testing.T) {
 	go func() { defer close(done); pipeline.Run(ctx) }()
 
 	event, logs := fixtures.Envelope(t, "node-event-unhandled"), fixtures.Envelope(t, "node-logs")
-	target := "/api/1/envelope/?sentry_key=" + settings.Projects[0].PublicKey
+	target := "/api/1/envelope/?sentry_key=" + projects[0].PublicKey
 	send := func(body []byte) {
 		request := httptest.NewRequest(http.MethodPost, target, bytes.NewReader(body))
 		request.SetPathValue("projectID", "1")
@@ -176,8 +176,7 @@ func TestBurstWithCleanup(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	projects := benchProjects(10)
-	settings := &config.Config{Projects: projects}
-	pipeline := NewPipeline(slog.New(slog.DiscardHandler), settings, projects, db, StoreSink{Logger: slog.New(slog.DiscardHandler)})
+	pipeline := NewPipeline(slog.New(slog.DiscardHandler), &config.Config{}, projects, db, StoreSink{Logger: slog.New(slog.DiscardHandler)})
 	handler := pipeline.Handler()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -319,8 +318,7 @@ func TestScanDoesNotStoreTwice(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	projects := benchProjects(1)
-	settings := &config.Config{Projects: projects}
-	pipeline := NewPipeline(slog.New(slog.DiscardHandler), settings, projects, db, StoreSink{Logger: slog.New(slog.DiscardHandler)})
+	pipeline := NewPipeline(slog.New(slog.DiscardHandler), &config.Config{}, projects, db, StoreSink{Logger: slog.New(slog.DiscardHandler)})
 	handler := pipeline.Handler()
 	pipeline.LogsPerMessage = 0
 	pipeline.Rescan = 10 * time.Millisecond
@@ -386,8 +384,8 @@ func TestParsedEnvelopesFitParseBytes(t *testing.T) {
 
 	t.Cleanup(func() { _ = db.Close() })
 
-	settings := &config.Config{Projects: benchProjects(1)}
-	pipeline := NewPipeline(slog.New(slog.DiscardHandler), settings, settings.Projects, db, StoreSink{Logger: slog.New(slog.DiscardHandler)})
+	projects := benchProjects(1)
+	pipeline := NewPipeline(slog.New(slog.DiscardHandler), &config.Config{}, projects, db, StoreSink{Logger: slog.New(slog.DiscardHandler)})
 	entries := make(chan database.InboxEntry, 3)
 	results := make(chan processed, 3)
 
@@ -444,12 +442,12 @@ func TestUnencodableEnvelopeIsDropped(t *testing.T) {
 
 	t.Cleanup(func() { _ = db.Close() })
 
-	settings := &config.Config{Projects: benchProjects(1)}
-	pipeline := NewPipeline(slog.New(slog.DiscardHandler), settings, settings.Projects, db, StoreSink{Logger: slog.New(slog.DiscardHandler)})
+	projects := benchProjects(1)
+	pipeline := NewPipeline(slog.New(slog.DiscardHandler), &config.Config{}, projects, db, StoreSink{Logger: slog.New(slog.DiscardHandler)})
 	envelope := func(body string, at time.Time) processed {
 		return processed{
 			Envelope: database.Envelope{Logs: []store.NewLog{{ProjectID: 1, Timestamp: at, Level: "info", Body: body, Attributes: []byte("{}")}}},
-			project:  settings.Projects[0],
+			project:  projects[0],
 		}
 	}
 	now := time.Now().UTC()
@@ -532,13 +530,12 @@ func panicPipeline(t *testing.T, projects config.ProjectList, sink StoreSink) (p
 
 	t.Cleanup(func() { _ = db.Close() })
 
-	settings := &config.Config{Projects: projects.List()}
-	pipeline = NewPipeline(sink.Logger, settings, projects, db, sink)
+	pipeline = NewPipeline(sink.Logger, &config.Config{}, projects, db, sink)
 
 	accept = func(body []byte) {
 		t.Helper()
 
-		request := httptest.NewRequest(http.MethodPost, "/api/1/envelope/?sentry_key="+settings.Projects[0].PublicKey, bytes.NewReader(body))
+		request := httptest.NewRequest(http.MethodPost, "/api/1/envelope/?sentry_key="+projects.List()[0].PublicKey, bytes.NewReader(body))
 		request.SetPathValue("projectID", "1")
 
 		response := httptest.NewRecorder()

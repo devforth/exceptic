@@ -113,7 +113,7 @@ func (server *testServer) sendStored(projectID int, key, body string) {
 // New issues and regressions are notified; repeats of a known issue are not.
 func TestStoreSinkNotifies(t *testing.T) {
 	notifier := &recordingNotifier{}
-	server := startTestServer(t, testSettings(), StoreSink{Logger: slog.New(slog.DiscardHandler), Notifier: notifier, PublicURL: "https://errors.example.com"})
+	server := startTestServer(t, testSettings(), fixtures.Projects(), StoreSink{Logger: slog.New(slog.DiscardHandler), Notifier: notifier, PublicURL: "https://errors.example.com"})
 	boom := `{"exception":{"values":[{"type":"Error","value":"boom"}]}}`
 
 	for _, id := range []string{"00000000000000000000000000000001", "00000000000000000000000000000002"} {
@@ -144,7 +144,7 @@ func TestStoreSinkNotifies(t *testing.T) {
 // An issue ignored until 2 more events is notified as a regression at the 2nd.
 func TestStoreSinkNotifiesTheEndOfAnIgnore(t *testing.T) {
 	notifier := &recordingNotifier{}
-	server := startTestServer(t, testSettings(), StoreSink{Logger: slog.New(slog.DiscardHandler), Notifier: notifier})
+	server := startTestServer(t, testSettings(), fixtures.Projects(), StoreSink{Logger: slog.New(slog.DiscardHandler), Notifier: notifier})
 	boom := `{"exception":{"values":[{"type":"Error","value":"boom"}]}}`
 
 	server.sendEvent(1, "00000000000000000000000000000001", boom)
@@ -238,10 +238,10 @@ func TestStoreSinkCapsEventsPerIssue(t *testing.T) {
 // are dropped.
 func TestStoreSinkRecordsChosenLevels(t *testing.T) {
 	notifier := &recordingNotifier{}
-	settings := testSettings()
+	projects := fixtures.Projects()
 	warnOnly := []string{"warn"}
-	settings.Projects[1].LogLevels = &warnOnly
-	server := startTestServer(t, settings, StoreSink{Logger: slog.New(slog.DiscardHandler), Notifier: notifier})
+	projects[1].LogLevels = &warnOnly
+	server := startTestServer(t, testSettings(), projects, StoreSink{Logger: slog.New(slog.DiscardHandler), Notifier: notifier})
 
 	for _, projectID := range []int{1, 2} {
 		for index, level := range []string{"error", "warning", "info", "fatal", ""} {

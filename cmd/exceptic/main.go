@@ -169,7 +169,7 @@ func run() error {
 	}
 
 	if len(application.Registry.List()) == 0 {
-		logger.Warn("no projects yet, events will be rejected; add one on the Projects page or set PROJECTS=id:name:public_key,...")
+		logger.Warn("no projects yet, events will be rejected; add one on the Projects page")
 	}
 
 	logRetention(logger, settings.Retention)

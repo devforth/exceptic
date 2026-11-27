@@ -18,11 +18,7 @@ Everything is set with environment variables (in Docker: `-e`, `env_file` or `en
 
 ## Projects
 
-| Variable | Default | |
-|---|---|---|
-| `PROJECTS` | | `id:name:public_key,...`, e.g. `1:backend:<key>,2:frontend:<key>`. The id is from 1 to 4294967295, the key is 16–64 letters or digits (`openssl rand -hex 16`). Created at start when missing, with that name; after that the name, color and levels change on the Projects page, and only the key follows `PROJECTS` at every start (a changed key stops the old DSN), until the DSN is reset on the Installation page: from then on the key there is ignored, with a warning at start. A new entry whose name or key another project holds stops the start with a message naming that project. Such a project cannot be deleted on the Projects page; one removed from the list stays, DSN included, and can then be deleted there. Projects can also be added on the Projects page. |
-
-The id is part of the DSN (`https://<public_key>@errors.example.com/<id>`) and of every stored event, so never change or reuse it. Name each service (backend, frontend, …) as its own project.
+Projects are added on the Projects page or with the MCP tool `create_project`, one per service (backend, frontend, …). Each gets a random id, the number at the end of its DSN (`https://<public_key>@errors.example.com/<id>`).
 
 ## Access
 

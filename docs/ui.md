@@ -4,12 +4,12 @@ The fields of the settings pages. The UI shows these rows as the hints (?) next 
 
 ## Projects
 
-A project is one service (backend, frontend, worker) with its own DSN. Projects from `PROJECTS` follow it as [Configuration](configuration.md#projects) says; the rest of their settings change here. Deleting a project stops its DSN at once, then deletes its issues, events and logs; a deletion stopped by a restart goes on at the next start. A project an admin with only some projects adds joins his projects at once; a deleted one leaves every user's. The storage card shows the parts of your projects; Other includes the projects you do not see. A name another project has is refused, without naming that project when it is not one of yours.
+A project is one service (backend, frontend, worker) with its own DSN. Deleting a project stops its DSN at once, then deletes its issues, events and logs; a deletion stopped by a restart goes on at the next start. A project an admin with only some projects adds joins his projects at once; a deleted one leaves every user's. The storage card shows the parts of your projects; Other includes the projects you do not see. A name another project has is refused, without naming that project when it is not one of yours.
 
 | Field | |
 |---|---|
 | Color | Marks the project's badge in lists and the header of its emails. |
-| DSN | The address the app's Sentry SDK sends errors and logs to. The key in it only allows sending to this project, so it can be in browser code. Reset DSN on the Installation page gives a new one: the old one is refused from then on. A project from PROJECTS keeps it too, and its key there is no longer read. |
+| DSN | The address the app's Sentry SDK sends errors and logs to. The key in it only allows sending to this project, so it can be in browser code. Reset DSN on the Installation page gives a new one: the old one is refused from then on. |
 | Paused | Pause recording in a project's menu: what its apps send is answered as usual but nothing is stored or notified until Resume recording. Admins and users with the project. |
 | Logs | Log levels to store; others are dropped when they arrive. Unchanged, the project follows RECORD_LOG_LEVELS. Errors and messages of every level are stored. |
 | Disk share | The part of MAX_DATABASE_SIZE the project may take. When it reaches 99% of it, even with the database under its limit, the cleanup deletes the project's own data in the usual order, down to 80% of its share, so a flood in one project does not push out the others. A ceiling, not a reservation: shares may add up to more than 100%. At 100% the project has no limit of its own. |

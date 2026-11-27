@@ -42,7 +42,7 @@ func newNotificationsServer(t *testing.T, configure ...func(*config.Config)) *no
 
 	smtp, mails := fixtures.FakeSMTP(t)
 	settings := &config.Config{
-		AppName: config.DefaultAppName, Projects: fixtures.Projects(),
+		AppName:       config.DefaultAppName,
 		Notifications: config.Notifications{SecretKey: notificationsKey, SMTP: smtp},
 	}
 
@@ -68,6 +68,7 @@ func newNotificationsServer(t *testing.T, configure ...func(*config.Config)) *no
 	t.Cleanup(telegram.Close)
 
 	database := storetest.Open(t)
+	storetest.AddProjects(t, database, fixtures.Projects())
 	built, err := app.New(context.Background(), app.Options{
 		Settings: settings, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Store: database, Version: "test",
 		Factory: notify.Factory{

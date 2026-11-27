@@ -47,9 +47,6 @@ export function pauseConfirmation(name: string): Confirmation {
 	};
 }
 
-/** Why a project from the PROJECTS env variable cannot be deleted in the app. */
-export const fromEnvDeleteReason = 'Remove it from PROJECTS first.';
-
 /** The server's rules of a project name (the generated limits). */
 export const projectNameRules = {
 	maxlength: limits.projectName,

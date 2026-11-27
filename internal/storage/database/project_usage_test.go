@@ -43,7 +43,7 @@ func TestProjectUsage(t *testing.T) {
 	database.SetClock(func() time.Time { return now })
 
 	for _, project := range []store.Project{{ID: 1, Name: "backend", PublicKey: "0123456789abcdef"}, {ID: 2, Name: "frontend", PublicKey: "fedcba9876543210"}} {
-		if err := database.SeedProject(ctx, project, now); err != nil {
+		if err := database.AddProjects(ctx, now, project); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -119,7 +119,7 @@ func TestFirstContact(t *testing.T) {
 
 	first := time.Date(2026, 11, 23, 9, 0, 0, 0, time.UTC)
 
-	if err := database.SeedProject(ctx, store.Project{ID: 1, Name: "backend", PublicKey: "0123456789abcdef"}, first); err != nil {
+	if err := database.AddProjects(ctx, first, store.Project{ID: 1, Name: "backend", PublicKey: "0123456789abcdef"}); err != nil {
 		t.Fatal(err)
 	}
 

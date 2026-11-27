@@ -7,7 +7,6 @@
 	import {
 		deleteConfirmation,
 		deleteProject,
-		fromEnvDeleteReason,
 		projectInput,
 		type ProjectFormValues
 	} from '#lib/projects.ts';
@@ -19,7 +18,6 @@
 
 	const project = $derived(data.project);
 	const id = $derived(project.id);
-	const fromEnv = $derived(project.from_env ?? false);
 
 	const initial = $derived({
 		color: project.shown_color,
@@ -47,10 +45,6 @@
 		{ label: project.name, href: resolve('/(app)/projects/[id=projectId]', { id }) }
 	]}
 />
-{#snippet fromEnvNote()}
-	From PROJECTS: its DSN key comes from there, and it cannot be deleted here.
-{/snippet}
-
 {#key project.id}
 	<ProjectForm
 		{id}
@@ -58,23 +52,13 @@
 		{initial}
 		storage={data.storage}
 		{save}
-		description={fromEnv ? fromEnvNote : undefined}
 		shareEditable={data.session.can_administer}
 	>
 		{#snippet actions()}
 			{#if data.session.can_administer}
-				<!-- Disabled for a project from PROJECTS; the wrapper keeps the reason's tooltip, which a
-			     disabled button does not show in every browser. -->
-				<span title={fromEnv ? fromEnvDeleteReason : undefined}>
-					<ConfirmButton
-						icon="delete"
-						confirm={deleteConfirmation(project.name)}
-						action={remove}
-						disabled={fromEnv}
-					>
-						Delete project
-					</ConfirmButton>
-				</span>
+				<ConfirmButton icon="delete" confirm={deleteConfirmation(project.name)} action={remove}>
+					Delete project
+				</ConfirmButton>
 			{/if}
 		{/snippet}
 	</ProjectForm>

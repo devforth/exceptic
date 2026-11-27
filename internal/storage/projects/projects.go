@@ -1,5 +1,5 @@
-// Package projects keeps the list of projects: seeded from PROJECTS at
-// startup, editable in the UI, cached in memory.
+// Package projects keeps the list of projects: added and edited in the UI,
+// cached in memory.
 package projects
 
 import (
@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -18,7 +17,6 @@ import (
 
 type Registry struct {
 	store store.Store
-	env   config.Projects
 	// reloadMutex keeps two reloads from storing an older list last.
 	reloadMutex sync.Mutex
 	current     atomic.Pointer[config.Projects]
@@ -26,44 +24,9 @@ type Registry struct {
 
 var _ config.ProjectList = (*Registry)(nil)
 
-// Open seeds the projects of PROJECTS and loads the list.
-func Open(ctx context.Context, logger *slog.Logger, database store.Store, env config.Projects) (*Registry, error) {
-	registry := &Registry{store: database, env: env}
-
-	stored, err := database.ListProjects(ctx)
-
-	if err != nil {
-		return nil, fmt.Errorf("load projects: %w", err)
-	}
-
-	for _, project := range env {
-		existing, found := findProject(stored, func(other store.Project) bool { return other.ID == project.ID })
-
-		switch {
-		case !found:
-			// A name or key another project holds stops the start: say which one.
-			if holder, taken := findProject(stored, func(other store.Project) bool { return other.Name == project.Name }); taken {
-				return nil, fmt.Errorf("PROJECTS: project %d %q: the name is used by project %d; rename that project or choose another name", project.ID, project.Name, holder.ID)
-			}
-
-			if holder, taken := findProject(stored, func(other store.Project) bool { return other.PublicKey == project.PublicKey }); taken {
-				return nil, fmt.Errorf("PROJECTS: project %d %q: the key is used by project %d %q", project.ID, project.Name, holder.ID, holder.Name)
-			}
-		case existing.PublicKey != project.PublicKey && existing.KeyChangedAt != nil:
-			logger.Warn("the DSN of this project was reset in the web app: its key in PROJECTS is ignored", "id", project.ID, "name", existing.Name)
-		case existing.PublicKey != project.PublicKey:
-			logger.Warn("project key changed by PROJECTS: the old DSN stops working", "id", project.ID, "name", existing.Name)
-		}
-
-		if found && existing.Name != project.Name {
-			logger.Info("PROJECTS names a project otherwise: its stored name is kept (rename it on the Projects page)",
-				"id", project.ID, "name", existing.Name, "env_name", project.Name)
-		}
-
-		if err := database.SeedProject(ctx, store.Project{ID: project.ID, Name: project.Name, PublicKey: project.PublicKey}, time.Now()); err != nil {
-			return nil, fmt.Errorf("PROJECTS: %w", err)
-		}
-	}
+// Open loads the list of projects.
+func Open(ctx context.Context, database store.Store) (*Registry, error) {
+	registry := &Registry{store: database}
 
 	if err := registry.Reload(ctx); err != nil {
 		return nil, err
@@ -79,14 +42,6 @@ func (registry *Registry) List() config.Projects {
 	}
 
 	return nil
-}
-
-// FromEnv reports whether a project is defined in PROJECTS: its key is set
-// there (its name only when it is created), and it cannot be deleted in the web app.
-func (registry *Registry) FromEnv(id int) bool {
-	_, ok := registry.env.ByID(id)
-
-	return ok
 }
 
 // Reload reads the list from the database. Called after every change.
@@ -158,8 +113,7 @@ func (registry *Registry) SetPaused(ctx context.Context, id int, paused bool) er
 	return registry.Reload(ctx)
 }
 
-// RotateKey gives a project a new DSN key: the old one stops working at
-// once. A project from PROJECTS keeps it too: its key there is no longer read.
+// RotateKey gives a project a new DSN key: the old one stops working at once.
 func (registry *Registry) RotateKey(ctx context.Context, id int) error {
 	if err := registry.store.RotateProjectKey(ctx, id, NewPublicKey(), time.Now()); err != nil {
 		return err
@@ -168,16 +122,9 @@ func (registry *Registry) RotateKey(ctx context.Context, id int) error {
 	return registry.Reload(ctx)
 }
 
-// ErrFromEnv: a project from PROJECTS cannot be deleted in the UI.
-var ErrFromEnv = fmt.Errorf("the project is defined in PROJECTS; remove it there first")
-
 // Delete removes a project, then all its data, even when ctx ends first; a
 // purge stopped by a restart goes on in the background job.
 func (registry *Registry) Delete(ctx context.Context, id int) error {
-	if registry.FromEnv(id) {
-		return ErrFromEnv
-	}
-
 	ctx = context.WithoutCancel(ctx)
 
 	if err := registry.store.DeleteProject(ctx, id); err != nil {
@@ -198,15 +145,4 @@ func NewPublicKey() string {
 	_, _ = rand.Read(key[:])
 
 	return hex.EncodeToString(key[:])
-}
-
-// findProject is the first of projects that match.
-func findProject(projects []store.Project, match func(store.Project) bool) (store.Project, bool) {
-	for _, project := range projects {
-		if match(project) {
-			return project, true
-		}
-	}
-
-	return store.Project{}, false
 }

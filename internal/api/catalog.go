@@ -183,7 +183,7 @@ func Endpoints(projects config.ProjectList, all *services.All) []Endpoint {
 		}, handler.setProjectActive),
 		Define(Endpoint{
 			Name:        "reset_project_key",
-			Description: "Give a project a new DSN: apps still using the old one are refused from now on and must be configured with the new one. A project from PROJECTS keeps the new key too; its key there is no longer read.",
+			Description: "Give a project a new DSN: apps still using the old one are refused from now on and must be configured with the new one.",
 			Transports:  TransportUI, Confirm: true,
 		}, handler.resetProjectKey),
 		Define(Endpoint{

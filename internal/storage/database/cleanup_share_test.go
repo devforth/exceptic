@@ -28,7 +28,7 @@ func seedShares(t *testing.T, database *Store, shares ...int) {
 	for index, share := range shares {
 		project := store.Project{ID: index + 1, Name: fmt.Sprintf("project-%d", index+1), PublicKey: fmt.Sprintf("key-%d", index+1)}
 
-		if err := database.SeedProject(context.Background(), project, database.now()); err != nil {
+		if err := database.AddProjects(context.Background(), database.now(), project); err != nil {
 			t.Fatal(err)
 		}
 
@@ -849,40 +849,6 @@ func TestCleanupRefusesBesideARunningRun(t *testing.T) {
 
 	if run, err := database.Cleanup(context.Background(), AllProjects, 1); err == nil || run.Status != "" {
 		t.Fatalf("run %+v, %v", run, err)
-	}
-}
-
-// PROJECTS seeding a project again at a restart keeps its share; one deleted
-// and added again by PROJECTS starts at 100%.
-func TestDiskShareSeededAgain(t *testing.T) {
-	ctx := context.Background()
-	database := openOnDisk(t, t.TempDir())
-	seedShares(t, database, 30)
-
-	project := store.Project{ID: 1, Name: "project-1", PublicKey: "another-key"}
-
-	if err := database.SeedProject(ctx, project, scenarioNow); err != nil {
-		t.Fatal(err)
-	}
-
-	if stored, err := database.GetProject(ctx, 1); err != nil || stored.Share() != 30 || stored.PublicKey != "another-key" {
-		t.Fatalf("seeded again: %+v, %v", stored, err)
-	}
-
-	if err := database.DeleteProject(ctx, 1); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := database.PurgeProjects(ctx); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := database.SeedProject(ctx, project, scenarioNow); err != nil {
-		t.Fatal(err)
-	}
-
-	if stored, err := database.GetProject(ctx, 1); err != nil || stored.Share() != 100 {
-		t.Fatalf("added again: %+v, %v", stored, err)
 	}
 }
 

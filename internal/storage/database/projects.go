@@ -16,7 +16,7 @@ import (
 // deleteChunk is how many logs one batch of a project deletion removes.
 const deleteChunk = 5000
 
-// projectIDs: a project added in the UI gets a random 8-digit id (PROJECTS sets its own).
+// projectIDs: a project gets a random 8-digit id.
 const (
 	firstProjectID = 10_000_000
 	projectIDRange = 90_000_000
@@ -104,7 +104,7 @@ func (database *Store) UpdateProject(_ context.Context, project store.Project) e
 			return notFound(err)
 		}
 
-		// The key changes only by SeedProject and RotateProjectKey, the pause
+		// The key changes only by RotateProjectKey, the pause
 		// only by SetProjectPaused, so a save of settings read before cannot undo them.
 		project.CreatedAt, project.PublicKey, project.KeyChangedAt, project.Paused = stored.CreatedAt, stored.PublicKey, stored.KeyChangedAt, stored.Paused
 
@@ -141,38 +141,28 @@ func (database *Store) RotateProjectKey(_ context.Context, id int, key string, n
 	})
 }
 
-// SeedProject writes a project from PROJECTS: created with its name if
-// missing, otherwise only its key is set to the env value (the name and the
-// settings from the web app stay). A name or key taken by another project is
-// an error, so a typo in PROJECTS cannot take over another DSN.
-func (database *Store) SeedProject(_ context.Context, project store.Project, now time.Time) error {
-	err := database.db.Update(true, func(batch *kv.Batch) error {
-		stored, err := database.projects.Get(batch, projectKey(project.ID))
+// AddProjects stores projects with their own ids and keys, those not stored
+// yet, for tests only (projects are added by CreateProject).
+func (database *Store) AddProjects(_ context.Context, now time.Time, projects ...store.Project) error {
+	return database.db.Update(true, func(batch *kv.Batch) error {
+		for _, project := range projects {
+			if stored, err := database.projects.Has(batch, projectKey(project.ID)); err != nil || stored {
+				if err != nil {
+					return err
+				}
 
-		switch {
-		case errors.Is(err, kv.ErrNotFound):
+				continue
+			}
+
 			project.CreatedAt = now.UTC()
 
-			batch.AfterWrite(func() { delete(database.goneProjects, project.ID) })
-
-			return projectConflict(database.projects.Insert(batch, project))
-		case err != nil:
-			return err
-		case stored.PublicKey == project.PublicKey || stored.KeyChangedAt != nil:
-			// A DSN reset in the web app wins over the key in PROJECTS.
-			return nil
+			if err := projectConflict(database.projects.Insert(batch, keepNone(project))); err != nil {
+				return fmt.Errorf("project %d %q: %w", project.ID, project.Name, err)
+			}
 		}
 
-		stored.PublicKey = project.PublicKey
-
-		return projectConflict(database.projects.Save(batch, stored))
+		return nil
 	})
-
-	if err != nil {
-		return fmt.Errorf("project %d %q: %w", project.ID, project.Name, err)
-	}
-
-	return nil
 }
 
 // projectPurge marks a deleted project whose issues and logs are still to delete.
@@ -343,19 +333,6 @@ func (database *Store) PurgeProjects(ctx context.Context) error {
 }
 
 func (database *Store) purgeProject(ctx context.Context, id int) error {
-	// Added again by PROJECTS since: its data stays with it.
-	if again, err := database.projects.Has(database.db, projectKey(id)); err != nil || again {
-		if err != nil {
-			return err
-		}
-
-		return database.db.Update(true, func(batch *kv.Batch) error {
-			_, err := database.purges.DeleteKey(batch, projectKey(id))
-
-			return err
-		})
-	}
-
 	// The project's issues by the index, in chunks that DeleteIssues spreads over batches.
 	for ctx.Err() == nil {
 		var issueIDs []string

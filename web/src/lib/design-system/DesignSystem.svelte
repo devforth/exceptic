@@ -304,10 +304,10 @@ Every component with its variants, on sample data. Served only by the dev server
 			action: pause
 		},
 		{
-			label: 'Delete (from env)',
-			icon: 'delete',
+			label: 'Reset password',
+			icon: 'edit',
 			separatorBefore: true,
-			disabled: 'Remove it from PROJECTS first.'
+			disabled: "Only an admin with all of this user's projects can change it."
 		}
 	];
 
@@ -1050,7 +1050,7 @@ Every component with its variants, on sample data. Served only by the dev server
 					This server is reached over plain HTTP, so sign-in codes and tokens cross the network
 					unencrypted.
 				</Notice>
-				<Notice tone="error" alert>Could not delete the project: it comes from PROJECTS.</Notice>
+				<Notice tone="error" alert>Could not delete the project: the server did not answer.</Notice>
 				<Notice tone="info" compact>
 					<p>The share matters only once the database nears its limit.</p>
 					<p>100% (the default) means no limit of its own.</p>
