@@ -14,6 +14,7 @@ import (
 type Envelope struct {
 	Sequence       uint64
 	InboxSize      int // bytes of the inbox entry, freed once stored
+	InboxProject   int // the project of the inbox entry (InboxBytesOf)
 	Events         []store.NewEvent
 	Logs           []store.NewLog
 	LogsPerMessage int // keep the newest of a repeated message (0: all)
@@ -23,7 +24,6 @@ type Envelope struct {
 // Write stores envelopes and deletes their inbox entries in one batch.
 func (database *Store) Write(envelopes []Envelope) ([][]store.SaveResult, error) {
 	results := make([][]store.SaveResult, len(envelopes))
-	freed := 0
 
 	// Copies of a repeated message this batch would delete are not written.
 	copies := map[string]int{}
@@ -76,8 +76,6 @@ func (database *Store) Write(envelopes []Envelope) ([][]store.SaveResult, error)
 				if err := database.inbox.Delete(writer.batch, inboxRecord{InboxEntry: InboxEntry{Sequence: envelope.Sequence}}); err != nil {
 					return err
 				}
-
-				freed += envelope.InboxSize
 			}
 		}
 
@@ -88,7 +86,11 @@ func (database *Store) Write(envelopes []Envelope) ([][]store.SaveResult, error)
 		return nil, err
 	}
 
-	database.inboxBytes.Add(-int64(freed))
+	for _, envelope := range envelopes {
+		if envelope.Sequence != 0 {
+			database.addInbox(envelope.InboxProject, -int64(envelope.InboxSize))
+		}
+	}
 
 	return results, nil
 }

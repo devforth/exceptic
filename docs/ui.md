@@ -9,13 +9,13 @@ A project is one service (backend, frontend, worker) with its own DSN. Deleting 
 | Field | |
 |---|---|
 | Color | The color of the project's badge in lists and emails. |
-| DSN | The address the app's Sentry SDK sends to. Safe to put in browser code: it only allows sending to this project. Reset DSN on the Installation page gives a new one and stops the old one. |
+| DSN | The address the app's Sentry SDK sends to. Safe to put in browser code: it only allows sending to this project. Reset DSN on the Installation page gives a new one and stops the old one; the project shows as connected again once an app sends with the new one. |
 | Paused | While paused, nothing the project's apps send is stored or notified. |
 | Logs | Log levels to store; others are dropped. Errors of every level are always stored. |
 | Disk share | The part of MAX_DATABASE_SIZE the project may take. When it reaches 99% of it, the project's own oldest data is deleted down to 80% of its share, so a flood in one project does not push out the others. 100% means no limit of its own. |
 | Allowed domains | Sites whose browsers may send to the project, e.g. `https://app.example.com` or `https://*.example.com`. Empty: any site. Backend apps are not checked. |
 | History kept | The oldest record of each kind still stored. When the database is full, the least useful data goes first ([Retention](configuration.md#retention)). |
-| Dropped | What the project sent in the last 24 hours that was not stored: over its rate limit, the server busy, too large or unreadable. Resets on restart. |
+| Dropped | What the project sent in the last 24 hours that was not stored: over its rate limit, over its part of the queue, the server busy, too large or unreadable. Resets on restart. |
 
 ## Notifications
 

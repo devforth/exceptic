@@ -269,7 +269,7 @@ func storedEnvelopes(t *testing.T, database *Store) {
 			t.Fatal(err)
 		}
 
-		database.inboxBytes.Add(-int64(entry.Size))
+		database.addInbox(entry.ProjectID, -int64(entry.Size))
 	}
 
 	if err := database.db.Write(batch, false); err != nil {

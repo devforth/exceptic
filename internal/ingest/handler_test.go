@@ -52,6 +52,7 @@ func startTestServer(t *testing.T, settings *config.Config, projects config.Proj
 	t.Helper()
 
 	db := storetest.Open(t)
+	storetest.AddProjects(t, db, projects)
 	pipeline := NewPipeline(slog.New(slog.DiscardHandler), settings, projects, db, sink)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})

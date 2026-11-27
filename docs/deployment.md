@@ -112,7 +112,7 @@ How much the server can take at most, by CPU: the most errors it stored while 10
 
 Logs sent along take their share: with 5 logs per error, about a third fewer errors.
 
-Above that, apps pause for a few seconds and then send again. What they drop meanwhile shows on the Projects page.
+Above that, apps pause for a few seconds and then send again. What they drop meanwhile shows on the Projects page. A project that sends more than its part of the queue is paused alone ([Ingest](configuration.md#ingest)).
 
 ## Backup and restore
 

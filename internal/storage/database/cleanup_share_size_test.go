@@ -333,7 +333,7 @@ func TestDiskShareLeavesOutTheInbox(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		envelopes = append(envelopes, Envelope{Sequence: entry.Sequence, InboxSize: entry.Size})
+		envelopes = append(envelopes, Envelope{Sequence: entry.Sequence, InboxSize: entry.Size, InboxProject: entry.ProjectID})
 		inbox += int64(entry.Size)
 	}
 

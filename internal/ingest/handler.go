@@ -178,7 +178,7 @@ func (handler *Handler) ingest(w http.ResponseWriter, r *http.Request) (response
 
 	// Any request with the key connects the project: SDKs send a session at
 	// start, long before an error.
-	handler.pipeline.markContact(project.ID, handler.now())
+	handler.pipeline.markContact(project.ID, key, handler.now())
 
 	if body == nil {
 		if body, err = openBody(w, r, handler.reading, projectID); err != nil {
@@ -273,6 +273,8 @@ func (handler *Handler) countRefused(project config.Project, err error, envelope
 		switch {
 		case rejection.rateLimits != "":
 			return
+		case rejection == errOverShare:
+			reason = dropQueueShare
 		case rejection.status == http.StatusRequestEntityTooLarge:
 			reason = dropTooLarge
 		case rejection.incomplete:

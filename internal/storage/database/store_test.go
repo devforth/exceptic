@@ -5,9 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -503,12 +506,120 @@ func TestInbox(t *testing.T) {
 		t.Fatalf("body %q %v %v", body, found, err)
 	}
 
-	if _, err := database.Write([]Envelope{{Sequence: first.Sequence, InboxSize: first.Size}}); err != nil {
+	if database.InboxBytesOf(1) != int64(first.Size) || database.InboxBytesOf(2) != int64(second.Size) {
+		t.Errorf("inbox bytes per project %d, %d", database.InboxBytesOf(1), database.InboxBytesOf(2))
+	}
+
+	if _, err := database.Write([]Envelope{{Sequence: first.Sequence, InboxSize: first.Size, InboxProject: 1}}); err != nil {
 		t.Fatal(err)
 	}
 
 	if _, waiting, _ := database.InboxBody(first.Sequence); waiting || database.InboxBytes() != int64(second.Size) {
 		t.Errorf("stored entry still waiting: %v, %d bytes", waiting, database.InboxBytes())
+	}
+
+	if database.InboxBytesOf(1) != 0 || database.InboxBytesOf(2) != int64(second.Size) {
+		t.Errorf("inbox bytes per project after a write %d, %d", database.InboxBytesOf(1), database.InboxBytesOf(2))
+	}
+}
+
+// Concurrent appends of one project are checked and counted under one lock:
+// none passes on a count another has already raised.
+func TestAppendWithinHoldsTheShare(t *testing.T) {
+	database := openTest(t)
+	body := []byte("envelope")
+	size := int64(inboxHeader + len(body))
+	limit := InboxLimit{Total: math.MaxInt64, Own: 5 * size}
+
+	var (
+		group    sync.WaitGroup
+		accepted atomic.Int64
+	)
+
+	for range 50 {
+		group.Add(1)
+
+		go func() {
+			defer group.Done()
+
+			_, err := database.AppendWithin(1, time.Now(), body, limit)
+
+			switch {
+			case err == nil:
+				accepted.Add(1)
+			case !errors.Is(err, ErrOverShare):
+				t.Error(err)
+			}
+		}()
+	}
+
+	group.Wait()
+
+	if accepted.Load() != 5 || database.InboxBytesOf(1) != 5*size {
+		t.Errorf("accepted %d, %d bytes; want 5, %d", accepted.Load(), database.InboxBytesOf(1), 5*size)
+	}
+
+	if _, err := database.AppendWithin(2, time.Now(), body, InboxLimit{Total: 5 * size, Own: math.MaxInt64}); err != nil {
+		t.Errorf("another project at the limit: %v", err)
+	}
+
+	if _, err := database.AppendWithin(3, time.Now(), body, InboxLimit{Total: 5 * size, Own: math.MaxInt64}); !errors.Is(err, ErrInboxFull) || database.InboxBytesOf(3) != 0 {
+		t.Errorf("over the inbox: %v, %d bytes counted", err, database.InboxBytesOf(3))
+	}
+}
+
+// Entries left in the inbox at a restart count for their projects again.
+func TestInboxBytesPerProjectAfterARestart(t *testing.T) {
+	dir := t.TempDir()
+	database := openOnDisk(t, dir)
+	received := time.Date(2026, 11, 10, 8, 0, 0, 0, time.UTC)
+	first, _ := database.Append(1, received, []byte("one"))
+	second, _ := database.Append(2, received, []byte("second"))
+	third, err := database.Append(2, received, []byte("third"))
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	database = openOnDisk(t, dir)
+
+	if database.InboxBytesOf(1) != int64(first.Size) || database.InboxBytesOf(2) != int64(second.Size+third.Size) {
+		t.Errorf("inbox bytes per project %d, %d", database.InboxBytesOf(1), database.InboxBytesOf(2))
+	}
+}
+
+// A new DSN key clears the project's first contact: the next request with it connects it again.
+func TestRotatedKeyClearsTheContact(t *testing.T) {
+	database := openTest(t)
+	now := time.Date(2026, 11, 10, 8, 0, 0, 0, time.UTC)
+
+	if err := database.AddProjects(context.Background(), now, store.Project{ID: 1, Name: "backend", PublicKey: "0123456789abcdef0123456789abcdef"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := database.MarkContact(1, "0123456789abcdef0123456789abcdef", now); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := database.RotateProjectKey(context.Background(), 1, "fedcba9876543210fedcba9876543210", now); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, connected := database.FirstContact(1); connected {
+		t.Error("connected after the key was replaced")
+	}
+
+	// A request that came with the old key, done after the reset, connects nothing.
+	if written, err := database.MarkContact(1, "0123456789abcdef0123456789abcdef", now.Add(time.Minute)); err != nil || written {
+		t.Errorf("contact with the old key written %v, %v", written, err)
+	}
+
+	if written, err := database.MarkContact(1, "fedcba9876543210fedcba9876543210", now.Add(time.Minute)); err != nil || !written {
+		t.Errorf("contact with the new key written %v, %v", written, err)
 	}
 }
 

@@ -506,7 +506,7 @@ func TestCompactInboxWhenQuiet(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := database.Write([]Envelope{{Sequence: entry.Sequence, InboxSize: entry.Size}}); err != nil {
+	if _, err := database.Write([]Envelope{{Sequence: entry.Sequence, InboxSize: entry.Size, InboxProject: entry.ProjectID}}); err != nil {
 		t.Fatal(err)
 	}
 

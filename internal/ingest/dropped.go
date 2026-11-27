@@ -28,13 +28,14 @@ const (
 var dropKindNames = [dropKindCount]string{"events", "logs", "envelopes"}
 
 // dropReasons are store.DropReasons by index.
-var dropReasons = []string{store.DropRateLimit, store.DropBusy, store.DropTooLarge, store.DropInvalid, store.DropIncomplete, store.DropSDKRateLimit, store.DropSDKOverflow}
+var dropReasons = []string{store.DropRateLimit, store.DropBusy, store.DropQueueShare, store.DropTooLarge, store.DropInvalid, store.DropIncomplete, store.DropSDKRateLimit, store.DropSDKOverflow}
 
 type dropReason int
 
 const (
 	dropRateLimit dropReason = iota
 	dropBusy
+	dropQueueShare
 	dropTooLarge
 	dropInvalid
 	dropIncomplete

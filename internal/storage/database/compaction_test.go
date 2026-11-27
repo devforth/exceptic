@@ -346,7 +346,7 @@ func ingestLoad(t *testing.T, database *Store, stop <-chan struct{}, rate int64,
 				Timestamp: database.now(), ReceivedAt: database.now(), Payload: fmt.Appendf(nil, `{"extra":{"note":%q}}`, scenarioText(random, 2000))})
 		}
 
-		if _, err := database.Write([]Envelope{{Sequence: entry.Sequence, InboxSize: entry.Size, Logs: logs, Events: events}}); err != nil {
+		if _, err := database.Write([]Envelope{{Sequence: entry.Sequence, InboxSize: entry.Size, InboxProject: entry.ProjectID, Logs: logs, Events: events}}); err != nil {
 			t.Error(err)
 
 			return
