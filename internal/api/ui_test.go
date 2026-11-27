@@ -460,7 +460,6 @@ func TestUIProjectLevels(t *testing.T) {
 	var projects struct {
 		Items []struct {
 			Name      string   `json:"name"`
-			FromEnv   bool     `json:"from_env"`
 			LogLevels []string `json:"log_levels"`
 		} `json:"items"`
 	}
@@ -471,7 +470,7 @@ func TestUIProjectLevels(t *testing.T) {
 
 	// The test settings record every level: an explicit list, highest first.
 	for _, project := range projects.Items {
-		if !project.FromEnv || !slices.Equal(project.LogLevels, []string{"fatal", "error", "warn", "info", "debug", "trace"}) {
+		if !slices.Equal(project.LogLevels, []string{"fatal", "error", "warn", "info", "debug", "trace"}) {
 			t.Errorf("%+v", project)
 		}
 	}

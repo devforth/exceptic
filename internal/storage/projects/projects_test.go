@@ -3,13 +3,10 @@ package projects
 import (
 	"context"
 	"errors"
-	"log/slog"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/storage/store"
 	"github.com/devforth/exceptic/internal/storage/storetest"
 )
@@ -39,7 +36,7 @@ func (database *heldStore) ListProjects(ctx context.Context) ([]store.Project, e
 func TestReloadKeepsTheNewestList(t *testing.T) {
 	ctx := context.Background()
 	database := &heldStore{Store: storetest.Open(t), read: make(chan struct{}), release: make(chan struct{})}
-	registry, err := Open(ctx, slog.New(slog.DiscardHandler), database, nil)
+	registry, err := Open(ctx, database)
 
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +82,7 @@ func TestReloadKeepsTheNewestList(t *testing.T) {
 func TestDeleteOutlivesTheRequest(t *testing.T) {
 	ctx := context.Background()
 	database := storetest.Open(t)
-	registry, err := Open(ctx, slog.New(slog.DiscardHandler), database, nil)
+	registry, err := Open(ctx, database)
 
 	if err != nil {
 		t.Fatal(err)
@@ -118,104 +115,38 @@ func TestDeleteOutlivesTheRequest(t *testing.T) {
 	}
 }
 
-// PROJECTS names a project only when it creates it: a rename in the web app
-// survives restarts, while the key always follows PROJECTS.
-func TestEnvProjectKeepsItsRename(t *testing.T) {
+// Open seeds nothing: a new database has no project, and one stored with
+// its own id and key is listed as stored and can be deleted like any other.
+func TestOpenListsStoredProjects(t *testing.T) {
 	ctx := context.Background()
 	database := storetest.Open(t)
-	env := config.Projects{{ID: 1, Name: "backend", PublicKey: "0123456789abcdef"}}
-	logger := slog.New(slog.DiscardHandler)
-
-	registry, err := Open(ctx, logger, database, env)
+	registry, err := Open(ctx, database)
 
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	stored, err := registry.Get(ctx, 1)
+	if listed := registry.List(); len(listed) != 0 {
+		t.Fatalf("a new database lists %+v", listed)
+	}
 
-	if err != nil {
+	if err := database.AddProjects(ctx, time.Now(), store.Project{ID: 1, Name: "backend", PublicKey: "0123456789abcdef"}); err != nil {
 		t.Fatal(err)
 	}
 
-	stored.Name, stored.PublicKey = "api", "fedcba9876543210"
-
-	if err := registry.Update(ctx, stored); err != nil {
+	if registry, err = Open(ctx, database); err != nil {
 		t.Fatal(err)
 	}
 
-	if project, _ := registry.List().ByID(1); project.Name != "api" || project.PublicKey != env[0].PublicKey {
-		t.Fatalf("after the rename: %+v, want the name api and the key of PROJECTS", project)
+	if project, listed := registry.List().ByID(1); !listed || project.Name != "backend" || project.PublicKey != "0123456789abcdef" {
+		t.Fatalf("stored project: %+v, %v", project, listed)
 	}
 
-	env[0].PublicKey = "abcdef0123456789"
-
-	if registry, err = Open(ctx, logger, database, env); err != nil {
+	if err := registry.Delete(ctx, 1); err != nil {
 		t.Fatal(err)
 	}
 
-	if project, _ := registry.List().ByID(1); project.Name != "api" || project.PublicKey != "abcdef0123456789" || !registry.FromEnv(1) {
-		t.Fatalf("after a restart with a new key: %+v", project)
-	}
-}
-
-// A new entry of PROJECTS whose name another project took (a rename in the
-// web app) stops the start with a message naming that project.
-func TestEnvNameTakenStopsTheStart(t *testing.T) {
-	ctx := context.Background()
-	database := storetest.Open(t)
-	logger := slog.New(slog.DiscardHandler)
-	env := config.Projects{{ID: 1, Name: "backend", PublicKey: "0123456789abcdef"}}
-
-	registry, err := Open(ctx, logger, database, env)
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	stored, _ := registry.Get(ctx, 1)
-	stored.Name = "api"
-
-	if err := registry.Update(ctx, stored); err != nil {
-		t.Fatal(err)
-	}
-
-	env = append(env, config.Project{ID: 2, Name: "api", PublicKey: "abcdef0123456789"})
-
-	if _, err := Open(ctx, logger, database, env); err == nil || !strings.Contains(err.Error(), `"api": the name is used by project 1`) {
-		t.Fatalf("err = %v, want the project that holds the name", err)
-	}
-}
-
-// A DSN reset in the web app outlives a restart: the key in PROJECTS is
-// no longer read for that project.
-func TestResetKeyOutlivesPROJECTS(t *testing.T) {
-	ctx := context.Background()
-	database := storetest.Open(t)
-	env := config.Projects{{ID: 1, Name: "backend", PublicKey: "0123456789abcdef"}}
-	logger := slog.New(slog.DiscardHandler)
-
-	registry, err := Open(ctx, logger, database, env)
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := registry.RotateKey(ctx, 1); err != nil {
-		t.Fatal(err)
-	}
-
-	reset, _ := registry.List().ByID(1)
-
-	if reset.PublicKey == env[0].PublicKey {
-		t.Fatal("the key did not change")
-	}
-
-	if registry, err = Open(ctx, logger, database, env); err != nil {
-		t.Fatal(err)
-	}
-
-	if project, _ := registry.List().ByID(1); project.PublicKey != reset.PublicKey {
-		t.Errorf("after a restart: %q, want the reset key %q", project.PublicKey, reset.PublicKey)
+	if _, listed := registry.List().ByID(1); listed {
+		t.Fatal("the deleted project is still listed")
 	}
 }

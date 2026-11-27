@@ -9,7 +9,6 @@ import (
 
 	"github.com/devforth/exceptic/internal/platform/config"
 	"github.com/devforth/exceptic/internal/services"
-	"github.com/devforth/exceptic/internal/storage/projects"
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
@@ -86,7 +85,7 @@ func (handler *handlers) management() []Endpoint {
 		}, handler.updateProject),
 		Define(Endpoint{
 			Name:        "delete_project",
-			Description: "Delete a project added in the UI with all its issues, events and logs; apps using its DSN are rejected afterwards.",
+			Description: "Delete a project with all its issues, events and logs; apps using its DSN are rejected afterwards.",
 			Destructive: true, Admin: true, Transports: ActsAsUser,
 		}, handler.deleteProject),
 
@@ -556,9 +555,7 @@ func (handler *handlers) deleteProject(ctx context.Context, call Call, input pro
 		return doneOutput{}, err
 	}
 
-	if err := handler.services.Projects.Delete(ctx, call.Access(), project.ID); errors.Is(err, projects.ErrFromEnv) {
-		return doneOutput{}, conflict("project %q comes from PROJECTS: remove it there", project.Name)
-	} else if err != nil {
+	if err := handler.services.Projects.Delete(ctx, call.Access(), project.ID); err != nil {
 		return doneOutput{}, err
 	}
 

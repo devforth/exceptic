@@ -30,7 +30,7 @@ type Connection struct {
 	ID            string
 	Name          string
 	DestinationID string
-	AllProjects   bool  // every project, including ones added to PROJECTS later
+	AllProjects   bool  // every project, including ones added later
 	ProjectIDs    []int // used when AllProjects is false
 	Levels        []string
 	Active        bool

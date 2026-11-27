@@ -27,11 +27,8 @@ import (
 	"github.com/devforth/exceptic/internal/storage/storetest"
 )
 
-// Same keys and IDs as the fixtures and the sentry-playground DSNs.
 func testSettings() *config.Config {
-	return &config.Config{
-		Projects: fixtures.Projects(),
-	}
+	return &config.Config{}
 }
 
 type testServer struct {
@@ -43,18 +40,19 @@ type testServer struct {
 }
 
 // newTestServer runs the handler with its pipeline on a new database, as the
-// server does, until the test ends.
+// server does, until the test ends, for the projects of the fixtures (the
+// sentry-playground DSNs).
 func newTestServer(t *testing.T, settings *config.Config) *testServer {
 	t.Helper()
 
-	return startTestServer(t, settings, StoreSink{Logger: slog.New(slog.DiscardHandler)})
+	return startTestServer(t, settings, fixtures.Projects(), StoreSink{Logger: slog.New(slog.DiscardHandler)})
 }
 
-func startTestServer(t *testing.T, settings *config.Config, sink StoreSink) *testServer {
+func startTestServer(t *testing.T, settings *config.Config, projects config.Projects, sink StoreSink) *testServer {
 	t.Helper()
 
 	db := storetest.Open(t)
-	pipeline := NewPipeline(slog.New(slog.DiscardHandler), settings, settings.Projects, db, sink)
+	pipeline := NewPipeline(slog.New(slog.DiscardHandler), settings, projects, db, sink)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 
@@ -254,15 +252,15 @@ func TestAuthentication(t *testing.T) {
 }
 
 func TestCORS(t *testing.T) {
-	settings := testSettings()
+	projects := fixtures.Projects()
 	// Project 2 (the browser's) allows one site; project 1 lists none, so any.
-	for index := range settings.Projects {
-		if settings.Projects[index].ID == 2 {
-			settings.Projects[index].AllowedOrigins = []string{"https://app.example.com"}
+	for index := range projects {
+		if projects[index].ID == 2 {
+			projects[index].AllowedOrigins = []string{"https://app.example.com"}
 		}
 	}
 
-	server := newTestServer(t, settings)
+	server := startTestServer(t, testSettings(), projects, StoreSink{Logger: slog.New(slog.DiscardHandler)})
 
 	t.Run("allowed origin", func(t *testing.T) {
 		request := newRequest(http.MethodPost, envelopeURL("2", fixtures.BrowserKey), []byte(simpleEnvelope))

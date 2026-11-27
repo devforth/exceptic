@@ -191,7 +191,6 @@ export interface Endpoints {
 			id: number;
 			name: string;
 			dsn?: string;
-			from_env?: boolean;
 			log_levels: string[] | null;
 			paused?: boolean;
 			color?: string;
@@ -533,7 +532,6 @@ export interface Endpoints {
 			id: number;
 			name: string;
 			dsn?: string;
-			from_env?: boolean;
 			log_levels: string[] | null;
 			paused?: boolean;
 			color?: string;
@@ -1008,7 +1006,6 @@ export interface Endpoints {
 				id: number;
 				name: string;
 				dsn?: string;
-				from_env?: boolean;
 				log_levels: string[] | null;
 				paused?: boolean;
 				unresolved_issues: number;
@@ -1154,7 +1151,6 @@ export interface Endpoints {
 			id: number;
 			name: string;
 			dsn?: string;
-			from_env?: boolean;
 			log_levels: string[] | null;
 			paused?: boolean;
 		};
@@ -1305,7 +1301,6 @@ export interface Endpoints {
 			id: number;
 			name: string;
 			dsn?: string;
-			from_env?: boolean;
 			log_levels: string[] | null;
 			paused?: boolean;
 			color?: string;

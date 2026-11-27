@@ -122,7 +122,11 @@ describe('RowMenu with a disabled item', () => {
 		render(RowMenu, {
 			label: 'Actions for backend',
 			items: [
-				{ label: 'Rename it', icon: 'edit', disabled: 'Remove it from PROJECTS first.' },
+				{
+					label: 'Rename it',
+					icon: 'edit',
+					disabled: "Only an admin with all of this user's projects can change it."
+				},
 				{ label: 'Rename', icon: 'edit', action: rename }
 			]
 		});
@@ -131,9 +135,9 @@ describe('RowMenu with a disabled item', () => {
 		const disabled = screen.getByRole('menuitem', { name: /Rename it/ });
 
 		expect(disabled.getAttribute('aria-disabled')).toBe('true');
-		expect(screen.getByText('Remove it from PROJECTS first.').id).toBe(
-			disabled.getAttribute('aria-describedby')
-		);
+		expect(
+			screen.getByText("Only an admin with all of this user's projects can change it.").id
+		).toBe(disabled.getAttribute('aria-describedby'));
 
 		await userEvent.click(disabled);
 		expect(menu()).not.toBeNull();
