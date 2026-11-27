@@ -137,6 +137,17 @@ func (database *Store) RotateProjectKey(_ context.Context, id int, key string, n
 		at := now.UTC()
 		stored.PublicKey, stored.KeyChangedAt = key, &at
 
+		// The new key has not been used yet: the project waits for its first contact again.
+		if err := database.contacts.Delete(batch, projectContact{ProjectID: id}); err != nil {
+			return err
+		}
+
+		batch.AfterWrite(func() {
+			database.contactsMutex.Lock()
+			delete(database.contacted, id)
+			database.contactsMutex.Unlock()
+		})
+
 		return projectConflict(database.projects.Save(batch, stored))
 	})
 }

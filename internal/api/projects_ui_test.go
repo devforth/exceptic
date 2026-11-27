@@ -601,6 +601,7 @@ func TestUIResetProjectKey(t *testing.T) {
 		DSN          string     `json:"dsn"`
 		KeyChangedAt *time.Time `json:"key_changed_at"`
 		CreatedAt    time.Time  `json:"created_at"`
+		Connected    bool       `json:"connected"`
 	}
 
 	id := strconv.Itoa(created.ID)
@@ -614,8 +615,19 @@ func TestUIResetProjectKey(t *testing.T) {
 	user := server.webUserWith(store.RoleUser, store.OnlyProjects(created.ID))
 	user.request(http.MethodPost, "reset_project_key", `{"project":`+id+`}`, &setup)
 
+	// The new key has not been used: the project waits for its first contact again.
+	if setup.Connected {
+		t.Error("still connected right after the reset")
+	}
+
 	if setup.DSN == old || setup.KeyChangedAt == nil || send(old) != http.StatusForbidden || send(setup.DSN) != http.StatusOK {
 		t.Errorf("after the reset: %+v, the old one %d", setup, send(old))
+	}
+
+	admin.request(http.MethodGet, "get_project_setup?project="+id, "", &setup)
+
+	if !setup.Connected {
+		t.Error("not connected after a request with the new key")
 	}
 
 	// Settings saved afterwards keep the new key.
