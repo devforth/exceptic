@@ -67,7 +67,7 @@ to go after it (a local path only); a full load opens that page with a fresh ses
 
 <PageTitle title="Log in" />
 
-<main class="mx-auto w-full max-w-[340px] px-4 pt-[12vh] pb-16">
+<main class="mx-auto flex min-h-dvh w-full max-w-[340px] flex-col justify-center px-4 py-16">
 	<Card>
 		<h1 class={titleClasses}>{data.state.app_name}</h1>
 		{#if data.state.disabled}
