@@ -23,7 +23,7 @@ func TestFieldsAndSettings(t *testing.T) {
 
 	settings, err := Settings()
 
-	if err != nil || settings["NOTIFY_KEEP_SENT"] != "Delivered messages are deleted from the delivery log after this." {
+	if err != nil || settings["NOTIFY_KEEP_SENT"] != "How long sent messages stay in the delivery log." {
 		t.Errorf("NOTIFY_KEEP_SENT: %q %v", settings["NOTIFY_KEEP_SENT"], err)
 	}
 
