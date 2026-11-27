@@ -109,7 +109,7 @@ Measured: 10 projects sending errors as fast as they could, each error with 5 lo
 |---|---|---|---|---|
 | Requests a second | 130 | 220 | 310 | 410 |
 
-When the server cannot keep up, apps pause for a few seconds and then send again. What they drop meanwhile shows on the Projects page.
+When the server cannot keep up, apps pause for a few seconds and then send again. What they drop meanwhile shows on the Projects page. A project that sends more than its part of the queue is paused alone ([Ingest](configuration.md#ingest)).
 
 ## Backup and restore
 

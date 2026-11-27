@@ -41,6 +41,8 @@ Projects are added on the Projects page (or by a coding agent with `create_proje
 | `RATE_LIMIT_LOGS_PER_MINUTE` | `10000` | Logs a project may send per minute. Keep it at least `100`, the most logs the JavaScript SDK sends at once. `0` = no limit. |
 | `RECORD_LOG_LEVELS` | `all` | Log levels to store: `fatal`, `error`, `warn`, `info`, `debug`, `trace`, or `all`/`none`. A project can choose its own. Errors of every level are always stored. |
 
+What the server accepted waits in a queue until it is stored, up to 20% of `MAX_DATABASE_SIZE`. Each active project (connected or holding data, not paused) may fill only its part of the queue, by its disk share: 4 projects at 100% get a quarter each, a project at 50% half as much as one at 100%. Every active project keeps at least 5% of the queue, and at least 20 MB. A project over its part is told to wait a few seconds (429) while the others are still accepted.
+
 ### Size limits
 
 These are fixed.

@@ -51,6 +51,10 @@ const MinDatabaseBytes = 500 << 20 // 500 MB
 // wait in the ingest queue; beyond it new envelopes get 429.
 const InboxPercent = 20
 
+// MinInboxSharePercent of the inbox is the least part any active project may
+// hold, however many projects share it (ingest's inboxShare).
+const MinInboxSharePercent = 5
+
 // MaxInboxBytes is the ingest queue's share of maxDatabaseBytes, or of the
 // default when the limit is off (0).
 func MaxInboxBytes(maxDatabaseBytes int64) int64 {

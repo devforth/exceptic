@@ -137,6 +137,17 @@ func (database *Store) RotateProjectKey(_ context.Context, id int, key string, n
 		at := now.UTC()
 		stored.PublicKey, stored.KeyChangedAt = key, &at
 
+		// The project is connected again by the first request with the new key.
+		if err := database.contacts.Delete(batch, projectContact{ProjectID: id}); err != nil {
+			return err
+		}
+
+		batch.AfterWrite(func() {
+			database.contactsMutex.Lock()
+			delete(database.contacted, id)
+			database.contactsMutex.Unlock()
+		})
+
 		return projectConflict(database.projects.Save(batch, stored))
 	})
 }
@@ -206,15 +217,27 @@ func (database *Store) FirstContact(projectID int) (at time.Time, ok bool) {
 }
 
 // MarkContact records the project's first contact at at, once: when it is
-// known it neither reads nor writes the database. written says it was new.
-func (database *Store) MarkContact(projectID int, at time.Time) (written bool, err error) {
+// known in memory nothing is written. key is the one the request came with:
+// a key the stored project no longer has (a DSN reset meanwhile) writes nothing.
+func (database *Store) MarkContact(projectID int, key string, at time.Time) (written bool, err error) {
 	if _, known := database.FirstContact(projectID); known {
 		return false, nil
 	}
 
 	err = database.db.Update(true, func(batch *kv.Batch) error {
-		// Updates run one at a time: another may have marked it meanwhile.
+		// Updates run one at a time (RotateProjectKey too): another may have marked it meanwhile.
 		if _, known := database.FirstContact(projectID); known || database.goneProjects[projectID] {
+			return nil
+		}
+
+		stored, err := database.projects.Get(batch, projectKey(projectID))
+
+		switch {
+		case errors.Is(err, kv.ErrNotFound):
+			return nil
+		case err != nil:
+			return err
+		case stored.PublicKey != key:
 			return nil
 		}
 

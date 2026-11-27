@@ -24,6 +24,9 @@ type Store struct {
 	formatKey kv.Key
 
 	inboxBytes atomic.Int64
+	// inboxProjects is inboxBytes per project (InboxBytesOf).
+	inboxMutex    sync.Mutex
+	inboxProjects map[int]int64
 
 	// minute is the cap of events an issue stores a minute; used only inside updates.
 	minute minuteCounts
@@ -115,7 +118,7 @@ func open(engine kv.Engine) (*Store, error) {
 	schema := kv.NewSchema()
 	formatKey := schema.Reserve(formatName)
 	database := &Store{schema: schema, collections: defineCollections(schema), formatKey: formatKey, now: time.Now, messageStart: map[string]uint64{},
-		goneProjects: map[int]bool{}, contacted: map[int]time.Time{}, cleanupWake: make(chan struct{}, 1),
+		goneProjects: map[int]bool{}, contacted: map[int]time.Time{}, inboxProjects: map[int]int64{}, cleanupWake: make(chan struct{}, 1),
 		compactionWake: make(chan struct{}, 1)}
 
 	db, err := kv.OpenDB(engine, schema)

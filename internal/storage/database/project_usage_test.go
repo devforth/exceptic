@@ -123,7 +123,7 @@ func TestFirstContact(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if written, err := database.MarkContact(1, first); err != nil || !written {
+	if written, err := database.MarkContact(1, "0123456789abcdef", first); err != nil || !written {
 		t.Fatalf("first mark: written %v, %v", written, err)
 	}
 
@@ -134,7 +134,7 @@ func TestFirstContact(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if written, err := database.MarkContact(1, first.Add(time.Hour)); err != nil || written {
+	if written, err := database.MarkContact(1, "0123456789abcdef", first.Add(time.Hour)); err != nil || written {
 		t.Fatalf("second mark: written %v, %v", written, err)
 	}
 
@@ -147,7 +147,7 @@ func TestFirstContact(t *testing.T) {
 	delete(database.contacted, 1)
 	database.contactsMutex.Unlock()
 
-	if _, err := database.MarkContact(1, first); err != nil {
+	if _, err := database.MarkContact(1, "0123456789abcdef", first); err != nil {
 		t.Fatal(err)
 	}
 

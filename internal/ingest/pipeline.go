@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"net/http"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -30,6 +29,8 @@ type Pipeline struct {
 
 	// MaxInboxBytes: beyond it new envelopes get 429.
 	MaxInboxBytes int64
+	// MinInboxShare is the least of the inbox a project may hold (inboxShare).
+	MinInboxShare int64
 	// BatchSize, BatchBytes and BatchWait bound one write.
 	BatchSize  int
 	BatchBytes int
@@ -49,6 +50,8 @@ type Pipeline struct {
 	wake   chan struct{}
 
 	stored atomic.Int64 // envelopes stored since start
+	// withData are the projects with an issue or a log, read every shareRefresh (inboxShare).
+	withData atomic.Pointer[map[int]bool]
 	// inFlight holds entries handed out and not stored yet.
 	inFlight sync.Map
 
@@ -71,7 +74,7 @@ func NewPipeline(logger *slog.Logger, settings *config.Config, projects config.P
 	handler := newHandler(logger, settings, projects)
 	pipeline := &Pipeline{
 		handler: handler, store: db, sink: sink, logger: logger,
-		MaxInboxBytes: config.MaxInboxBytes(config.DefaultMaxDatabaseBytes), LogsPerMessage: config.LogsPerMessage, EventsPerIssue: config.EventsPerIssuePerMinute, BatchSize: 512, BatchBytes: 4 << 20, BatchWait: 5 * time.Millisecond, ParseBytes: 32 << 20, Rescan: 10 * time.Second,
+		MaxInboxBytes: config.MaxInboxBytes(config.DefaultMaxDatabaseBytes), MinInboxShare: MaxBodyBytes, LogsPerMessage: config.LogsPerMessage, EventsPerIssue: config.EventsPerIssuePerMinute, BatchSize: 512, BatchBytes: 4 << 20, BatchWait: 5 * time.Millisecond, ParseBytes: 32 << 20, Rescan: 10 * time.Second,
 		fresh: make(chan database.InboxEntry, 4*runtime.GOMAXPROCS(0)), wake: make(chan struct{}, 1), progress: make(chan struct{}),
 	}
 	handler.pipeline = pipeline
@@ -123,14 +126,16 @@ func (pipeline *Pipeline) setWriting(writing bool) {
 const inboxFullRetry = "10"
 
 func (pipeline *Pipeline) accept(project config.Project, envelope *sentry.Envelope, body []byte) (map[string]string, error) {
-	if pipeline.store.InboxBytes() > pipeline.MaxInboxBytes {
-		return nil, &requestError{status: http.StatusTooManyRequests, message: "server busy", retryAfter: inboxFullRetry}
-	}
+	limit := database.InboxLimit{Total: pipeline.MaxInboxBytes, Own: pipeline.inboxShare(project)}
+	entry, err := pipeline.store.AppendWithin(project.ID, pipeline.handler.now(), body, limit)
 
-	entry, err := pipeline.store.Append(project.ID, pipeline.handler.now(), body)
-
-	if errors.Is(err, database.ErrCompacting) {
+	switch {
+	case errors.Is(err, database.ErrCompacting):
 		return nil, errCompacting
+	case errors.Is(err, database.ErrInboxFull):
+		return nil, errInboxFull
+	case errors.Is(err, database.ErrOverShare):
+		return nil, errOverShare
 	}
 
 	if err != nil {
@@ -159,8 +164,8 @@ func (pipeline *Pipeline) accept(project config.Project, envelope *sentry.Envelo
 
 // markContact records the project's first request with its key, once; a
 // failure only logs, since the envelope can still be stored.
-func (pipeline *Pipeline) markContact(projectID int, at time.Time) {
-	if _, err := pipeline.store.MarkContact(projectID, at); err != nil {
+func (pipeline *Pipeline) markContact(projectID int, key string, at time.Time) {
+	if _, err := pipeline.store.MarkContact(projectID, key, at); err != nil {
 		pipeline.logger.Error("mark project connected", "project", projectID, "err", err)
 	}
 }
@@ -186,7 +191,13 @@ func (pipeline *Pipeline) Run(ctx context.Context) {
 		}()
 	}
 
-	writerDone := make(chan struct{})
+	writerDone, sharesDone := make(chan struct{}), make(chan struct{})
+
+	go func() {
+		defer close(sharesDone)
+
+		pipeline.refreshShares(ctx)
+	}()
 
 	go func() {
 		defer close(writerDone)
@@ -199,6 +210,7 @@ func (pipeline *Pipeline) Run(ctx context.Context) {
 	processors.Wait()
 	close(results)
 	<-writerDone
+	<-sharesDone
 }
 
 // dispatch hands fresh entries, and the inbox's at start, after a full queue and every Rescan.
@@ -304,11 +316,16 @@ func (pipeline *Pipeline) processOrDrop(entry database.InboxEntry) (result proce
 		if recovered := recover(); recovered != nil {
 			pipeline.logger.Error("envelope dropped: processing it panicked", "project_id", entry.ProjectID, "err", logging.PanicError(recovered))
 
-			result, ok = processed{Envelope: database.Envelope{Sequence: entry.Sequence, InboxSize: entry.Size}}, true
+			result, ok = processed{Envelope: inboxEnvelope(entry)}, true
 		}
 	}()
 
 	return pipeline.process(entry)
+}
+
+// inboxEnvelope is what deletes an entry from the inbox, with no records yet.
+func inboxEnvelope(entry database.InboxEntry) database.Envelope {
+	return database.Envelope{Sequence: entry.Sequence, InboxSize: entry.Size, InboxProject: entry.ProjectID}
 }
 
 // process reads an entry's body and parses it; a malformed one only leaves the inbox.
@@ -324,7 +341,7 @@ func (pipeline *Pipeline) process(entry database.InboxEntry) (processed, bool) {
 		return processed{}, false
 	}
 
-	result := processed{Envelope: database.Envelope{Sequence: entry.Sequence, InboxSize: entry.Size}}
+	result := processed{Envelope: inboxEnvelope(entry)}
 	project, ok := pipeline.handler.projects.List().ByID(entry.ProjectID)
 
 	if !ok {
@@ -484,7 +501,7 @@ func (pipeline *Pipeline) storeOneByOne(ctx context.Context, batch []processed) 
 func (pipeline *Pipeline) drop(ctx context.Context, entry processed, reason error) ([][]store.SaveResult, bool) {
 	pipeline.logger.Error("envelope dropped: it cannot be stored", "project", entry.project.Name, "err", reason)
 
-	empty := processed{Envelope: database.Envelope{Sequence: entry.Sequence, InboxSize: entry.InboxSize}, project: entry.project}
+	empty := processed{Envelope: database.Envelope{Sequence: entry.Sequence, InboxSize: entry.InboxSize, InboxProject: entry.InboxProject}, project: entry.project}
 
 	if _, stored := pipeline.storeBatch(ctx, []processed{empty}); !stored {
 		return nil, false
