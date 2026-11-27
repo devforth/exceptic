@@ -95,8 +95,6 @@ func TestUIConflicts(t *testing.T) {
 		t.Errorf("a taken project name: %d %s", response.Code, response.Body)
 	}
 
-	wantStatus(t, "a project of PROJECTS", root.call(http.MethodPost, "delete_project", `{"project":"1"}`), http.StatusConflict, "PROJECTS")
-
 	webhook := `{"type":"slack","webhook_url":"https://hooks.slack.com/services/T0/B0/conflict","all_projects":true}`
 
 	if response := root.call(http.MethodPost, "create_connection", webhook); response.Code != http.StatusOK {

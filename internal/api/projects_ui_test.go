@@ -24,7 +24,6 @@ type uiProject struct {
 	ID         int      `json:"id"`
 	Name       string   `json:"name"`
 	DSN        string   `json:"dsn"`
-	FromEnv    bool     `json:"from_env"`
 	Color      string   `json:"color"`
 	ShownColor string   `json:"shown_color"`
 	LogLevels  []string `json:"log_levels"`
@@ -64,7 +63,7 @@ func TestUIGetProjectShownColor(t *testing.T) {
 
 	admin.request(http.MethodGet, "get_project?project=1", "", &project)
 
-	if project.Color != "" || project.ShownColor != config.ProjectPalette[0].Value || !project.FromEnv || !strings.Contains(project.DSN, fixtures.BackendKey) {
+	if project.Color != "" || project.ShownColor != config.ProjectPalette[0].Value || !strings.Contains(project.DSN, fixtures.BackendKey) {
 		t.Fatalf("%+v", project)
 	}
 
@@ -197,8 +196,9 @@ func TestUIProjectLifecycle(t *testing.T) {
 	}
 }
 
-// A project from PROJECTS can be renamed and change its color, but not be deleted.
-func TestUIProjectFromEnv(t *testing.T) {
+// A project stored with its own id and key is renamed, recolored and
+// deleted like any other.
+func TestUIStoredProject(t *testing.T) {
 	server := newRESTServer(t)
 	admin := server.webUser(store.RoleAdmin, false)
 
@@ -206,7 +206,7 @@ func TestUIProjectFromEnv(t *testing.T) {
 
 	admin.request(http.MethodPost, "update_project", `{"project":"1","name":"renamed","color":"#123456"}`, &project)
 
-	if project.Name != "renamed" || project.Color != "#123456" || !project.FromEnv {
+	if project.Name != "renamed" || project.Color != "#123456" {
 		t.Errorf("%+v", project)
 	}
 
@@ -221,8 +221,12 @@ func TestUIProjectFromEnv(t *testing.T) {
 		t.Errorf("color alone: %+v, session colors %v", project, session.ProjectColors)
 	}
 
-	if response := admin.call(http.MethodPost, "delete_project", `{"project":"1"}`); response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "PROJECTS") {
-		t.Errorf("delete: %d %s", response.Code, response.Body)
+	if response := admin.call(http.MethodPost, "delete_project", `{"project":"1"}`); response.Code != http.StatusOK {
+		t.Fatalf("delete: %d %s", response.Code, response.Body)
+	}
+
+	if response := admin.call(http.MethodGet, "get_project?project=1", ""); response.Code != http.StatusNotFound {
+		t.Errorf("after the delete: %d %s", response.Code, response.Body)
 	}
 }
 
@@ -570,8 +574,7 @@ func TestUIProjectAllowedOrigins(t *testing.T) {
 }
 
 // Resetting a DSN: the old key is refused at once, the new one works, the
-// setup says when; a project from PROJECTS keeps the key it has there, and
-// a user resets only a project they have.
+// setup says when; a user resets only a project they have.
 func TestUIResetProjectKey(t *testing.T) {
 	server := newRESTServer(t)
 	admin := server.webUser(store.RoleAdmin, false)
@@ -622,9 +625,9 @@ func TestUIResetProjectKey(t *testing.T) {
 		t.Error("a settings save brought the old key back")
 	}
 
-	// A project from PROJECTS resets too.
+	// A project stored with its own key resets too.
 	if response := admin.call(http.MethodPost, "reset_project_key", `{"project":1}`); response.Code != http.StatusOK || strings.Contains(response.Body.String(), fixtures.BackendKey) {
-		t.Errorf("a project from PROJECTS: %d %s", response.Code, response.Body)
+		t.Errorf("a project with its own key: %d %s", response.Code, response.Body)
 	}
 
 	if response := server.webUserWith(store.RoleUser, store.OnlyProjects(1)).call(http.MethodPost, "reset_project_key", `{"project":`+id+`}`); response.Code != http.StatusForbidden {

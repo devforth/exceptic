@@ -28,7 +28,7 @@ func openStore(t *testing.T) *database.Store {
 
 	database := storetest.Open(t)
 
-	if err := database.SeedProject(context.Background(), store.Project{ID: 1, Name: "backend", PublicKey: "0123456789abcdef0123456789abcdef"}, time.Now()); err != nil {
+	if err := database.AddProjects(context.Background(), time.Now(), store.Project{ID: 1, Name: "backend", PublicKey: "0123456789abcdef0123456789abcdef"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -348,7 +348,7 @@ func TestConfirmCodeOfAConfirmedAddress(t *testing.T) {
 func TestNewProjectKeepsTheShownColor(t *testing.T) {
 	ctx := context.Background()
 	database := openStore(t)
-	registry, err := projects.Open(ctx, slog.New(slog.DiscardHandler), database, nil)
+	registry, err := projects.Open(ctx, database)
 
 	if err != nil {
 		t.Fatal(err)
@@ -445,7 +445,7 @@ func TestSlackDuplicates(t *testing.T) {
 func TestStorage(t *testing.T) {
 	ctx := context.Background()
 	database := openStore(t)
-	registry, err := projects.Open(ctx, slog.New(slog.DiscardHandler), database, nil)
+	registry, err := projects.Open(ctx, database)
 
 	if err != nil {
 		t.Fatal(err)

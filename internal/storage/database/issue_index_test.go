@@ -229,7 +229,7 @@ func TestIssueListsMatchEveryIssue(t *testing.T) {
 	projects := map[int]string{1: "backend", 2: "frontend", 3: "api"}
 
 	for id, name := range projects {
-		if err := database.SeedProject(ctx, store.Project{ID: id, Name: name, PublicKey: fmt.Sprintf("%032d", id)}, now); err != nil {
+		if err := database.AddProjects(ctx, now, store.Project{ID: id, Name: name, PublicKey: fmt.Sprintf("%032d", id)}); err != nil {
 			t.Fatal(err)
 		}
 	}

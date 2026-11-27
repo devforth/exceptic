@@ -201,8 +201,9 @@ func TestManageProjects(t *testing.T) {
 		t.Fatalf("deleted project listed: %s", text)
 	}
 
-	if text, isError := server.try("delete_project", map[string]any{"project": "backend"}); !isError || !strings.Contains(text, "PROJECTS") {
-		t.Fatalf("deleting a project from env: %s", text)
+	// Every project can be deleted.
+	if text, isError := server.try("delete_project", map[string]any{"project": "backend"}); isError {
+		t.Fatalf("deleting a project stored with its own id: %s", text)
 	}
 }
 

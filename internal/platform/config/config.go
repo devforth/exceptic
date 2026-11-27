@@ -23,9 +23,8 @@ import (
 
 // Project is a source of events (e.g. "backend", "frontend") with its own DSN.
 // ID is the number at the end of the DSN and identifies the project's stored
-// data, so it must never change once in use. Projects live in the database;
-// the ones in PROJECTS are created there when missing and take their key from
-// PROJECTS at every start.
+// data, so it must never change once in use. Projects live in the database
+// and are added in the web app.
 type Project struct {
 	ID        int
 	Name      string
@@ -128,7 +127,7 @@ func ValidPasswordLength(password string) bool {
 	return length >= MinPasswordLength && length <= MaxPasswordLength
 }
 
-// Projects is a list of projects: the registry's, or PROJECTS as written.
+// Projects is a list of projects, as the registry holds them.
 type Projects []Project
 
 // ByID returns the project with this ID. Stored data can outlive its project
@@ -164,7 +163,6 @@ type Config struct {
 	// LogFormat (LOG_FORMAT): auto (pretty in a terminal, text otherwise),
 	// pretty, text or json; see package logging.
 	LogFormat string
-	Projects  Projects
 	// RateLimitEventsPerMinute and RateLimitLogsPerMinute cap the events and
 	// the logs a project may send per minute, a guard against abuse (an
 	// error in a loop is capped per issue, EventsPerIssuePerMinute); 0 turns a limit off.
@@ -232,9 +230,6 @@ const (
 	// project id (stored as 32 bits).
 	MaxProjectName = 64
 	MaxProjectID   = math.MaxUint32
-	// A project's public key has MinPublicKey to MaxPublicKey letters or digits.
-	MinPublicKey = 16
-	MaxPublicKey = 64
 	// ProjectNamePattern: lowercase letters, digits, '-' and '_', starting
 	// with a letter or digit, not digits only (that reads as a project ID).
 	// Also the pattern attribute of the project form, hence the escaped '-'.
@@ -244,7 +239,6 @@ const (
 var (
 	projectNameRe = regexp.MustCompile(`^(?:` + ProjectNamePattern + `)$`)
 	adminLoginRe  = regexp.MustCompile(`^[A-Za-z0-9._@-]+$`)
-	publicKeyRe   = regexp.MustCompile(fmt.Sprintf(`^[A-Za-z0-9]{%d,%d}$`, MinPublicKey, MaxPublicKey))
 )
 
 // Load reads the configuration from the process environment.
@@ -394,73 +388,7 @@ func loadFrom(getenv func(string) string) (*Config, error) {
 
 	config.TrustedProxies = trustedProxies
 
-	projects, err := parseProjects(getenv("PROJECTS"))
-
-	if err != nil {
-		return nil, fmt.Errorf("PROJECTS: %w", err)
-	}
-
-	config.Projects = projects
-
 	return config, nil
-}
-
-// parseProjects parses "id:name:key,id:name:key". Empty input means no projects.
-func parseProjects(raw string) (Projects, error) {
-	raw = strings.TrimSpace(raw)
-
-	if raw == "" {
-		return nil, nil
-	}
-
-	var projects Projects
-
-	seenIDs := map[int]bool{}
-	seenNames := map[string]bool{}
-	seenKeys := map[string]bool{}
-
-	for index, entry := range strings.Split(raw, ",") {
-		parts := strings.Split(strings.TrimSpace(entry), ":")
-
-		if len(parts) != 3 {
-			return nil, fmt.Errorf("entry %d %q: expected id:name:public_key", index+1, entry)
-		}
-
-		rawID, name, key := parts[0], parts[1], parts[2]
-
-		id, err := strconv.Atoi(rawID)
-
-		if err != nil || id < 1 || id > MaxProjectID {
-			return nil, fmt.Errorf("entry %d: invalid id %q (integer from 1 to %d)", index+1, rawID, MaxProjectID)
-		}
-
-		if seenIDs[id] {
-			return nil, fmt.Errorf("duplicate project id %d", id)
-		}
-
-		if !ValidProjectName(name) {
-			return nil, fmt.Errorf("entry %d: invalid name %q (up to %d lowercase letters, digits, '-', '_', not digits only)", index+1, name, MaxProjectName)
-		}
-
-		if !publicKeyRe.MatchString(key) {
-			return nil, fmt.Errorf("project %q: public key must be 16-64 letters or digits", name)
-		}
-
-		if seenNames[name] {
-			return nil, fmt.Errorf("duplicate project name %q", name)
-		}
-
-		if seenKeys[key] {
-			return nil, fmt.Errorf("project %q: public key is already used by another project", name)
-		}
-
-		seenIDs[id] = true
-		seenNames[name] = true
-		seenKeys[key] = true
-		projects = append(projects, Project{ID: id, Name: name, PublicKey: key})
-	}
-
-	return projects, nil
 }
 
 // parseNetworks parses "10.0.0.0/8, 203.0.113.7, ::1". A plain address means

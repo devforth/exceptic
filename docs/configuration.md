@@ -18,11 +18,7 @@ For local development copy [.env.example](../.env.example) to `.env.local`.
 
 ## Projects
 
-| Variable | Default | |
-|---|---|---|
-| `PROJECTS` | | Projects created at start: `id:name:key,...`, e.g. `1:backend:<key>,2:frontend:<key>`. The id is from 1 to 4294967295, the key is 16–64 letters or digits (`openssl rand -hex 16`). After the first start the name and settings change on the Projects page. Such a project cannot be deleted in the UI. Projects can also be added in the UI. |
-
-The id is part of the DSN (`https://<key>@errors.example.com/<id>`): never change or reuse it. Use one project per service (backend, frontend, …).
+Projects are added on the Projects page (or by a coding agent with `create_project`), one per service: backend, frontend, worker. Each gets a random id, the number at the end of its DSN.
 
 ## Access
 

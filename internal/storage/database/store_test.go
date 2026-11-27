@@ -706,7 +706,7 @@ func TestDeleteProject(t *testing.T) {
 	database := openTest(t)
 
 	for _, project := range []store.Project{{ID: 1, Name: "backend", PublicKey: "0123456789abcdef"}, {ID: 2, Name: "frontend", PublicKey: "abcdef0123456789"}} {
-		if err := database.SeedProject(ctx, project, time.Now()); err != nil {
+		if err := database.AddProjects(ctx, time.Now(), project); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -839,7 +839,7 @@ func TestDeleteProjectAcrossRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := database.SeedProject(ctx, store.Project{ID: 1, Name: "backend", PublicKey: "0123456789abcdef"}, time.Now()); err != nil {
+	if err := database.AddProjects(ctx, time.Now(), store.Project{ID: 1, Name: "backend", PublicKey: "0123456789abcdef"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1019,7 +1019,7 @@ func TestDropNotices(t *testing.T) {
 	at := time.Date(2026, 11, 25, 10, 0, 0, 0, time.UTC)
 
 	for _, project := range []store.Project{{ID: 1, Name: "backend", PublicKey: "0123456789abcdef"}, {ID: 2, Name: "frontend", PublicKey: "abcdef0123456789"}} {
-		if err := database.SeedProject(ctx, project, time.Now()); err != nil {
+		if err := database.AddProjects(ctx, time.Now(), project); err != nil {
 			t.Fatal(err)
 		}
 

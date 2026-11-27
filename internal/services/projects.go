@@ -55,11 +55,6 @@ func (service *Projects) ColorsByName(access store.Access) map[string]string {
 	return colors
 }
 
-// FromEnv: the project comes from PROJECTS (its key is fixed; it cannot be deleted).
-func (service *Projects) FromEnv(id int) bool {
-	return service.registry.FromEnv(id)
-}
-
 // Get reads a project with its settings; store.ErrNotFound when missing,
 // ErrHidden outside access.
 func (service *Projects) Get(ctx context.Context, access store.Access, id int) (store.Project, error) {
@@ -175,8 +170,7 @@ func (service *Projects) ResetKey(ctx context.Context, access store.Access, id i
 	return service.registry.RotateKey(ctx, id)
 }
 
-// Delete removes a project added in the web app with its data; one from
-// PROJECTS cannot be deleted (projects.ErrFromEnv).
+// Delete removes a project with its data.
 func (service *Projects) Delete(ctx context.Context, access store.Access, id int) error {
 	if err := service.Check(access, id); err != nil {
 		return err

@@ -51,8 +51,8 @@ type App struct {
 func New(ctx context.Context, options Options) (*App, error) {
 	settings, logger, db := options.Settings, options.Logger, options.Store
 
-	// Projects live in the database; the ones in PROJECTS are created when missing and take their key from it at every start.
-	registry, err := projects.Open(ctx, logger, db, settings.Projects)
+	// Projects live in the database, added in the web app.
+	registry, err := projects.Open(ctx, db)
 
 	if err != nil {
 		return nil, err

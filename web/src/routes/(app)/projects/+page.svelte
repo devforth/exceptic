@@ -23,7 +23,6 @@
 		deleteConfirmation,
 		deleteProject,
 		droppedSummary,
-		fromEnvDeleteReason,
 		errorsKept,
 		pauseConfirmation,
 		usageSegments
@@ -115,10 +114,8 @@
 		void invalidateAll();
 	}
 
-	// Projects from PROJECTS cannot be deleted here (they would come back at the next start).
 	function menuOf(project: Project): MenuItem[] {
 		const id = project.id;
-		const editable = canAdminister && !project.from_env;
 		const items: MenuItem[] = [];
 
 		items.push({ label: 'Rename', icon: 'edit', action: () => startEdit(project) });
@@ -153,7 +150,7 @@
 					}
 		);
 
-		if (editable) {
+		if (canAdminister) {
 			items.push({
 				label: 'Delete',
 				icon: 'delete',
@@ -161,13 +158,6 @@
 				separatorBefore: true,
 				confirm: deleteConfirmation(project.name),
 				action: () => remove(project)
-			});
-		} else if (canAdminister) {
-			items.push({
-				label: 'Delete',
-				icon: 'delete',
-				separatorBefore: true,
-				disabled: fromEnvDeleteReason
 			});
 		}
 
@@ -242,9 +232,7 @@
 				href={resolve('/(app)/projects/[id=projectId]', { id: project.id })}
 				title={`Settings of ${project.name}`}
 			/>
-			<div class="text-xs text-muted">
-				#{project.id}{project.from_env ? ' · from PROJECTS' : ''}
-			</div>
+			<div class="text-xs text-muted">#{project.id}</div>
 			{#if dropped}
 				<div class="text-xs">
 					<Button
@@ -288,7 +276,7 @@
 		{/if}
 	{/snippet}
 	{#snippet empty()}
-		No projects yet. Add one, or set <code>PROJECTS=1:backend:&lt;public key&gt;</code>.
+		No projects yet. Add one for each service that sends errors.
 	{/snippet}
 </Table>
 

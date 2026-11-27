@@ -2,7 +2,7 @@
 @component
 The settings page of a saved project: its title (renamed in place by the pencil), color, the
 levels it records and its disk share. Save sends all of it at once; a refused field shows its
-problem beside it. `actions` and `description` go to its PageHeading.
+problem beside it. `actions` go to its PageHeading.
 -->
 <script lang="ts">
 	import { resolve } from '$app/paths';
@@ -37,21 +37,11 @@ problem beside it. `actions` and `description` go to its PageHeading.
 		storage: Out<'get_storage'>;
 		save: (values: ProjectFormValues, name: string) => Promise<unknown>;
 		actions?: Snippet;
-		description?: Snippet;
 		/** The disk share is an admin's to change; others do not see it. */
 		shareEditable?: boolean;
 	};
 
-	let {
-		id,
-		name,
-		initial,
-		storage,
-		save,
-		actions,
-		description,
-		shareEditable = false
-	}: Props = $props();
+	let { id, name, initial, storage, save, actions, shareEditable = false }: Props = $props();
 
 	// The form keeps what the user changed; it starts from initial once.
 	// svelte-ignore state_referenced_locally
@@ -69,7 +59,7 @@ problem beside it. `actions` and `description` go to its PageHeading.
 </script>
 
 <form class={formClasses} onsubmit={submit}>
-	<PageHeading title={name} {actions} {description}>
+	<PageHeading title={name} {actions}>
 		{#snippet heading()}
 			<EditableTitle
 				title={name}

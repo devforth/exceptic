@@ -70,8 +70,7 @@ func loadServer(t *testing.T, db *database.Store, projects config.Projects, cloc
 	t.Helper()
 
 	logger := logging.New(os.Stderr, logging.FormatPretty, slog.LevelWarn)
-	settings := &config.Config{Projects: projects}
-	pipeline := NewPipeline(logger, settings, projects, db, StoreSink{Logger: logger})
+	pipeline := NewPipeline(logger, &config.Config{}, projects, db, StoreSink{Logger: logger})
 	handler := pipeline.Handler()
 	handler.now = clock
 	pipeline.LogsPerMessage = logsPerMessage()

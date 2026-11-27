@@ -44,10 +44,18 @@ type testServer struct {
 func newTestServer(t *testing.T, configure ...func(*config.Config)) *testServer {
 	t.Helper()
 
+	return startTestServer(t, fixtures.Projects(), configure...)
+}
+
+// startTestServer runs the server with these projects stored.
+func startTestServer(t *testing.T, projects config.Projects, configure ...func(*config.Config)) *testServer {
+	t.Helper()
+
 	database := storetest.Open(t)
+	storetest.AddProjects(t, database, projects)
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	settings := &config.Config{AppName: config.DefaultAppName, Projects: fixtures.Projects()}
+	settings := &config.Config{AppName: config.DefaultAppName}
 
 	for _, change := range configure {
 		change(settings)
@@ -509,11 +517,13 @@ func TestSkillsDiscoveryAndLoading(t *testing.T) {
 }
 
 func TestListPageLimits(t *testing.T) {
-	server := newTestServer(t, func(settings *config.Config) {
-		for id := 3; id <= 105; id++ {
-			settings.Projects = append(settings.Projects, config.Project{ID: id, Name: fmt.Sprintf("project-%d", id), PublicKey: fmt.Sprintf("key-%d", id)})
-		}
-	})
+	projects := fixtures.Projects()
+
+	for id := 3; id <= 105; id++ {
+		projects = append(projects, config.Project{ID: id, Name: fmt.Sprintf("project-%d", id), PublicKey: fmt.Sprintf("key-%d", id)})
+	}
+
+	server := startTestServer(t, projects)
 	now := time.Now().UTC()
 	ctx := context.Background()
 
