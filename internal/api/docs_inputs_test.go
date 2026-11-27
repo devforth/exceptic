@@ -38,12 +38,9 @@ func TestDocsInputs(t *testing.T) {
 	}
 
 	fixtures.DocValues(t, "docs/api.md",
-		fixtures.DocValue{Phrase: "413: a body over {} KiB.", Value: maxBody >> 10},
-		fixtures.DocValue{Phrase: "`limit` is 1–{}, default", Value: MaxLimit},
-		fixtures.DocValue{Phrase: "`limit` is 1–100, default {}.", Value: DefaultLimit},
+		fixtures.DocValue{Phrase: "`limit` is 1–{}, ", Value: MaxLimit},
+		fixtures.DocValue{Phrase: "`limit` is 1–100, {} by default", Value: DefaultLimit},
 	)
-	fixtures.DocValues(t, "docs/configuration.md",
-		fixtures.DocValue{Phrase: "when they come to {}% of the limit or more", Value: arrivedPercent})
 }
 
 // inputTable is a table of an endpoint's inputs in the order of its input

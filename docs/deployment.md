@@ -1,6 +1,6 @@
 # Deployment
 
-The server is one container, `devforth/exceptic`, for amd64 and arm64. It keeps all its data in an embedded database, `/data/leveldb`, and needs nothing else; without `SECRET_KEY`, the key that encrypts chat tokens is `/data/secret.key`.
+The server is one container, `devforth/exceptic`, for amd64 and arm64. All its data is in `/data`.
 
 <!-- image-tags -->
 Image tags: `latest` (newest release), `X.Y` (newest patch of a minor version), `X.Y.Z`. Pin `X.Y` or `X.Y.Z` in production and upgrade on purpose.
@@ -8,8 +8,8 @@ Image tags: `latest` (newest release), `X.Y` (newest patch of a minor version), 
 
 ## Docker Compose
 
-1. Copy [compose.yml](../compose.yml) to the server and pin its image to the `X.Y` you start with (`devforth/exceptic:X.Y`).
-2. Next to it, create `.env` (all settings: [Configuration](configuration.md)). A minimal one:
+1. Copy [compose.yml](../compose.yml) to the server and set its image to the version you start with (`devforth/exceptic:X.Y`).
+2. Next to it create `.env` (every setting: [Configuration](configuration.md)):
 
    <!-- minimal-env -->
    ```sh
@@ -19,50 +19,43 @@ Image tags: `latest` (newest release), `X.Y` (newest patch of a minor version), 
    ```
    <!-- /minimal-env -->
 
-   Behind a reverse proxy, also publish the port on localhost and set `TRUSTED_PROXIES`: [HTTPS and a reverse proxy](#https-and-a-reverse-proxy).
+3. Run `docker compose up -d`, open the UI and log in as `admin`. The password is `ADMIN_PASSWORD`. A form opens where you create the first admin with your email and your own password.
+4. On the **Projects** page add a project and give its DSN to your app: [Connecting apps](sdk.md).
 
-3. `docker compose up -d`, then open the UI and log in as `admin`. While there is no admin, this login with `ADMIN_EMAIL` and `ADMIN_PASSWORD` opens a form for your email and a password of your own, which creates the first admin and logs you in; from then on the two variables no longer log in.
-4. Add projects on the **Projects** page (or with `PROJECTS`) and give their DSNs to your apps: [Connecting apps](sdk.md).
+The container runs as an unprivileged user (uid 65534). A bind-mounted data folder must be writable by it: `sudo chown 65534:65534 ./data`. A named volume, as in the example, needs nothing.
 
-The container runs as an unprivileged user (uid 65534) without a shell. A bind-mounted data directory must be writable by it: `sudo chown 65534:65534 ./data`. A named volume, as in the example, needs nothing.
-
-Docker checks the server with the `healthcheck` subcommand, which asks `/health` on `PORT` (`docker ps` shows `healthy`). A load balancer can use `GET /health`: it answers 200 while the database is reachable and 503 otherwise. `docker compose run --rm exceptic version` prints the version.
+`GET /health` answers 200 while the server works; Docker uses it too (`docker ps` shows `healthy`).
 
 ## HTTPS and a reverse proxy
 
-Use HTTPS whenever the server is reachable from other machines: users log in to the UI and coding agents send their tokens. Put it behind a reverse proxy, publish the port only on localhost (`"127.0.0.1:8000:8000"` in `compose.yml`) and set:
+Use HTTPS whenever the server is reachable from other machines.
 
-- `PUBLIC_URL=https://errors.example.com`, so DSNs, links and the MCP address use it.
-- `TRUSTED_PROXIES` to the one address the proxy's requests come from, as the container sees it. Docker picks the subnet of the compose network itself and may pick another one when the network is recreated (`docker compose down`), so give it a fixed one in `compose.yml` (any free private subnet; Docker makes its first address the gateway):
+1. In `compose.yml` publish the port only on localhost and give the network a fixed subnet:
 
-  ```yaml
-  networks:
-    default:
-      ipam:
-        config:
-          - subnet: 172.30.0.0/24
-  ```
+   ```yaml
+   services:
+     exceptic:
+       ports:
+         - "127.0.0.1:8000:8000"
+   networks:
+     default:
+       ipam:
+         config:
+           - subnet: 172.30.0.0/24
+   ```
 
-  - A proxy on the host (the Caddy and nginx examples below): Docker hands its connections to the container from the gateway of that network, not from `127.0.0.1`: `TRUSTED_PROXIES=172.30.0.1`. Without a fixed subnet, `docker network inspect <project>_default --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'` shows the current gateway (`<project>` is the directory of `compose.yml`).
-  - A proxy in a container of the same compose file: give it a fixed address on that network and trust that one, `TRUSTED_PROXIES=172.30.0.10` (the Exceptic port then needs no publishing at all; Compose accepts `ipv4_address` only on a network with a fixed subnet):
+2. In `.env` set:
 
-    ```yaml
-    services:
-      proxy:
-        networks:
-          default:
-            ipv4_address: 172.30.0.10
-    ```
+   ```sh
+   PUBLIC_URL=https://errors.example.com
+   TRUSTED_PROXIES=172.30.0.1   # the first address of that subnet
+   ```
 
-  - `127.0.0.1` only for the binary run without Docker.
+   For a proxy in a container of the same compose file, give it a fixed address on that network (`ipv4_address: 172.30.0.10`) and put that address in `TRUSTED_PROXIES` instead. Never trust a whole range such as `172.16.0.0/12`.
 
-  Trust a Docker address only while the port is published on `127.0.0.1` (or not at all): with `"8000:8000"`, Docker relays some outside clients (IPv6 ones) through the gateway and other containers connect from Docker networks, so they could set `X-Forwarded-For` to any address and pass `ALLOWED_IPS` or reset the login limit. Never trust a whole range such as `172.16.0.0/12`.
+3. Point the proxy at `127.0.0.1:8000` and allow request bodies up to 20 MB.
 
-  Without `TRUSTED_PROXIES` (or with a wrong address) the server sees every request coming from the proxy, so `ALLOWED_IPS` and the login limit cannot tell clients apart, and pages are treated as plain HTTP.
-
-The proxy must pass `Host`, set `X-Forwarded-Proto`, and append the address it got the request from to `X-Forwarded-For` (Caddy does; nginx with `$proxy_add_x_forwarded_for` as below): a proxy that forwards the client's own header lets anyone pass `ALLOWED_IPS`. It must allow request bodies up to 20 MB (SDKs send large envelopes).
-
-Caddy (sets the headers itself, gets the certificate):
+Caddy (gets the certificate itself):
 
 ```
 errors.example.com {
@@ -94,38 +87,29 @@ server {
 
 ## Securing it
 
-- The ingest endpoint (`/api/<project id>/envelope/`) must stay reachable by your apps, and by browsers if you monitor a frontend. It accepts only requests with a project's key, limited by `RATE_LIMIT_EVENTS_PER_MINUTE` and `RATE_LIMIT_LOGS_PER_MINUTE`, and reads no more of a request than its first line before the key is checked; envelopes being read at once may hold 80 MB together and those of one project half of it or 56 MB, the most one envelope may take (a brotli body, its window and its output), beyond that SDKs get `429` and retry, and a body must arrive within 10 seconds; `ALLOWED_ORIGINS` limits which sites a browser may send from.
-- The links that stop notification emails (`/unsubscribe/<id>?token=…`) stay open too: mail providers send their one-click request from their own servers. Each works only with the token signed by `SECRET_KEY` (or `secret.key`) for one address, and only pauses that address's connections.
-- Everything else (UI, REST API, MCP) can be restricted to your office or VPN with `ALLOWED_IPS`. In Docker without a proxy the server sees IPv4 clients of a published port as they are, but the host itself, and with `"8000:8000"` every IPv6 client, as the network's gateway: do not add the gateway, publish on `127.0.0.1` behind a proxy instead.
-- Passwords, cookies, tokens and similar values are removed from incoming events and logs before they are stored; envelopes still waiting in the ingest queue, and backups made meanwhile, hold them as sent.
-- Users get one of two roles: **admin** (everything: every project, users, settings, deleting) and **user** (issue statuses, logs, project DSNs and their own coding agents). Add them on the **Users** page; each gets a temporary password to change at the first login. Admins see every project; users see only the projects chosen for them, and outside them no issue, log, project or notification connection, and their agents neither. Who may change whom: [Users](ui.md#users).
-
-## Data
-
-Events and logs are kept until the database nears [its size limit](configuration.md#retention). What takes effort to set up again lives in the same database: projects and their keys (keep them in `PROJECTS` and the DSNs survive any loss), users, notification connections and connected agents. Keep the `data` volume on a disk you trust, and back it up.
+- Apps send errors to `/api/<project id>/envelope/`. It must stay reachable for them (and for browsers, if you monitor a frontend). It accepts only requests with the project's key.
+- Limit the UI, REST API and MCP to your office or VPN with `ALLOWED_IPS`.
+- Passwords, cookies and tokens are removed from incoming errors and logs before they are stored.
+- Two roles: **admin** (everything: every project, users, settings, deleting) and **user** (issue statuses, logs, project DSNs and their own coding agents). A user sees only the projects given to them. Add users on the **Users** page: [Users](ui.md#users).
+- After 10 wrong passwords in 15 minutes a login is blocked until the window ends. Browsers the user logged in from before can still log in.
 
 ## Resources
 
 | | Minimum | Recommended |
 |---|---|---|
-| CPU | 0.5 core | 1–2 cores |
-| Memory | 256 MB | 512 MB – 1 GB |
-| Disk | 1.3 × `MAX_DATABASE_SIZE`, an SSD | the same |
+| CPU | 1 vCPU | 2 vCPU for many busy projects |
+| Memory | 256 MB | 512 MB |
+| Disk | 1.3 × `MAX_DATABASE_SIZE` | the same, on an SSD |
 
-Measured in Docker with these limits on an NVMe disk, with the official `@sentry/node` SDK sending errors with logs: memory stays about 200 MB at any limit (the default `GOMEMLIMIT`), 8 MB when idle. The CPU sets only the speed: about 900 small errors a second are stored on half a core, 1,750 on one; a burst over that waits in the queue and is stored within a minute or two after it. The cleanup of a database 25% over its limit took 90 s on half a core and 16 s on four, during which new envelopes were answered `429` for the moments its compaction holds the writes.
+The server uses about 200 MB of memory whatever the load; more memory does not make it faster.
 
-Measured on a laptop with 20 threads and an NVMe disk, with the peak of 50 projects each sending 1,000 errors and 2,200 log lines at once:
+Measured: 10 projects sending errors as fast as they could, each error with 5 logs, through the official Node.js SDK. The server accepted about this many requests a second (one request is one error or one batch of logs):
 
-| | |
-|---|---|
-| Memory | About 200 MB at the peak (the default `GOMEMLIMIT`), less when idle. |
-| CPU | The errors are stored in about 14 s (3,600 a second) on 5 cores on average; SDKs get their answers in milliseconds, since envelopes wait in the queue. |
-| Disk space | At least 1.3 × `MAX_DATABASE_SIZE`: the limit counts the data held, the files hold more ([Retention](configuration.md#retention)); merging its files, the database writes new ones before it deletes the old. |
-| Disk writes | The database writes data several times as it merges its files: the 366 MB of that peak wrote 1.8 GB. Use an SSD; a slow network volume becomes the limit. |
-| Connections | At most 1,000 at once; more wait in the queue until one closes (idle keep-alive connections are closed first), none is refused. Request headers are limited to 64 KiB (431 above). |
-| At the size limit | The same peak while the cleanup runs is stored in about a minute, with answers under 0.5 s and nothing refused; the cleanup took 2 GB down to 0.5 GB in 3 minutes. |
+| CPU | 0.5 | 1 | 2 | 4 |
+|---|---|---|---|---|
+| Requests a second | 130 | 220 | 310 | 410 |
 
-A crash of the process loses nothing the server has answered. A power cut may lose the envelopes of the last few milliseconds: the queue is written without a disk sync of its own, and the next stored batch syncs it.
+When the server cannot keep up, apps pause for a few seconds and then send again. What they drop meanwhile shows on the Projects page.
 
 ## Backup and restore
 
@@ -133,9 +117,15 @@ A crash of the process loses nothing the server has answered. A power cut may lo
 docker compose run --rm exceptic backup
 ```
 
-The running server writes a consistent copy to `/data/backups/<time>` without stopping (with the server stopped, the command reads the database itself); add an absolute path for another place, a new or empty directory (in Docker under `/data`, since the running server writes it in its own container). The copy holds `leveldb/` and `secret.key`, which decrypts the chat tokens of notifications (with `SECRET_KEY` set there is no file: keep that value). While a backup runs, the cleanup by size and its compactions wait (a pass already under way goes on). `/data/backups` is on the database's disk: copy backups off (`docker compose cp exceptic:/data/backups ./backups`) and delete them there with the helper container below (`rm -rf /data/backups`). Never copy `/data/leveldb` of a running server by hand: such a copy may not open.
+It writes a copy to `/data/backups/<time>` while the server runs. Copy it off the server:
 
-To restore, stop the server and put the backup's `leveldb/` (and `secret.key`, if it has one) in place of those in the volume (the image has no shell, so use a helper container; `docker volume ls` shows the volume's name):
+```sh
+docker compose cp exceptic:/data/backups ./backups
+```
+
+Never copy `/data/leveldb` of a running server by hand: such a copy may not open.
+
+To restore, stop the server and replace the data with the backup:
 
 ```sh
 docker compose stop exceptic
@@ -144,44 +134,38 @@ docker run --rm -v <project>_data:/data -v "$PWD/backups/<date>:/backup:ro" alpi
 docker compose start exceptic
 ```
 
+`docker volume ls` shows the volume's name.
+
 ## Upgrades
 
 ```sh
 docker compose pull && docker compose up -d
 ```
 
-This brings the newest patch of the pinned `X.Y`; for a new minor version change the tag first.
+This brings the newest patch of your `X.Y`. For a new minor version change the tag first.
 
-On shutdown (`docker stop` sends SIGTERM) the server finishes requests and writes queued notifications to the database; they are sent after the next start. This can take more than Docker's default 10 s before SIGKILL: `compose.yml` gives it 30 s (`stop_grace_period`), with `docker run` add `--stop-timeout 30`.
+On stop the server sends the notifications still waiting. `compose.yml` gives it 30 s for that; with `docker run` add `--stop-timeout 30`.
 
 ## Sign in with Google
 
-Users the admins added may also sign in with Google; nobody signs up that way.
+Users added by an admin can also sign in with Google. Nobody can sign up that way.
 
-1. In Google Cloud, APIs & Services › Credentials, create an OAuth client ID of type Web application, with the authorized redirect URI `<PUBLIC_URL>/auth/google/callback` (for example `https://errors.example.com/auth/google/callback`).
-2. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `PUBLIC_URL`, and restart. The login page shows Sign in with Google.
+1. In Google Cloud, APIs & Services › Credentials, create an OAuth client ID of type Web application with the authorized redirect URI `<PUBLIC_URL>/auth/google/callback` (for example `https://errors.example.com/auth/google/callback`).
+2. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `PUBLIC_URL`, and restart.
 
-The first Google sign-in links the Google account to the user with its email, if Google has verified it; later sign-ins find the user by that account, whatever its email. The user or an admin can unlink it on the account or user page, which disconnects the sessions opened through Google and keeps that user from linking a Google account by email again until they sign in with the password once. A new user still replaces the temporary password the admin gave them.
-
-Any Google account whose email Google has verified links this way: Gmail, Google Workspace (`you@company.com`) and a Google account made for another address alike. For an address Google does not host, it checked that the owner received mail there when the account was made, not that they still do: someone who left a company keeps a Google account made with their work email. Add a user only with an address that is theirs now, and when an address changes hands, delete the user and add a new one.
+The first Google sign-in links the Google account to the user with the same email. Add users only with addresses that are theirs now: someone who left a company may still have a Google account made with their work email.
 
 ## Forgotten password
 
-The running server holds the database, so stop it first:
-
 ```sh
 docker compose stop exceptic
-docker compose run --rm exceptic reset-password          # the admin, when there is only one
+docker compose run --rm exceptic reset-password          # the only admin
 docker compose run --rm exceptic reset-password <email>
 docker compose start exceptic
 ```
 
-It prints a temporary password; the user chooses a new one at the next login. Their sessions end; their connected agents keep working.
-
-## Login limit
-
-Each login (and each check of the current password on the account page) counts before the password is checked, in 15-minute windows. Every browser a user logged in from is a known device for them: at every login (and own password change) it gets a signed cookie for 400 days, which holds the last user who logged in on that browser. The cookie stops counting once the user's password is changed or reset, their role changes or they are deleted. A known device gets 10 attempts per network, and all known devices together 30 per email, so others' guesses never lock it out and a copied cookie gains little. Any other attempt counts per address (an IPv6 /64) and per email from all addresses, 10 each: guessing one password from many addresses gets 10 tries per window in all, and while someone keeps guessing an email, its owner logs in only from their known device; a restart clears the counts. The right password clears its address's count when every attempt counted there was at that email (the user's own typos); otherwise it takes only itself off, so a user cannot clear guesses at other accounts. At most half the CPU cores (at least one) check passwords at once (known devices have one more place of their own), so a flood of logins does not stall ingest; an attempt that finds no place within 5 seconds is refused like a blocked one. Past 10,000 counted addresses or emails (a distributed guessing attack), new ones are refused until windows end and a warning is logged, while known devices still log in.
+It prints a temporary password; the user chooses a new one at the next login.
 
 ## Logs
 
-`docker compose logs -f` shows the startup settings (enabled notification types, the size limit), warnings about missing settings and errors. Set `LOG_LEVEL=debug` to see every request and why an envelope was rejected (wrong key, unknown project, rate limit), and `LOG_FORMAT=json` for a log collector.
+`docker compose logs -f` shows the settings at start, warnings and errors. `LOG_LEVEL=debug` also shows every request and why an app's data was rejected.
