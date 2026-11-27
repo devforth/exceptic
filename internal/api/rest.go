@@ -59,7 +59,10 @@ func (handler *REST) Register(router *http.ServeMux, protect func(http.Handler) 
 var apiActor = store.Actor{Name: "API token", Source: store.SourceAPI}
 
 func (handler *REST) caller(_ http.ResponseWriter, r *http.Request) (Call, bool) {
-	return Call{Transport: TransportREST, Actor: apiActor, Address: server.PublicURL(r, handler.publicURL, handler.trustedProxies)}, true
+	return Call{
+		Transport: TransportREST, Actor: apiActor, Address: server.PublicURL(r, handler.publicURL, handler.trustedProxies),
+		IP: server.ClientIP(r, handler.trustedProxies).String(),
+	}, true
 }
 
 // register adds the routes of the endpoints transport serves, one by one: a

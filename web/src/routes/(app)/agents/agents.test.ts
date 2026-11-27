@@ -74,7 +74,7 @@ describe('McpSetup', () => {
 		expect(location.href).not.toContain(secret);
 	});
 
-	it('gives the endpoint as a command with a grey copy button, as every command here', () => {
+	it('gives the endpoint as a command with a blue copy button, as on every other page', () => {
 		render(McpSetup, { setup, appName: 'Exceptic' });
 
 		expect(screen.queryByRole('textbox', { name: 'MCP endpoint' })).toBeNull();
@@ -82,8 +82,8 @@ describe('McpSetup', () => {
 
 		const copy = screen.getByTitle('Copy the endpoint');
 
-		expect(copy.className).toContain('bg-code-bg');
-		expect(copy.className).not.toContain('bg-info-bg');
+		expect(copy.className).toContain('bg-info-bg');
+		expect(copy.className).not.toContain('bg-code-bg');
 	});
 
 	it('asks before replacing a token', async () => {

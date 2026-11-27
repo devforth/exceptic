@@ -157,25 +157,25 @@ func agentsRefusal(viewer, owner store.User) error {
 	return Forbidden("your role may not access the agents of this user")
 }
 
-// Disconnect revokes an agent the viewer may access.
-func (agents *Agents) Disconnect(ctx context.Context, viewer store.User, grantID string) error {
+// Disconnect revokes an agent the viewer may access and returns it with its user.
+func (agents *Agents) Disconnect(ctx context.Context, viewer store.User, grantID string) (store.Grant, store.User, error) {
 	grant, err := agents.authorization.Grant(ctx, grantID)
 
 	if err != nil {
-		return err
+		return store.Grant{}, store.User{}, err
 	}
 
 	owner, err := agents.store.GetUser(ctx, grant.UserID)
 
 	if err != nil {
-		return err
+		return store.Grant{}, store.User{}, err
 	}
 
 	if !viewer.CanAccessAgentsOf(owner) {
-		return agentsRefusal(viewer, owner)
+		return store.Grant{}, store.User{}, agentsRefusal(viewer, owner)
 	}
 
-	return agents.authorization.Disconnect(ctx, grantID)
+	return grant, owner, agents.authorization.Disconnect(ctx, grantID)
 }
 
 // setupPrompt asks a coding agent to add the MCP server with a personal

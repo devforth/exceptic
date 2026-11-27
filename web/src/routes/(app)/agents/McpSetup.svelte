@@ -53,8 +53,7 @@ component: gone after a reload or leaving the page, never in the address or stor
 
 	const copyCommand = {
 		copyTitle: 'Copy the command',
-		copied: 'Command copied to clipboard.',
-		copyVariant: 'neutral'
+		copied: 'Command copied to clipboard.'
 	} as const;
 </script>
 
@@ -98,7 +97,6 @@ component: gone after a reload or leaving the page, never in the address or stor
 							label=".mcp.json"
 							copyTitle="Copy .mcp.json"
 							copied="Configuration copied to clipboard."
-							copyVariant="neutral"
 						/>
 					</div>
 				</Details>
@@ -123,7 +121,6 @@ component: gone after a reload or leaving the page, never in the address or stor
 					label="MCP endpoint"
 					copyTitle="Copy the endpoint"
 					copied="Endpoint copied to clipboard."
-					copyVariant="neutral"
 				/>
 				<p class="mt-2.5 text-muted">
 					A personal token grants access on your behalf. Keep it secret.
@@ -135,7 +132,6 @@ component: gone after a reload or leaving the page, never in the address or stor
 						label="Authorization header value"
 						copyTitle="Copy the authorization header value"
 						copied="Header value copied to clipboard."
-						copyVariant="neutral"
 						masked
 					>
 						Copy and save this token now. After you reload or leave this page, it will no longer be
@@ -170,7 +166,6 @@ component: gone after a reload or leaving the page, never in the address or stor
 							label="Copy setup prompt"
 							title="Copy a prompt that has a coding agent add this server with the token"
 							copied="Setup prompt copied: paste it to your agent."
-							variant="neutral"
 						/>
 					{/if}
 				</div>

@@ -1,14 +1,14 @@
 <!--
 @component
 The menu: the app name, the Monitoring and Settings groups (admin items for admins), the
-theme (Dark mode), the account and Log out below a line. It collapses to icons (the choice is kept in this browser); under
+theme (Dark mode), the viewer's own items (MCP) over their account, and Log out below a line. It collapses to icons (the choice is kept in this browser); under
 800px wide it is a bar at the top.
 -->
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { send, type Out } from '#lib/api/client.ts';
-	import { navGroups, type NavEntry } from '#lib/nav.ts';
+	import { accountEntries, navGroups, type NavEntry } from '#lib/nav.ts';
 	import { toast } from '#lib/toast.svelte.ts';
 	import Button from './Button.svelte';
 	import NavLink from './NavLink.svelte';
@@ -149,7 +149,20 @@ theme (Dark mode), the account and Log out below a line. It collapses to icons (
 		<div class="max-sidebar:flex-none">
 			<ThemeSwitch {collapsed} saved={session.theme} />
 		</div>
-		<nav aria-label="Account" class="max-sidebar:flex-none">
+		<nav
+			aria-label="Account"
+			class="flex flex-col gap-0.5 max-sidebar:flex-none max-sidebar:flex-row"
+		>
+			{#each accountEntries as entry (entry.id)}
+				<NavLink
+					label={entry.label}
+					icon={entry.icon}
+					href={address(entry)}
+					title={entry.title}
+					active={isActive(entry)}
+					{collapsed}
+				/>
+			{/each}
 			<NavLink
 				label={session.user.display_name}
 				icon="account"

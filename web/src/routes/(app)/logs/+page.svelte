@@ -140,6 +140,7 @@
 	{columns}
 	rows={data.logs}
 	label="Logs"
+	top
 	compact
 	rowKey={canAdminister ? (log: Log) => log.id : undefined}
 	bind:selected

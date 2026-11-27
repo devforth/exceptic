@@ -374,6 +374,20 @@ func (database *Store) UnresolvedCounts(context.Context) (map[int]int, error) {
 	return counts, err
 }
 
+// IssueProjects are the projects some issue is in, from the counts per
+// project, status and level: no issue is read.
+func (database *Store) IssueProjects(_ context.Context) ([]int, error) {
+	var projects []int
+
+	for _, prefix := range database.issuePrefixes(store.IssueFilter{}) {
+		if !slices.Contains(projects, prefix.project) {
+			projects = append(projects, prefix.project)
+		}
+	}
+
+	return projects, nil
+}
+
 // IssueLevels are the levels some issue of the projects (none: any) has.
 func (database *Store) IssueLevels(_ context.Context, projectIDs []int) ([]string, error) {
 	seen := map[string]bool{}

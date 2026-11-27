@@ -2,7 +2,7 @@ import { levels } from '#lib/api/catalog.gen.ts';
 import { get, listAll, pageError } from '#lib/api/client.ts';
 import {
 	dayRange,
-	offeredLevels,
+	offered,
 	pageWithin,
 	readChoices,
 	readDays,
@@ -15,9 +15,11 @@ import { listPage, stoppedList } from './logs.ts';
 
 export const load: PageLoad = async ({ url }) => {
 	const params = url.searchParams;
-	const [projects, present] = await Promise.all([
+	// The filters offer the projects and levels some log has, and whatever the address chose.
+	const [projects, present, withLogs] = await Promise.all([
 		listAll('list_projects'),
-		get('list_log_levels')
+		get('list_log_levels'),
+		get('list_log_projects')
 	]).catch(pageError);
 	const filters = {
 		project: readProjects(params, projects),
@@ -44,8 +46,12 @@ export const load: PageLoad = async ({ url }) => {
 
 	return {
 		filters,
-		projectNames: projects.map((project) => project.name),
-		levelChoices: offeredLevels(levels.log, present.levels, filters.level),
+		projectNames: offered(
+			projects.map((project) => project.name),
+			withLogs.projects,
+			filters.project
+		),
+		levelChoices: offered(levels.log, present.levels, filters.level),
 		count,
 		page,
 		perPage: paging.perPage,

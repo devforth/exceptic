@@ -1,7 +1,7 @@
 <!--
 @component
 Copies text and says so in the toast. Without a label it is an icon; title names it.
-`neutral` is grey, for the commands of the MCP page; `info` (blue) elsewhere.
+Blue (`info`) by default; `variant` picks another look.
 -->
 <script lang="ts">
 	import type { CopyVariant } from './button.ts';

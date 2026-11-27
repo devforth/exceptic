@@ -62,3 +62,11 @@ For a user with the projects backend and frontend, another user with:
 | Email | The login, unique; set when the user is added and never changed: for another email, delete the user and add a new one. No confirmation is sent. |
 | Role | What the user may do. An admin gives admin or user; a user gives user only. |
 | Projects | Projects whose issues, logs and settings the user sees, here and through their coding agents; asked only for the role user, since an admin has every project. All projects includes the ones added later. A user changes only their own projects in this field; the other user's other projects stay. Only an admin gives all projects or changes a user who has them. A user without projects sees none. |
+
+## Audit log
+
+Every change made in the UI, by a coding agent or through the REST API: when, who, from which IP address, what record and which fields changed (before and after). Entries are never deleted.
+
+Recorded: issue statuses and deletes, deleted logs, projects, notification connections, users (added, changed, password reset, deleted, sessions ended, agents disconnected). Not recorded: changes to your own account, test messages and failed attempts. Passwords and tokens are never stored; a changed one shows as `[replaced]`. A DSN reset keeps the old and the new DSN. A request that changed several records (a bulk resolve) is one entry with the list of its records.
+
+An admin sees every entry. A user sees the entries of their projects; changes made by people they do not see on the Users page (admins, users of other projects) show only as "Admin" or "User", without email or IP.

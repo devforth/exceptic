@@ -13,6 +13,7 @@ import CircleCheck from '@lucide/svelte/icons/circle-check';
 import CircleQuestionMark from '@lucide/svelte/icons/circle-question-mark';
 import CircleUserRound from '@lucide/svelte/icons/circle-user-round';
 import CircleX from '@lucide/svelte/icons/circle-x';
+import ClipboardList from '@lucide/svelte/icons/clipboard-list';
 import Clock from '@lucide/svelte/icons/clock';
 import CodeXml from '@lucide/svelte/icons/code-xml';
 import Copy from '@lucide/svelte/icons/copy';
@@ -56,6 +57,7 @@ export const icons = {
 	notifications: Bell,
 	users: Users,
 	mcp: Plug,
+	audit: ClipboardList,
 	account: CircleUserRound,
 	logout: LogOut,
 	themeDark: Moon,

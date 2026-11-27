@@ -33,6 +33,9 @@ type Definition[T any] struct {
 	// batch as the record (DB.Tally). A Backfill may add indexes but no
 	// Group: tallies count every record from the start, reached or not.
 	Tally func(T) []Key
+	// Recount names a Tally added after records were stored without one:
+	// DB.Recount counts them into it once (recount.go). A new database marks it done.
+	Recount string
 }
 
 // Index declares an index; its keys hold the record's primary key as their value.

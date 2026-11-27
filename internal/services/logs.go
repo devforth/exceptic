@@ -4,16 +4,19 @@ import (
 	"context"
 	"maps"
 
+	"github.com/devforth/exceptic/internal/platform/config"
+
 	"github.com/devforth/exceptic/internal/storage/store"
 )
 
 // Logs reads the logs list and deletes logs, within the viewer's access as Issues does.
 type Logs struct {
-	store store.Store
+	store    store.Store
+	projects config.ProjectList
 }
 
-func newLogs(database store.Store) *Logs {
-	return &Logs{store: database}
+func newLogs(database store.Store, projects config.ProjectList) *Logs {
+	return &Logs{store: database, projects: projects}
 }
 
 // Count counts the logs that match filter (its Limit and Offset are
@@ -35,6 +38,18 @@ func (service *Logs) Levels(ctx context.Context, access store.Access) ([]string,
 	}
 
 	return service.store.LogLevels(ctx, projectIDs)
+}
+
+// Projects returns the projects within access that have at least one log,
+// in the projects' order: the choices of the logs list's project filter.
+func (service *Logs) Projects(ctx context.Context, access store.Access) ([]int, error) {
+	var projectIDs []int
+
+	for _, project := range access.Visible(service.projects.List()) {
+		projectIDs = append(projectIDs, project.ID)
+	}
+
+	return service.store.LogProjects(ctx, projectIDs)
 }
 
 // List returns one page of the logs that match filter, newest first, and
@@ -63,10 +78,10 @@ const MaxActionLogs = MaxActionIssues
 
 // Delete deletes the chosen logs for the viewer, who must be able to
 // administer (ErrForbidden); logs deleted meanwhile or outside access are
-// skipped. It says how many went.
-func (service *Logs) Delete(ctx context.Context, access store.Access, viewer store.User, logIDs []int64) (int, error) {
+// skipped. It returns the logs that went.
+func (service *Logs) Delete(ctx context.Context, access store.Access, viewer store.User, logIDs []int64) ([]store.LogRecord, error) {
 	if !viewer.CanAdminister() {
-		return 0, Forbidden("your role may not delete logs")
+		return nil, Forbidden("your role may not delete logs")
 	}
 
 	return service.store.DeleteLogs(ctx, access, logIDs)

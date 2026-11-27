@@ -10,18 +10,18 @@ import (
 )
 
 // DeleteLogs deletes the logs of logIDs that exist and access sees, in
-// batches of up to cleanupChunk; it says how many. A log's key starts with
-// its level, so each id is looked for under every level.
-func (database *Store) DeleteLogs(ctx context.Context, access store.Access, logIDs []int64) (int, error) {
+// batches of up to cleanupChunk, and returns them without their attributes.
+// A log's key starts with its level, so each id is looked for under every level.
+func (database *Store) DeleteLogs(ctx context.Context, access store.Access, logIDs []int64) ([]store.LogRecord, error) {
 	ids := slices.Compact(slices.Sorted(slices.Values(logIDs)))
-	deleted := 0
+	deleted := []store.LogRecord{}
 
 	for chunk := range slices.Chunk(ids, cleanupChunk) {
 		if err := ctx.Err(); err != nil {
 			return deleted, err
 		}
 
-		gone := 0
+		var gone []store.LogRecord
 
 		err := database.update(func(writer *batchWriter) error {
 			for _, id := range chunk {
@@ -45,7 +45,8 @@ func (database *Store) DeleteLogs(ctx context.Context, access store.Access, logI
 						return err
 					}
 
-					gone++
+					record.Attributes = nil
+					gone = append(gone, logView(record))
 
 					break
 				}
@@ -58,7 +59,7 @@ func (database *Store) DeleteLogs(ctx context.Context, access store.Access, logI
 			return deleted, err
 		}
 
-		deleted += gone
+		deleted = append(deleted, gone...)
 	}
 
 	return deleted, nil

@@ -16,6 +16,7 @@ close it.
 	import {
 		chevronClasses,
 		closeWhenLeft,
+		listMinWidth,
 		openControlClasses,
 		popupPlace,
 		type PopupPlace
@@ -179,10 +180,10 @@ close it.
 		aria-labelledby="{id}-label"
 		tabindex="-1"
 		data-popup
-		class={[popupClasses, 'fixed z-40 max-h-[min(320px,60vh)] overflow-auto text-sm text-text']}
+		class={[popupClasses, 'fixed z-40 text-sm text-text']}
 		style:top="{place.top}px"
 		style:left="{place.left}px"
-		style:min-width="{place.minWidth}px"
+		style:min-width="{Math.max(place.minWidth, listMinWidth)}px"
 		onkeydown={listKeydown}
 	>
 		{#each choices as choice (choice.value)}

@@ -21,6 +21,8 @@ type checkable interface {
 	Tallied(reader Reader) (map[string]int64, error)
 	markBackfilled(db *DB, batch *Batch)
 	openBackfill(db *DB) error
+	markRecounted(db *DB, batch *Batch)
+	recount(db *DB) error
 }
 
 // NewSchema starts an empty schema.

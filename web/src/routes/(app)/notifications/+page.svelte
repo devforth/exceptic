@@ -117,7 +117,12 @@
 		{:else if column.key === 'destination'}
 			<span class="text-muted">{connection.destination}</span>
 		{:else if column.key === 'projects'}
-			<ProjectsSummary all={connection.all_projects} names={connection.projects ?? []} />
+			<ProjectsSummary
+				all={connection.all_projects}
+				names={connection.projects ?? []}
+				ids={connection.project_ids ?? []}
+				limit={5}
+			/>
 		{:else if column.key === 'levels'}
 			<LevelSummary kind="event" chosen={connection.levels ?? []} />
 		{:else if column.key === 'delivery'}

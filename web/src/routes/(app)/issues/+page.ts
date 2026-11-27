@@ -1,14 +1,17 @@
 import { levels } from '#lib/api/catalog.gen.ts';
 import { get, listAll, pageError } from '#lib/api/client.ts';
-import { offeredLevels, pageWithin, readPaging } from '#lib/filters.ts';
+import { offered, pageWithin, readPaging } from '#lib/filters.ts';
 import type { PageLoad } from './$types';
 import { issueInput, readIssueFilters } from './issues.ts';
 
 export const load: PageLoad = async ({ url }) => {
 	const params = url.searchParams;
-	const [projects, present] = await Promise.all([
+	// The filters offer the projects and levels some issue has (from the server's counts), and
+	// whatever the address chose.
+	const [projects, present, withIssues] = await Promise.all([
 		listAll('list_projects'),
-		get('list_issue_levels')
+		get('list_issue_levels'),
+		get('list_issue_projects')
 	]).catch(pageError);
 	const filters = readIssueFilters(params, projects);
 	const input = issueInput(filters);
@@ -25,8 +28,12 @@ export const load: PageLoad = async ({ url }) => {
 
 	return {
 		filters,
-		projectNames: projects.map((project) => project.name),
-		levelChoices: offeredLevels(levels.event, present.levels, filters.level),
+		projectNames: offered(
+			projects.map((project) => project.name),
+			withIssues.projects,
+			filters.project
+		),
+		levelChoices: offered(levels.event, present.levels, filters.level),
 		count: count.count,
 		more: count.more ?? false,
 		page,

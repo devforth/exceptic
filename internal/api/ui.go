@@ -86,7 +86,8 @@ func (handler *UI) caller(w http.ResponseWriter, r *http.Request) (Call, bool) {
 	}
 
 	return Call{Transport: TransportUI, Viewer: viewer, Actor: viewer.Actor(store.SourceUI),
-		Address: server.PublicURL(r, handler.publicURL, handler.trustedProxies), Session: store.SessionID(session.SessionHash(r))}, true
+		Address: server.PublicURL(r, handler.publicURL, handler.trustedProxies), Session: store.SessionID(session.SessionHash(r)),
+		IP: server.ClientIP(r, handler.trustedProxies).String()}, true
 }
 
 // sessionViewer is the user of the request's session: without one it

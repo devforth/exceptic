@@ -135,6 +135,30 @@ func (handler *handlers) listIssueLevels(ctx context.Context, call Call, _ noInp
 	return levelsOutput{Levels: append([]string{}, config.InLevelOrder(present, config.Levels)...)}, err
 }
 
+type projectNamesOutput struct {
+	// Projects are names, in the order of the projects' list.
+	Projects []string `json:"projects"`
+}
+
+func (handler *handlers) listIssueProjects(ctx context.Context, call Call, _ noInput) (projectNamesOutput, error) {
+	ids, err := handler.services.Issues.Projects(ctx, call.Access())
+
+	return handler.projectNames(ids), err
+}
+
+// projectNames are the names of the projects of ids, in the projects' order.
+func (handler *handlers) projectNames(ids []int) projectNamesOutput {
+	output := projectNamesOutput{Projects: []string{}}
+
+	for _, project := range handler.services.Projects.List() {
+		if slices.Contains(ids, project.ID) {
+			output.Projects = append(output.Projects, project.Name)
+		}
+	}
+
+	return output
+}
+
 func (handler *handlers) issueFilter(call Call, input listIssuesInput) (store.IssueFilter, error) {
 	filter := store.IssueFilter{Query: strings.TrimSpace(input.Query), Sort: input.Sort, DateField: input.DateBy}
 
@@ -435,6 +459,12 @@ func (handler *handlers) updateIssueStatus(ctx context.Context, call Call, input
 		return issueBatchOutput{}, err
 	}
 
+	before, _, err := handler.services.Issues.GetMany(ctx, call.Access(), ids)
+
+	if err != nil {
+		return issueBatchOutput{}, err
+	}
+
 	issues, err := handler.services.Issues.SetStatus(ctx, call.Access(), ids, input.Status, bound, call.Actor)
 
 	if errors.Is(err, services.ErrBoundWithoutIgnore) {
@@ -444,6 +474,8 @@ func (handler *handlers) updateIssueStatus(ctx context.Context, call Call, input
 	if err != nil {
 		return issueBatchOutput{}, err
 	}
+
+	handler.audit(ctx, call, issueChanges(before, issues, false)...)
 
 	return handler.batchOutput(call, ids, issues, nil), nil
 }
@@ -457,9 +489,17 @@ type deletedOutput struct {
 }
 
 func (handler *handlers) deleteIssue(ctx context.Context, call Call, input deleteIssueInput) (deletedOutput, error) {
+	issue, err := handler.services.Issues.Get(ctx, call.Access(), input.IssueID)
+
+	if err != nil {
+		return deletedOutput{}, err
+	}
+
 	if err := handler.services.Issues.Delete(ctx, call.Access(), input.IssueID); err != nil {
 		return deletedOutput{}, err
 	}
+
+	handler.audit(ctx, call, issueChanges([]store.Issue{issue}, nil, true)...)
 
 	return deletedOutput{Deleted: input.IssueID}, nil
 }
@@ -496,7 +536,20 @@ func (handler *handlers) applyIssueAction(ctx context.Context, call Call, input 
 		return appliedOutput{}, err
 	}
 
-	if err := handler.services.Issues.ApplyAction(ctx, call.Viewer, input.Action, bound, ids); err != nil {
+	before, _, err := handler.services.Issues.GetMany(ctx, call.Access(), ids)
+
+	if err != nil {
+		return appliedOutput{}, err
+	}
+
+	err = handler.services.Issues.ApplyAction(ctx, call.Viewer, input.Action, bound, ids)
+
+	// What changed, also when a later batch failed.
+	if after, _, readErr := handler.services.Issues.GetMany(ctx, call.Access(), ids); readErr == nil {
+		handler.audit(ctx, call, issueChanges(before, after, input.Action == services.ActionDelete)...)
+	}
+
+	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrUnknownAction):
 			return appliedOutput{}, Invalid("unknown action %q", input.Action)

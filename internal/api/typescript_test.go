@@ -340,6 +340,11 @@ func typescriptType(schema *jsonschema.Schema, indent string) (string, error) {
 		return "", err
 	}
 
+	// The empty schema, any value (raw JSON in a map), encodes as true.
+	if string(encoded) == "true" {
+		return "unknown", nil
+	}
+
 	var keywords map[string]json.RawMessage
 
 	if err := json.Unmarshal(encoded, &keywords); err != nil {

@@ -530,8 +530,8 @@ func TestCompactionsTakeStaleOffOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if deleted, err := database.DeleteLogs(context.Background(), store.Access{}, ids); err != nil || deleted != len(ids) {
-		t.Fatalf("deleted %d of %d, %v", deleted, len(ids), err)
+	if deleted, err := database.DeleteLogs(context.Background(), store.Access{}, ids); err != nil || len(deleted) != len(ids) {
+		t.Fatalf("deleted %d of %d, %v", len(deleted), len(ids), err)
 	}
 
 	deleted := database.staleBytes()

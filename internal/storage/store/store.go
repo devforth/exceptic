@@ -105,6 +105,8 @@ type Store interface {
 	// IssueLevels returns the levels at least one issue of the projects has
 	// (every project when none is given), in no order.
 	IssueLevels(ctx context.Context, projectIDs []int) ([]string, error)
+	// IssueProjects returns the projects that have at least one issue, in no order.
+	IssueProjects(ctx context.Context) ([]int, error)
 	ListEvents(ctx context.Context, filter EventFilter) ([]EventSummary, error)
 	// GetEvent finds an event by its SDK event_id within a project.
 	GetEvent(ctx context.Context, projectID int, eventID string) (Event, error)
@@ -115,12 +117,28 @@ type Store interface {
 	// LogLevels returns the levels at least one log of the projects has
 	// (every project when none is given).
 	LogLevels(ctx context.Context, projectIDs []int) ([]string, error)
+	// LogProjects returns those of projectIDs that have at least one log.
+	LogProjects(ctx context.Context, projectIDs []int) ([]int, error)
 	// ListLogs stops at config.LogSearchTime too.
 	ListLogs(ctx context.Context, filter LogFilter) (LogPage, error)
 	// IssuesForLogs finds the issue of each log's request, by span.
 	IssuesForLogs(ctx context.Context, logs []LogRecord) (map[int64]LogIssue, error)
-	// DeleteLogs deletes the logs that exist and access sees; it says how many.
-	DeleteLogs(ctx context.Context, access Access, logIDs []int64) (int, error)
+	// DeleteLogs deletes the logs that exist and access sees and returns them.
+	DeleteLogs(ctx context.Context, access Access, logIDs []int64) ([]LogRecord, error)
+
+	// The audit log, never deleted.
+
+	// AppendAudit stores the entries, each with the next ID.
+	AppendAudit(ctx context.Context, entries []AuditEntry) error
+	// ListAudit returns the entries of filter, newest first.
+	ListAudit(ctx context.Context, filter AuditFilter) ([]AuditEntry, error)
+	// GetAudit returns one entry; ErrNotFound when there is none.
+	GetAudit(ctx context.Context, id int64) (AuditEntry, error)
+	// CountAudit counts the entries of filter, stopping at most (more).
+	CountAudit(ctx context.Context, filter AuditFilter, most int) (count int, more bool, err error)
+	// AuditChoices returns the values the entries of the projects have (none
+	// given: of every project, and of the entries of none), from the counts.
+	AuditChoices(ctx context.Context, projectIDs []int) (AuditChoices, error)
 
 	// The database.
 

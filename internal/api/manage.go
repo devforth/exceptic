@@ -295,8 +295,18 @@ type doneOutput struct {
 }
 
 func (handler *handlers) disconnectAgent(ctx context.Context, call Call, input grantInput) (doneOutput, error) {
-	if err := handler.services.Agents.Disconnect(ctx, call.Viewer, input.GrantID); err != nil {
+	grant, owner, err := handler.services.Agents.Disconnect(ctx, call.Viewer, input.GrantID)
+
+	if err != nil {
 		return doneOutput{}, err
+	}
+
+	// Only another user's agent: one's own is the account's.
+	if owner.ID != call.Viewer.ID {
+		handler.audit(ctx, call, auditChange{
+			Resource: store.AuditAgent, Action: store.AuditDelete, RecordID: grant.ID, RecordName: grant.Name, ProjectIDs: userProjects(owner),
+			Before: map[string]any{"name": grant.Name, "kind": grant.Kind, "user": owner.Email},
+		})
 	}
 
 	return doneOutput{Done: "disconnected"}, nil
@@ -494,7 +504,17 @@ func (handler *handlers) saveProject(ctx context.Context, call Call, form url.Va
 	// project: the caller's access read before the save lacks a new one.
 	saved, err = handler.services.Projects.Get(ctx, store.Access{}, saved.ID)
 
-	return handler.settings(call, saved), err
+	if err != nil {
+		return projectSettings{}, err
+	}
+
+	if project.ID == 0 {
+		handler.audit(ctx, call, projectChange(store.AuditCreate, saved, nil, handler.projectAudit(saved)))
+	} else {
+		handler.audit(ctx, call, projectChange(store.AuditEdit, saved, handler.projectAudit(project), handler.projectAudit(saved)))
+	}
+
+	return handler.settings(call, saved), nil
 }
 
 func (handler *handlers) createProject(ctx context.Context, call Call, input createProjectInput) (projectSettings, error) {
@@ -541,6 +561,8 @@ func (handler *handlers) deleteProject(ctx context.Context, call Call, input pro
 	} else if err != nil {
 		return doneOutput{}, err
 	}
+
+	handler.audit(ctx, call, projectChange(store.AuditDelete, project, handler.projectAudit(project), nil))
 
 	return doneOutput{Done: "deleted project " + project.Name}, nil
 }
@@ -629,11 +651,18 @@ func (handler *handlers) createUser(ctx context.Context, call Call, input create
 		return passwordOutput{}, err
 	}
 
-	return handler.withPassword(ctx, call, id, password)
+	return handler.withPassword(ctx, call, id, password, func(user store.User) auditChange {
+		return userChange(store.AuditCreate, user, nil, handler.userAudit(user))
+	})
 }
 
-func (handler *handlers) withPassword(ctx context.Context, call Call, id string, password string) (passwordOutput, error) {
+// withPassword answers user id with the temporary password given them, recording change.
+func (handler *handlers) withPassword(ctx context.Context, call Call, id string, password string, change func(store.User) auditChange) (passwordOutput, error) {
 	user, err := handler.services.Users.Get(ctx, id)
+
+	if err == nil {
+		handler.audit(ctx, call, change(user))
+	}
 
 	return passwordOutput{User: handler.userView(call.Viewer, user), TemporaryPassword: password, Note: temporaryPasswordNote}, err
 }
@@ -682,9 +711,15 @@ func (handler *handlers) updateUser(ctx context.Context, call Call, input update
 		return userOutput{}, err
 	}
 
-	user, err = handler.services.Users.Get(ctx, input.UserID)
+	updated, err := handler.services.Users.Get(ctx, input.UserID)
 
-	return handler.userView(call.Viewer, user), err
+	if err != nil {
+		return userOutput{}, err
+	}
+
+	handler.audit(ctx, call, userChange(store.AuditEdit, updated, handler.userAudit(user), handler.userAudit(updated), user))
+
+	return handler.userView(call.Viewer, updated), nil
 }
 
 func (handler *handlers) resetUserPassword(ctx context.Context, call Call, input userInput) (passwordOutput, error) {
@@ -694,21 +729,47 @@ func (handler *handlers) resetUserPassword(ctx context.Context, call Call, input
 		return passwordOutput{}, err
 	}
 
-	return handler.withPassword(ctx, call, input.UserID, password)
+	return handler.withPassword(ctx, call, input.UserID, password, func(user store.User) auditChange {
+		change := userChange(store.AuditResetPassword, user, nil, nil)
+		change.Replaced = []string{"password"}
+
+		return change
+	})
 }
 
 func (handler *handlers) deleteUser(ctx context.Context, call Call, input userInput) (doneOutput, error) {
+	// Read for the audit log; Delete checks the rest.
+	user, _ := handler.services.Users.Get(ctx, input.UserID)
+
 	if err := handler.services.Users.Delete(ctx, call.Viewer, input.UserID); err != nil {
 		return doneOutput{}, err
 	}
+
+	handler.audit(ctx, call, userChange(store.AuditDelete, user, handler.userAudit(user), nil))
 
 	return doneOutput{Done: "deleted user " + input.UserID}, nil
 }
 
 // resetProjectKey gives the project a new DSN and answers its setup with it.
+// The audit log keeps the old and new DSN: a DSN is public by design, and
+// the old one no longer works.
 func (handler *handlers) resetProjectKey(ctx context.Context, call Call, input projectIDInput) (projectSetup, error) {
+	before, err := handler.services.Projects.Get(ctx, call.Access(), input.Project)
+
+	if err != nil {
+		return projectSetup{}, err
+	}
+
 	if err := handler.services.Projects.ResetKey(ctx, call.Access(), input.Project); err != nil {
 		return projectSetup{}, err
+	}
+
+	if after, err := handler.services.Projects.Get(ctx, call.Access(), input.Project); err == nil {
+		dsn := func(project store.Project) map[string]string {
+			return map[string]string{"dsn": config.Project{ID: project.ID, PublicKey: project.PublicKey}.DSN(call.Address)}
+		}
+
+		handler.audit(ctx, call, projectChange(store.AuditResetKey, after, dsn(before), dsn(after)))
 	}
 
 	return handler.getProjectSetup(ctx, call, input)
@@ -727,9 +788,23 @@ func (handler *handlers) setProjectActive(ctx context.Context, call Call, input 
 		return projectView{}, err
 	}
 
+	stored, err := handler.services.Projects.Get(ctx, call.Access(), project.ID)
+
+	if err != nil {
+		return projectView{}, err
+	}
+
 	if err := handler.services.Projects.SetPaused(ctx, call.Access(), project.ID, !input.Active); err != nil {
 		return projectView{}, err
 	}
+
+	action := store.AuditResume
+
+	if !input.Active {
+		action = store.AuditPause
+	}
+
+	handler.audit(ctx, call, projectChange(action, stored, map[string]bool{"paused": stored.Paused}, map[string]bool{"paused": !input.Active}))
 
 	project, _ = handler.projects.List().ByID(project.ID)
 

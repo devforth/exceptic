@@ -52,7 +52,7 @@ If the tools `list_projects`, `list_issues` and `get_issue` are already availabl
 
 ## Investigate errors
 
-Once connected, the MCP server's own instructions and `fetch_skill` cover finding, reading and resolving issues. `get_issue {"issue_id": "<id>"}` gives the error with stack, request, breadcrumbs and related logs; explain the cause with evidence from the code before proposing a fix, and change an issue's status only when the user asks or confirms.
+Once connected, the MCP server's own instructions and `fetch_skill` cover finding, reading and resolving issues. `get_issue {"issue_id": "<id>"}` gives the error with stack, request, breadcrumbs and related logs; explain the cause with evidence from the code before proposing a fix, and before any change (an issue's status, a project, a user, a notification) show what will change and wait for the user's explicit yes, even when they asked for it.
 
 ## REST API
 

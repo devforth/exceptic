@@ -78,7 +78,7 @@ A refused call is a tool error that starts with its kind:
 
 `get_issues` lists the IDs of other projects' issues in `forbidden_issue_ids`, apart from `missing_issue_ids`.
 
-Not available to agents: changing your own password (the web interface asks for the current one) and generating personal tokens. Tools that delete data or reset passwords, and those that change users, project settings or notification connections, tell the agent to show what will change and wait for your confirmation in chat.
+Not available to agents: changing your own password (the web interface asks for the current one) and generating personal tokens. Every tool that changes something (anything but reading) tells the agent to show what will change and wait for your confirmation in chat.
 
 Notifications and the issue page carry the request for an agent, e.g. `Exceptic MCP: get_issue {"issue_id":"k3x9q2mf"}`, to paste into the agent.
 

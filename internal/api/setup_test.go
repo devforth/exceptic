@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -124,6 +125,12 @@ func TestSetupAdmin(t *testing.T) {
 
 	if len(admins) != 1 || admins[0].Email != "owner@example.com" || admins[0].Name != store.DefaultName("owner@example.com") || admins[0].MustChangePassword {
 		t.Fatalf("admins: %+v", admins)
+	}
+
+	// The audit log: the admin created themselves; no refused form counts.
+	if entries := server.auditEntries(); len(entries) != 1 || entries[0].Actor.UserID != admins[0].ID || entries[0].Resource != store.AuditUser ||
+		entries[0].Action != store.AuditCreate || entries[0].RecordName != "owner@example.com" || entries[0].ProjectIDs != nil || strings.Contains(fmt.Sprint(entries[0]), "owner password") {
+		t.Errorf("audit of the setup: %+v", entries)
 	}
 
 	// The cookie again, from a copy: the setup is over.

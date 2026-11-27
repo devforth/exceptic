@@ -25,6 +25,7 @@ type Users struct {
 	logger   *slog.Logger
 	store    store.Store
 	projects config.ProjectList // nil: project ids are not checked
+	audit    *Audit             // nil: the setup of the first admin is not recorded
 	now      func() time.Time
 }
 
@@ -51,8 +52,9 @@ func (users *Users) LogSetup(ctx context.Context, adminPassword string) error {
 
 // SetupAdmin creates the first admin from the setup form, which only the
 // login of ADMIN_EMAIL and ADMIN_PASSWORD opens: an email and a password
-// other than ADMIN_PASSWORD. Forbidden once an admin exists.
-func (users *Users) SetupAdmin(ctx context.Context, entered, password, confirm, adminPassword string) (store.User, Problems, error) {
+// other than ADMIN_PASSWORD. Forbidden once an admin exists. The audit log
+// records the admin as their own creator, from address.
+func (users *Users) SetupAdmin(ctx context.Context, entered, password, confirm, adminPassword, address string) (store.User, Problems, error) {
 	problems := Problems{}
 	email, emailOK := config.ParseEmail(entered)
 
@@ -85,6 +87,15 @@ func (users *Users) SetupAdmin(ctx context.Context, entered, password, confirm, 
 	}
 
 	users.logger.Info("admin set up", "email", email)
+
+	if users.audit != nil {
+		after, _ := AuditFields(map[string]any{"email": user.Email, "name": user.Name, "role": user.Role, "all_projects": true})
+		users.audit.Record(ctx, store.AuditEntry{
+			Actor:  store.AuditActor{UserID: user.ID, Name: user.DisplayName(), Email: user.Email, Role: user.Role},
+			Source: store.SourceUI, Address: address, Resource: store.AuditUser, Action: store.AuditCreate,
+			RecordID: user.ID, RecordName: user.Email, After: after,
+		})
+	}
 
 	return user, nil, nil
 }

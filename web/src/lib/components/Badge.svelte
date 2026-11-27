@@ -2,7 +2,8 @@
 @component
 A short label: a level or role filled in its tone, or a project outlined in its color (from
 the session, or `color` for one not saved yet; set through the style: directive, which the CSP
-allows), with `size="heading"` beside a page's title. With an href it is a link; with `remove` the whole badge
+allows), with `size="heading"` beside a page's title. With an href it is a link; with `onclick`
+a button (`expanded`: what it opens is open, a popup); with `remove` the whole badge
 links to where it goes away (a filter's value), a × inside it. A state (on, off) is a StatusText.
 -->
 <script lang="ts">
@@ -21,18 +22,34 @@ links to where it goes away (a filter's value), a × inside it. A state (on, off
 		size?: 'default' | 'heading';
 		/** A × inside the badge: the address without it and the ×'s accessible name. */
 		remove?: { href: string; label: string };
+		/** A button that opens a popup (ProjectsSummary's "+2 more"). */
+		onclick?: () => void;
+		expanded?: boolean;
 	};
 
-	let { tone, label, href, title, color: chosen, size = 'default', remove }: Props = $props();
+	let {
+		tone,
+		label,
+		href,
+		title,
+		color: chosen,
+		size = 'default',
+		remove,
+		onclick,
+		expanded
+	}: Props = $props();
 
 	const filled = 'px-[7px] py-px align-[2px] lowercase';
 
 	const tones: Record<BadgeTone, string> = {
 		error: `${filled} bg-error-badge text-error`,
 		warning: `${filled} bg-warning-bg text-warning`,
+		success: `${filled} bg-success-bg text-success`,
 		info: `${filled} bg-info-bg text-info`,
 		debug: `${filled} bg-debug-bg text-debug`,
 		plain: `${filled} bg-code-bg text-text`,
+		// Outlined in grey, for what must show on any row: ProjectsSummary's "+2 more".
+		outline: 'border border-border px-[7px] align-[1px] text-muted',
 		project:
 			'border border-project-text px-[7px] align-[1px] text-project-text first-letter:uppercase'
 	};
@@ -41,7 +58,8 @@ links to where it goes away (a filter's value), a × inside it. A state (on, off
 		'inline-block rounded-full font-semibold whitespace-nowrap forced-colors:border',
 		size === 'heading' ? 'text-h2' : 'text-2xs',
 		tones[tone],
-		(href || remove) && 'no-underline hover:no-underline hover:brightness-92',
+		(href || remove || onclick) && 'no-underline hover:no-underline hover:brightness-92',
+		onclick && 'cursor-pointer border-0 focus-ring',
 		remove && 'group inline-flex items-center gap-0.5 pr-[3px] focus-ring'
 	]);
 
@@ -54,8 +72,13 @@ links to where it goes away (a filter's value), a × inside it. A state (on, off
 <!-- A link with href or remove (callers pass resolved paths), else plain text; a removable badge
      is a link as a whole, its × a sign of what it does. -->
 <svelte:element
-	this={href || remove ? 'a' : 'span'}
-	href={remove?.href ?? href}
+	this={onclick ? 'button' : href || remove ? 'a' : 'span'}
+	href={onclick ? undefined : (remove?.href ?? href)}
+	type={onclick ? 'button' : undefined}
+	role={onclick ? 'button' : undefined}
+	{onclick}
+	aria-expanded={onclick ? expanded : undefined}
+	aria-haspopup={onclick ? 'dialog' : undefined}
 	class={classes}
 	title={remove ? 'Remove' : title}
 	aria-label={remove?.label}

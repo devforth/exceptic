@@ -23,13 +23,15 @@ export function listChip(
 	label: string,
 	name: string,
 	values: readonly string[],
-	kind?: FilterValue['kind']
+	kind?: FilterValue['kind'],
+	/** A value's text when it is not the value itself (a user's name for their id). */
+	textOf: (value: string) => string = (value) => value
 ): FilterChip {
 	return {
 		label,
 		remove: changed(url, { [name]: null }),
 		values: values.map((value) => ({
-			text: value,
+			text: textOf(value),
 			...(kind ? { kind } : {}),
 			remove: changed(url, { [name]: values.filter((other) => other !== value) })
 		}))

@@ -110,14 +110,7 @@ unlinking Google (one's own, or a user the viewer may take over); reason says wh
 
 		<section class="flex flex-col gap-2">
 			<h3 class="font-semibold">Sessions</h3>
-			<Table
-				columns={sessionColumns}
-				rows={activity.sessions ?? []}
-				label="Sessions"
-				compact
-				middle
-				flat
-			>
+			<Table columns={sessionColumns} rows={activity.sessions ?? []} label="Sessions" compact flat>
 				{#snippet cell(session: Session, column: SessionColumn)}
 					{#if column.key === 'browser'}
 						<span title={session.browser}>{browserName(session.browser) || '—'}</span>

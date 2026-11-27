@@ -91,6 +91,39 @@ describe('Table', () => {
 		expect(boxes().some((box) => box.checked)).toBe(false);
 	});
 
+	it('centres cells on their row; with top they and the checkboxes start at its top', async () => {
+		const { rerender } = renderTable({ selected: new Set() });
+		const bodyCells = () => [...screen.getAllByRole('cell'), ...screen.getAllByRole('rowheader')];
+
+		expect(bodyCells().every((cell) => cell.classList.contains('align-middle'))).toBe(true);
+
+		await rerender({ top: true });
+		expect(bodyCells().length).toBe(9);
+		expect(bodyCells().every((cell) => cell.classList.contains('align-top'))).toBe(true);
+		expect(
+			screen.getAllByRole('columnheader').every((cell) => cell.classList.contains('align-middle'))
+		).toBe(true);
+	});
+
+	it('gives one fill column the width left, and several an equal share of it', async () => {
+		const fill = (count: number): TableColumn<'title' | 'last_seen'>[] => [
+			{ key: 'title', label: 'Issue', fill: true },
+			{ key: 'last_seen', label: 'Last seen', fill: count > 1 }
+		];
+		const { rerender } = renderTable({ columns: fill(1) });
+		const [title] = screen.getAllByRole('columnheader');
+
+		expect(title.classList.contains('w-full')).toBe(true);
+		expect(title.style.width).toBe('');
+
+		await rerender({ columns: fill(2) });
+		for (const cell of [...screen.getAllByRole('columnheader'), ...screen.getAllByRole('cell')]) {
+			expect(cell.style.width).toBe('50%');
+			expect(cell.classList.contains('max-w-0')).toBe(true);
+			expect(cell.classList.contains('w-full')).toBe(false);
+		}
+	});
+
 	it('tints rows by their tone, titles them and marks the selected one', () => {
 		renderTable({
 			rowTone: (issue: Issue) => (issue.status === 'unresolved' ? 'error' : 'success'),

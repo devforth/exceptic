@@ -80,7 +80,7 @@ func Endpoints(projects config.ProjectList, all *services.All) []Endpoint {
 			Transports: TransportREST | TransportMCP,
 			Name:       agentprompt.UpdateIssueStatusTool,
 			Description: fmt.Sprintf("Set the status of 1 to 100 issues in one atomic call: %s (%s), %s (%s) or %s (%s). "+
-				"Only when the user asks. Returns the updated summaries.",
+				"Returns the updated summaries.",
 				store.StatusResolved, store.StatusMeanings[store.StatusResolved], store.StatusIgnored, store.StatusMeanings[store.StatusIgnored],
 				store.StatusUnresolved, store.StatusMeanings[store.StatusUnresolved]),
 			Idempotent: true,
@@ -111,6 +111,12 @@ func Endpoints(projects config.ProjectList, all *services.All) []Endpoint {
 			ReadOnly:    true,
 			Transports:  TransportUI,
 		}, handler.listIssueLevels),
+		Define(Endpoint{
+			Name:        "list_issue_projects",
+			Description: "The projects some issue is in, by name: the choices of the project filter.",
+			ReadOnly:    true,
+			Transports:  TransportUI,
+		}, handler.listIssueProjects),
 		// Unredacted event data: never for an agent's model provider.
 		Define(Endpoint{
 			Name: "get_issue_details",
@@ -149,6 +155,12 @@ func Endpoints(projects config.ProjectList, all *services.All) []Endpoint {
 			ReadOnly:    true,
 			Transports:  TransportUI,
 		}, handler.listLogLevels),
+		Define(Endpoint{
+			Name:        "list_log_projects",
+			Description: "The projects some stored log is in, by name: the choices of the project filter.",
+			ReadOnly:    true,
+			Transports:  TransportUI,
+		}, handler.listLogProjects),
 		// The logs list: chosen lines (up to services.MaxActionLogs); not for
 		// agents, whose logs are for reading.
 		Define(Endpoint{
@@ -206,5 +218,5 @@ func Endpoints(projects config.ProjectList, all *services.All) []Endpoint {
 			ReadOnly:    true,
 			Transports:  TransportREST,
 		}, handler.listTrace),
-	}, handler.management()...)
+	}, append(handler.management(), handler.auditEndpoints()...)...)
 }

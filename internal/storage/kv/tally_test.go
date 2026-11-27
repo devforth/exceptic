@@ -1,6 +1,7 @@
 package kv
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"slices"
@@ -362,5 +363,75 @@ func TestFromRest(t *testing.T) {
 
 	if !slices.Equal(up, []uint64{3, 4, 5}) {
 		t.Errorf("from the third on: %v", up)
+	}
+}
+
+// A Tally added to records stored without one is counted once by Recount, in
+// batches, and never again; a new database has nothing to count.
+func TestRecountAtOpen(t *testing.T) {
+	engine := newMemoryEngine()
+	define := func(recount bool) (*DB, *Collection[ticket]) {
+		schema := NewSchema()
+		definition := Definition[ticket]{Name: "ticket", Key: func(record ticket) Key { return K(U64(record.ID)) }}
+
+		if recount {
+			definition.Tally = func(record ticket) []Key { return []Key{K(Text("ticket"), U32(record.Project), U8(record.Status))} }
+			definition.Recount = "tickets"
+		}
+
+		tickets := Define(schema, definition)
+		db, err := OpenDB(engine, schema)
+
+		if err == nil {
+			err = db.Recount()
+		}
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return db, tickets
+	}
+
+	db, tickets := define(false)
+	stored := recountBatch*2 + 7
+
+	if err := db.Update(false, func(batch *Batch) error {
+		for id := 1; id <= stored; id++ {
+			if err := tickets.Insert(batch, ticket{ID: uint64(id), Project: uint32(id % 2)}); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for range 2 {
+		db, _ = define(true)
+
+		if odd := db.Tally(K(Text("ticket"), U32(1), U8(0))); odd != int64(stored/2+1) {
+			t.Fatalf("odd tickets counted %d, want %d", odd, stored/2+1)
+		}
+
+		if problems, err := db.CheckTallies(); err != nil || len(problems) > 0 {
+			t.Fatalf("check: %v %v", problems, err)
+		}
+	}
+
+	engine = newMemoryEngine()
+	db, tickets = define(true)
+
+	if value, err := db.Get(db.recountKey("ticket", "tickets")); err != nil || !bytes.Equal(value, []byte{backfillDone}) {
+		t.Fatalf("a new database's recount %q %v, want done", value, err)
+	}
+
+	if err := db.Update(false, func(batch *Batch) error { return tickets.Insert(batch, ticket{ID: 1, Project: 3}) }); err != nil {
+		t.Fatal(err)
+	}
+
+	if db, _ = define(true); db.Tally(K(Text("ticket"), U32(3), U8(0))) != 1 {
+		t.Errorf("a new database counted again: %v", db.Tallies())
 	}
 }

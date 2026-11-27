@@ -16,6 +16,9 @@ Every component with its variants, on sample data. Served only by the dev server
 	import type { ButtonVariant } from '#lib/components/button.ts';
 	import ActiveFilters from '#lib/components/ActiveFilters.svelte';
 	import AgentCopyButton from '#lib/components/AgentCopyButton.svelte';
+	import AuditActionBadge from '#lib/components/AuditActionBadge.svelte';
+	import AuditDiff from '#lib/components/AuditDiff.svelte';
+	import AuditItems from '#lib/components/AuditItems.svelte';
 	import BackButton from '#lib/components/BackButton.svelte';
 	import Breadcrumbs from '#lib/components/Breadcrumbs.svelte';
 	import Card from '#lib/components/Card.svelte';
@@ -148,9 +151,11 @@ Every component with its variants, on sample data. Served only by the dev server
 	const badgeTones: Exclude<BadgeTone, 'project'>[] = [
 		'error',
 		'warning',
+		'success',
 		'info',
 		'debug',
-		'plain'
+		'plain',
+		'outline'
 	];
 	const statusTones: StatusTone[] = ['success', 'warning', 'error', 'muted'];
 
@@ -529,7 +534,9 @@ Every component with its variants, on sample data. Served only by the dev server
 				</Row>
 			</Card>
 			<Card>
-				<Row caption="CopyButton with a label, info / neutral (MCP commands) / AgentCopyButton">
+				<Row
+					caption="CopyButton with a label, info (default, the MCP page) / neutral / AgentCopyButton"
+				>
 					<CopyButton text="Copied text" title="Copy the sample" label="Copy" />
 					<CopyButton text="Copied text" title="Copy the command" label="Copy" variant="neutral" />
 					<AgentCopyButton request={'Exceptic MCP: get_issue {"issue_id":"k3x9q2mf"}'} />
@@ -836,6 +843,11 @@ Every component with its variants, on sample data. Served only by the dev server
 			<RoleBadge role="admin" />
 			<RoleBadge role="user" />
 		</Row>
+		<Row caption="AuditActionBadge: create green, edit blue, delete red, the other actions plain">
+			{#each ['create', 'edit', 'delete', 'pause', 'reset_key'] as action (action)}
+				<AuditActionBadge {action} />
+			{/each}
+		</Row>
 		<Row caption="StatusText: a state as a pill with a dot">
 			{#each statusTones as tone (tone)}
 				<StatusText {tone}>{tone}</StatusText>
@@ -969,7 +981,13 @@ Every component with its variants, on sample data. Served only by the dev server
 				names={['backend', 'frontend']}
 				links={['#projects', '#projects']}
 			/> ·
-			<ProjectsSummary all={false} names={[]} />
+			<ProjectsSummary all={false} names={[]} /> · limit (a list row on one line, the rest behind a MoreButton):
+			<ProjectsSummary
+				all={false}
+				names={['backend', 'frontend', 'worker']}
+				links={['#projects', '#projects', '#projects']}
+				limit={1}
+			/>
 		</p>
 		<Details title="Projects" variant="form" invalid>
 			{#snippet summary()}<span class="text-muted">none</span>{/snippet}
@@ -1186,10 +1204,7 @@ Every component with its variants, on sample data. Served only by the dev server
 				copied="Command copied to clipboard."
 			/>
 		</Row>
-		<Row
-			caption="CodeBlock command, copyVariant neutral: the grey copy button of the MCP page"
-			wide
-		>
+		<Row caption="CodeBlock command, copyVariant neutral: a grey copy button" wide>
 			<CodeBlock
 				variant="command"
 				code="codex mcp add exceptic --url http://localhost:8000/mcp"
@@ -1472,6 +1487,36 @@ Every component with its variants, on sample data. Served only by the dev server
 	</Section>
 
 	<Section title="Tables" id="tables">
+		<Row caption="AuditDiff: the fields an audit entry changed, before in red, after in green" wide>
+			<AuditDiff
+				before={{ status: 'unresolved', log_levels: ['fatal', 'error'] }}
+				after={{ status: 'ignored', log_levels: ['fatal'], ignored_until_events: 100 }}
+			/>
+		</Row>
+		<Row caption="AuditDiff of a create: After only" wide>
+			<AuditDiff after={{ name: 'backend', role: 'user', projects: ['backend'] }} />
+		</Row>
+		<Row caption="AuditItems: the records of one request that changed several" wide>
+			<AuditItems
+				items={[
+					{
+						record_id: 'k3x9q2mf',
+						record_name: 'TypeError: can\'t access property "name", user is undefined',
+						project: 'frontend',
+						before: { status: 'unresolved' },
+						after: { status: 'resolved' },
+						href: '#tables'
+					},
+					{
+						record_id: 'a7c2d4e9',
+						record_name: 'ValueError: invalid literal',
+						project: 'backend',
+						before: { status: 'ignored', ignored_until: '2026-12-01T00:00:00Z' },
+						after: { status: 'resolved' }
+					}
+				]}
+			/>
+		</Row>
 		<Row caption="number, wideOnly (hidden under 701px) and actions columns" wide>
 			<Table
 				columns={projectColumns}
@@ -1570,7 +1615,7 @@ Every component with its variants, on sample data. Served only by the dev server
 			</Table>
 		</Row>
 		<Row
-			caption="compact, middle (cells centred on their row, beside buttons), flat (inside a card or a dialog)"
+			caption="compact, top (cells at the top of their row, for rows of several lines; centred otherwise), flat (inside a card or a dialog)"
 			wide
 		>
 			<Table
@@ -1579,7 +1624,7 @@ Every component with its variants, on sample data. Served only by the dev server
 				rowKey={(row: Breadcrumb) => row.time}
 				label="Breadcrumbs"
 				compact
-				middle
+				top
 				flat
 			>
 				{#snippet cell(row: Breadcrumb, column: BreadcrumbColumn)}{row[column.key]}{/snippet}

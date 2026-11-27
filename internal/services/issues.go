@@ -51,6 +51,14 @@ func (issues *Issues) Levels(ctx context.Context, access store.Access) ([]string
 	return issues.store.IssueLevels(ctx, projectIDs)
 }
 
+// Projects returns the projects within access that have at least one issue:
+// the choices of the issue list's project filter.
+func (issues *Issues) Projects(ctx context.Context, access store.Access) ([]int, error) {
+	projectIDs, err := issues.store.IssueProjects(ctx)
+
+	return slices.DeleteFunc(projectIDs, func(id int) bool { return !access.Sees(id) }), err
+}
+
 // Unresolved counts the unresolved issues: the counter next to Issues in the menu.
 // Exact whatever the number, from the counts per project (not a list's count, which stops at its limit).
 func (issues *Issues) Unresolved(ctx context.Context, access store.Access) (int, error) {

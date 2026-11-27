@@ -13,7 +13,8 @@ type AppRoute =
 	| '/(app)/logs'
 	| '/(app)/users'
 	| '/(app)/notifications'
-	| '/(app)/agents';
+	| '/(app)/agents'
+	| '/(app)/audit';
 
 export type NavEntry = {
 	id: string;
@@ -39,7 +40,8 @@ export const navGroups: NavGroup[] = [
 				route: '/(app)/issues',
 				countsUnresolved: true
 			},
-			{ id: 'logs', label: 'Logs', icon: 'logs', route: '/(app)/logs' }
+			{ id: 'logs', label: 'Logs', icon: 'logs', route: '/(app)/logs' },
+			{ id: 'audit', label: 'Audit log', icon: 'audit', route: '/(app)/audit' }
 		]
 	},
 	{
@@ -53,14 +55,18 @@ export const navGroups: NavGroup[] = [
 				icon: 'notifications',
 				route: '/(app)/notifications'
 			},
-			{ id: 'users', label: 'Users', icon: 'users', route: '/(app)/users' },
-			{
-				id: 'mcp',
-				label: 'MCP',
-				title: 'MCP: connect a coding agent',
-				icon: 'mcp',
-				route: '/(app)/agents'
-			}
+			{ id: 'users', label: 'Users', icon: 'users', route: '/(app)/users' }
 		]
+	}
+];
+
+/** The viewer's own items, over their account at the foot of the menu: their coding agents. */
+export const accountEntries: NavEntry[] = [
+	{
+		id: 'mcp',
+		label: 'MCP',
+		title: 'MCP: connect a coding agent',
+		icon: 'mcp',
+		route: '/(app)/agents'
 	}
 ];

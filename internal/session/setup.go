@@ -28,7 +28,7 @@ const (
 
 // adminSetup creates the first admin: services.Users.
 type adminSetup interface {
-	SetupAdmin(ctx context.Context, email, password, confirm, adminPassword string) (store.User, services.Problems, error)
+	SetupAdmin(ctx context.Context, email, password, confirm, adminPassword, address string) (store.User, services.Problems, error)
 }
 
 // ErrSetupExpired: the setup form came without a valid setup cookie.
@@ -121,7 +121,7 @@ func (auth *Auth) SetupAdmin(w http.ResponseWriter, r *http.Request, email, pass
 		return nil, err
 	}
 
-	user, problems, err := auth.setup.SetupAdmin(r.Context(), email, password, confirm, auth.adminPassword)
+	user, problems, err := auth.setup.SetupAdmin(r.Context(), email, password, confirm, auth.adminPassword, server.ClientIP(r, auth.trustedProxies).String())
 
 	done()
 

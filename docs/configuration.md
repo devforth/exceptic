@@ -72,7 +72,7 @@ Telegram and Slack connections can be tested from the form before saving; email 
 
 ## Retention
 
-While the limit is on, events lose their details as they turn a month old, every 10 minutes: the exception, message and stack trace stay without local variables; breadcrumbs, request, user, tags, contexts and extra go, and the event's page says so. Nothing is deleted by age alone: data stays until the database nears its size limit.
+While the limit is on, events lose their details as they turn a month old, every 10 minutes: the exception, message and stack trace stay without local variables; breadcrumbs, request, user, tags, contexts and extra go, and the event's page says so. Nothing is deleted by age alone: data stays until the database nears its size limit. The [audit log](ui.md#audit-log) is never deleted, by the cleanup or otherwise; its entries are small.
 
 | Variable | Default | |
 |---|---|---|
@@ -80,7 +80,7 @@ While the limit is on, events lose their details as they turn a month old, every
 
 The size is checked at startup, every 10 minutes and after every 50 MB written. At startup and every 10 minutes, halfway between the checks, limit or not, the ingest queue is compacted, so envelopes that waited there as the SDKs sent them, credentials included, leave the files; the pass is skipped while envelopes arrive (one came in the last 2 seconds).
 
-What counts is the data the database holds, as the Projects page shows it (each project's part and the rest, and below what the files take): the errors, issues and logs of every project plus the rest (users, sessions, settings, status history, notifications waiting to be sent). It goes down as soon as something is deleted. The files of the database (`DATA_DIR/leveldb`) also hold what this leaves out:
+What counts is the data the database holds, as the Projects page shows it (each project's part and the rest, and below what the files take): the errors, issues and logs of every project plus the rest (users, sessions, settings, status history, the audit log, notifications waiting to be sent). It goes down as soon as something is deleted. The files of the database (`DATA_DIR/leveldb`) also hold what this leaves out:
 
 - deleted and replaced records, until their files are compacted: the compaction after a cleanup frees what it deleted, and the size check compacts the logs and events once they are more than 10% of the data, so about that much between checks, more for a moment after a large delete;
 - envelopes waiting in the ingest queue: up to 20% of the limit under a peak, usually next to nothing;

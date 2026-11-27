@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -23,5 +24,17 @@ func TestToolPanicIsRecovered(t *testing.T) {
 
 	if err != nil || !result.IsError || result.Content[0].(*mcp.TextContent).Text != "internal error" {
 		t.Fatalf("result %+v, err %v", result, err)
+	}
+}
+
+// Every tool that changes something tells the agent to ask the user first;
+// only reading needs no confirmation.
+func TestChangingToolsAskForConfirmation(t *testing.T) {
+	for _, endpoint := range Endpoints(nil, nil) {
+		asks := strings.Contains(endpoint.ToolDescription(), confirmAsk)
+
+		if asks == endpoint.ReadOnly {
+			t.Errorf("%s (read-only %v): asks for confirmation %v", endpoint.Name, endpoint.ReadOnly, asks)
+		}
 	}
 }

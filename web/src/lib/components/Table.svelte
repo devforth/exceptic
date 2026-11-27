@@ -3,7 +3,8 @@
 A table of rows: the columns name what each shows, the cell snippet draws a row's cell.
 Every second row is shaded. Without rows it shows the empty snippet in an EmptyState.
 - Every table is as tall as its rows and scrolls only sideways; `flat` has no box of its own
-  (inside a Card or a Dialog); `compact` is denser.
+  (inside a Card or a Dialog); `compact` is denser. Cells are centred on their row; `top` starts
+  them at its top, for rows of several lines (a log's body).
 - `sort`: columns with a `sort` link their heading to the list sorted by them (aria-sort).
 - `selected` (bindable, needs rowKey): a checkbox per row and one for all (mixed when some are
   checked); it empties when the rows change.
@@ -37,8 +38,8 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 		label?: string;
 		rowKey?: (row: Row) => RowKey;
 		compact?: boolean;
-		/** Cells centred on their row: one-line rows beside buttons. */
-		middle?: boolean;
+		/** Cells start at the top of their row, not its middle: rows of several lines (a log's body, a long value). */
+		top?: boolean;
 		flat?: boolean;
 		headerless?: boolean;
 		sort?: TableSort;
@@ -59,7 +60,7 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 		label,
 		rowKey,
 		compact = false,
-		middle = false,
+		top = false,
 		flat = false,
 		headerless = false,
 		sort,
@@ -75,15 +76,22 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 
 	const padding = $derived(compact ? 'px-2.5 py-1.5' : 'px-3 py-2.5');
 
-	// Headings are centred on their row (a two-line heading next to one line), cells start at the
-	// top unless middle.
+	// Several fill columns share the width the others leave equally.
+	const fillShare = $derived.by(() => {
+		const fills = columns.filter((column) => column.fill).length;
+
+		return fills > 1 ? `${100 / fills}%` : undefined;
+	});
+
+	// Headings and cells are centred on their row (a two-line heading next to one line, a badge
+	// beside a button); with top, cells start at the top.
 	function columnClasses(column: TableColumn<Key>, heading = false) {
 		return [
 			padding,
-			heading || middle ? 'text-left align-middle' : 'text-left align-top',
+			heading || !top ? 'text-left align-middle' : 'text-left align-top',
 			column.number && 'text-right whitespace-nowrap tabular-nums',
 			column.actions && 'w-[1%] whitespace-nowrap',
-			column.fill && 'w-full max-w-0',
+			column.fill && (fillShare ? 'max-w-0' : 'w-full max-w-0'),
 			column.wideOnly && 'max-table:hidden'
 		];
 	}
@@ -179,6 +187,7 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 							scope="col"
 							aria-sort={state?.direction}
 							class={[columnClasses(column, true), headingClasses, state?.direction && 'text-text']}
+							style:width={column.fill ? fillShare : undefined}
 						>
 							{#if state && sort}
 								<!-- eslint-disable svelte/no-navigation-without-resolve -- the list's own address -->
@@ -214,7 +223,7 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 						aria-current={selectedKey !== undefined && key === selectedKey ? 'true' : undefined}
 					>
 						{#if selectable && key !== undefined}
-							<td class={[padding, 'w-[1%] pr-0 align-top']}>
+							<td class={[padding, 'w-[1%] pr-0', top ? 'align-top' : 'align-middle']}>
 								<input
 									type="checkbox"
 									class={checkClasses.checkbox}
@@ -233,7 +242,10 @@ Every second row is shaded. Without rows it shows the empty snippet in an EmptyS
 									{@render cell(row, column)}
 								</th>
 							{:else}
-								<td class={[columnClasses(column), 'wrap-break-word']}>
+								<td
+									class={[columnClasses(column), 'wrap-break-word']}
+									style:width={column.fill ? fillShare : undefined}
+								>
 									{@render cell(row, column)}
 								</td>
 							{/if}

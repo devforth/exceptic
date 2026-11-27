@@ -44,14 +44,16 @@ type All struct {
 	Agents       *Agents
 	Users        *Users
 	Sessions     *Sessions
+	Audit        *Audit
 }
 
 func New(dependencies Dependencies) *All {
 	settings, database := dependencies.Settings, dependencies.Store
 	connections := newConnections(dependencies.Logger, database, dependencies.Factory, dependencies.Registry, settings)
 	connections.notifier = dependencies.Notifier
+	audit := newAudit(dependencies.Logger, database)
 	users := NewUsers(dependencies.Logger, database)
-	users.projects = dependencies.Registry
+	users.projects, users.audit = dependencies.Registry, audit
 
 	return &All{
 		AppName:      settings.AppName,
@@ -60,9 +62,10 @@ func New(dependencies Dependencies) *All {
 		Connections:  connections,
 		Deliveries:   newDeliveries(database, connections),
 		Verification: newVerification(dependencies.Logger, database, dependencies.Factory, connections),
-		Logs:         newLogs(database),
+		Logs:         newLogs(database, dependencies.Registry),
 		Agents:       newAgents(dependencies.OAuth, database, settings),
 		Users:        users,
 		Sessions:     NewSessions(database),
+		Audit:        audit,
 	}
 }

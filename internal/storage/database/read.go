@@ -421,12 +421,33 @@ func (database *Store) LogLevels(_ context.Context, projectIDs []int) ([]string,
 	return levels, nil
 }
 
-// anyKey reports whether one of the queries has a key.
+// LogProjects looks for one key of each project in the project index.
+func (database *Store) LogProjects(_ context.Context, projectIDs []int) ([]int, error) {
+	var found []int
+
+	for _, project := range projectIDs {
+		has, err := anyKey(database.db, []kv.Query[logRecord]{database.logs.By("project", kv.U32(uint32(project)))})
+
+		if err != nil {
+			return nil, err
+		}
+
+		if has {
+			found = append(found, project)
+		}
+	}
+
+	return found, nil
+}
+
+// anyKey reports whether one of the queries has a key. It looks newest
+// first: the cleanup and thinning delete the oldest, whose deleted keys a
+// walk from the start would step over until a compaction.
 func anyKey(reader kv.Reader, queries []kv.Query[logRecord]) (bool, error) {
 	found := false
 
 	for _, query := range queries {
-		err := query.Limit(1).Keys(reader, func(kv.Key) (bool, error) {
+		err := query.Newest().Limit(1).Keys(reader, func(kv.Key) (bool, error) {
 			found = true
 
 			return false, nil

@@ -41,6 +41,7 @@ type collections struct {
 	destinations *kv.Collection[destinationRecord]
 	connections  *kv.Collection[connectionRecord]
 	outbox       *kv.Collection[store.OutboxRecord]
+	audit        *kv.Collection[store.AuditEntry]
 }
 
 // Kinds of the byte counters.
@@ -313,6 +314,14 @@ func defineCollections(schema *kv.Schema) collections {
 			Decode:     decodeOutbox,
 			DecodeHead: decodeOutboxHead,
 		}),
+		// audit/<seq>: a change an admin or a user made; never deleted. The
+		// tallies count the entries per project and facet: the filter's choices.
+		audit: kv.Define(schema, kv.Definition[store.AuditEntry]{
+			Name:    "audit",
+			Key:     func(entry store.AuditEntry) kv.Key { return sequenceKey(uint64(entry.ID)) },
+			Tally:   auditTallies,
+			Recount: "choices",
+		}),
 	}
 }
 
@@ -531,6 +540,44 @@ func issueSortKey(issue issueRecord, value int64) kv.Key {
 // issueTally counts the issues of a project with a status and level.
 func issueTally(projectID int, status, level string) kv.Key {
 	return kv.K(kv.Text("issue"), kv.U32(uint32(projectID)), kv.U8(statusRank(status)), kv.U8(levelRank(level)))
+}
+
+// The facets of the audit log's tallies.
+const (
+	auditFacetResource byte = 'r'
+	auditFacetAction   byte = 'a'
+	auditFacetUser     byte = 'u'
+)
+
+// auditTally counts the entries of a project (0: of none) with a value of a facet.
+func auditTally(projectID int, facet byte, value string) kv.Key {
+	return kv.K(kv.Text("audit"), kv.U32(uint32(projectID)), kv.U8(facet), kv.Text(value))
+}
+
+// auditTallies: an entry counts under each of its projects (its items' for
+// several records, project 0 for none) once per resource, action and user.
+func auditTallies(entry store.AuditEntry) []kv.Key {
+	projectIDs := slices.Clone(entry.ProjectIDs)
+
+	for _, item := range entry.Items {
+		projectIDs = append(projectIDs, item.ProjectID)
+	}
+
+	if len(projectIDs) == 0 {
+		projectIDs = []int{0}
+	}
+
+	var tallies []kv.Key
+
+	for _, projectID := range slices.Compact(slices.Sorted(slices.Values(projectIDs))) {
+		tallies = append(tallies, auditTally(projectID, auditFacetResource, entry.Resource), auditTally(projectID, auditFacetAction, entry.Action))
+
+		if entry.Actor.UserID != "" {
+			tallies = append(tallies, auditTally(projectID, auditFacetUser, entry.Actor.UserID))
+		}
+	}
+
+	return tallies
 }
 
 // statusRank is a status's place in store.IssueStatuses.

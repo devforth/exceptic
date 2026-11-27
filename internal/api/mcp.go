@@ -217,7 +217,10 @@ func (handler *MCP) withCaller(next http.Handler) http.Handler {
 		}
 
 		address := server.PublicURL(r, handler.oauth.PublicURL, handler.oauth.TrustedProxies)
-		call := Call{Transport: TransportMCP, Viewer: viewer, Actor: viewer.Actor(store.SourceMCP), Address: address}
+		call := Call{
+			Transport: TransportMCP, Viewer: viewer, Actor: viewer.Actor(store.SourceMCP), Address: address,
+			Agent: grant.Name, IP: server.ClientIP(r, handler.oauth.TrustedProxies).String(),
+		}
 
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), callerKey{}, call)))
 	})

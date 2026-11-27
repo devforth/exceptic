@@ -111,13 +111,15 @@ type deliveryHealth struct {
 }
 
 type connectionOutput struct {
-	ID               string          `json:"id"`
-	Name             string          `json:"name"`
-	Type             string          `json:"type"`
-	Email            string          `json:"email,omitempty"`
-	Destination      string          `json:"destination"`
-	AllProjects      bool            `json:"all_projects"`
-	Projects         []string        `json:"projects,omitempty"`
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Type        string   `json:"type"`
+	Email       string   `json:"email,omitempty"`
+	Destination string   `json:"destination"`
+	AllProjects bool     `json:"all_projects"`
+	Projects    []string `json:"projects,omitempty"`
+	// ProjectIDs are the ids of Projects, in their order (the web app links each to its settings).
+	ProjectIDs       []int           `json:"project_ids,omitempty"`
 	Levels           []string        `json:"levels"`
 	Active           bool            `json:"active"`
 	Confirmed        bool            `json:"confirmed"`
@@ -138,6 +140,7 @@ func (handler *handlers) connectionView(call Call, connection store.Connection, 
 
 	for _, id := range connection.ProjectIDs {
 		output.Projects = append(output.Projects, handler.projectName(id))
+		output.ProjectIDs = append(output.ProjectIDs, id)
 	}
 
 	if state, ok := health[connection.ID]; ok {
@@ -346,7 +349,7 @@ type confirmEmailInput struct {
 	Code  string `json:"code" jsonschema:"The 6-digit code from the email."`
 }
 
-func (handler *handlers) confirmEmail(ctx context.Context, _ Call, input confirmEmailInput) (emailStepOutput, error) {
+func (handler *handlers) confirmEmail(ctx context.Context, call Call, input confirmEmailInput) (emailStepOutput, error) {
 	destination, ok, err := handler.services.Verification.FindDestination(ctx, input.Email)
 
 	if err != nil {
@@ -363,7 +366,16 @@ func (handler *handlers) confirmEmail(ctx context.Context, _ Call, input confirm
 		return emailStepOutput{}, err
 	}
 
-	return emailStep(step, "code")
+	output, err := emailStep(step, "code")
+
+	if err == nil && output.Confirmed && !destination.Verified {
+		handler.audit(ctx, call, auditChange{
+			Resource: store.AuditConnection, Action: store.AuditConfirm, RecordID: destination.ID, RecordName: destination.Address,
+			Before: map[string]bool{"confirmed": false}, After: map[string]bool{"confirmed": true},
+		})
+	}
+
+	return output, err
 }
 
 // connectionFields are the rule fields of a connection; nil keeps the value.
@@ -386,6 +398,15 @@ type chatFields struct {
 	WebhookURL    string `json:"webhook_url,omitempty" jsonschema:"slack: an incoming webhook URL."`
 	SlackBotToken string `json:"slack_bot_token,omitempty" jsonschema:"slack: a bot token (xoxb-...) instead of a webhook; the bot also posts the agent prompt in a thread."`
 	SlackChannel  string `json:"slack_channel,omitempty" jsonschema:"slack: the channel ID the bot is invited to."`
+}
+
+// replaced names the tokens given, which replace the stored ones.
+func (chat chatFields) replaced() []string {
+	if chat.BotToken != "" || chat.WebhookURL != "" || chat.SlackBotToken != "" {
+		return []string{"token"}
+	}
+
+	return nil
 }
 
 // set writes the filled chat fields over the form.
@@ -454,7 +475,9 @@ func (handler *handlers) applyConnection(call Call, form url.Values, fields conn
 // connectionFormFields names the form's fields as the tools do.
 var connectionFormFields = map[string]string{"address": "email"}
 
-func (handler *handlers) saveConnection(ctx context.Context, call Call, form url.Values, connection store.Connection) (connectionOutput, error) {
+// saveConnection saves the form over connection (none: a new one); replaced
+// names the secrets the form replaces, for the audit log.
+func (handler *handlers) saveConnection(ctx context.Context, call Call, form url.Values, connection store.Connection, replaced []string) (connectionOutput, error) {
 	saved, err := handler.services.Connections.Save(ctx, call.Access(), form, connection)
 
 	if err != nil {
@@ -467,6 +490,21 @@ func (handler *handlers) saveConnection(ctx context.Context, call Call, form url
 
 	if err := problemsError(saved.Problems, connectionFormFields); err != nil {
 		return connectionOutput{}, err
+	}
+
+	// As stored, with its new secret.
+	stored, err := handler.services.Connections.Get(ctx, store.Access{}, saved.Connection.ID)
+
+	if err != nil {
+		stored = saved.Connection
+	}
+
+	if connection.ID == "" {
+		handler.audit(ctx, call, connectionChange(store.AuditCreate, stored, nil, handler.connectionAudit(stored)))
+	} else {
+		change := connectionChange(store.AuditEdit, stored, handler.connectionAudit(connection), handler.connectionAudit(stored))
+		change.Replaced = replaced
+		handler.audit(ctx, call, change)
 	}
 
 	return handler.connectionView(call, saved.Connection, nil), nil
@@ -502,7 +540,7 @@ func (handler *handlers) createConnection(ctx context.Context, call Call, input 
 		return connectionOutput{}, err
 	}
 
-	return handler.saveConnection(ctx, call, form, store.Connection{})
+	return handler.saveConnection(ctx, call, form, store.Connection{}, nil)
 }
 
 type connectionInput struct {
@@ -528,7 +566,7 @@ func (handler *handlers) updateConnection(ctx context.Context, call Call, input 
 		return connectionOutput{}, err
 	}
 
-	return handler.saveConnection(ctx, call, form, connection)
+	return handler.saveConnection(ctx, call, form, connection, input.replaced())
 }
 
 type setConnectionActiveInput struct {
@@ -552,7 +590,15 @@ func (handler *handlers) setConnectionActive(ctx context.Context, call Call, inp
 		return connectionOutput{}, err
 	}
 
+	before := connection.Active
 	connection.Active = input.Active
+	action := store.AuditResume
+
+	if !input.Active {
+		action = store.AuditPause
+	}
+
+	handler.audit(ctx, call, connectionChange(action, connection, map[string]bool{"active": before}, map[string]bool{"active": input.Active}))
 
 	return handler.connectionView(call, connection, nil), nil
 }
@@ -625,21 +671,35 @@ func unconfirmed(field, problem string) error {
 }
 
 func (handler *handlers) retryConnection(ctx context.Context, call Call, input connectionInput) (doneOutput, error) {
+	connection, err := handler.services.Connections.Get(ctx, call.Access(), input.ConnectionID)
+
+	if err != nil {
+		return doneOutput{}, err
+	}
+
 	if err := handler.services.Connections.RetryNow(ctx, call.Access(), input.ConnectionID); err != nil {
 		return doneOutput{}, err
 	}
+
+	retry := connectionChange(store.AuditRetry, connection, nil, nil)
+	retry.Always = true
+	handler.audit(ctx, call, retry)
 
 	return doneOutput{Done: "the waiting messages are being sent now"}, nil
 }
 
 func (handler *handlers) deleteConnection(ctx context.Context, call Call, input connectionInput) (doneOutput, error) {
-	if _, err := handler.services.Connections.Get(ctx, call.Access(), input.ConnectionID); err != nil {
+	connection, err := handler.services.Connections.Get(ctx, call.Access(), input.ConnectionID)
+
+	if err != nil {
 		return doneOutput{}, err
 	}
 
 	if err := handler.services.Connections.Delete(ctx, call.Access(), input.ConnectionID); err != nil {
 		return doneOutput{}, err
 	}
+
+	handler.audit(ctx, call, connectionChange(store.AuditDelete, connection, handler.connectionAudit(connection), nil))
 
 	return doneOutput{Done: "deleted"}, nil
 }

@@ -128,9 +128,8 @@
 			<ProjectsSummary
 				all={user.all_projects}
 				names={user.projects ?? []}
-				links={(user.project_ids ?? []).map((id) =>
-					resolve('/(app)/projects/[id=projectId]', { id })
-				)}
+				ids={user.project_ids ?? []}
+				limit={5}
 			/>
 		{:else if column.key === 'active'}
 			{#if user.last_active_at}<Time at={user.last_active_at} />{:else}<span class="text-muted">

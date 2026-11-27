@@ -102,6 +102,37 @@ func (user uiUser) count(query string) int {
 	return count.Count
 }
 
+// The project filter of the issue list offers only the projects some issue
+// is in (from the counts, no issue read), and only those the viewer sees.
+func TestUIIssueProjects(t *testing.T) {
+	server := newRESTServer(t)
+	server.ingestFixtures()
+
+	admin := server.webUser(store.RoleAdmin, false)
+
+	if response := admin.call(http.MethodPost, "create_project", `{"name":"quiet"}`); response.Code != http.StatusOK {
+		t.Fatalf("create_project: %d %s", response.Code, response.Body)
+	}
+
+	var projects struct {
+		Projects []string `json:"projects"`
+	}
+
+	admin.read("list_issue_projects", &projects)
+
+	if !slices.Equal(projects.Projects, []string{"backend", "frontend"}) {
+		t.Errorf("admin's projects with issues %v, want backend and frontend without quiet", projects.Projects)
+	}
+
+	limited := server.webUserWith(store.RoleUser, store.OnlyProjects(1))
+	projects.Projects = nil
+	limited.read("list_issue_projects", &projects)
+
+	if !slices.Equal(projects.Projects, []string{"backend"}) {
+		t.Errorf("a user of backend sees %v", projects.Projects)
+	}
+}
+
 // The issue list: several projects and levels at once, the count of the same
 // filters, the levels to choose from and each row's request for an agent.
 func TestUIIssueList(t *testing.T) {

@@ -1,7 +1,7 @@
 <!--
 @component
 The Projects or Levels filter of a list: a Picker whose options are drawn as project or level
-badges.
+badges; the projects with a field that narrows them by name (there can be many).
 -->
 <script lang="ts">
 	import Badge from './Badge.svelte';
@@ -23,7 +23,14 @@ badges.
 	};
 </script>
 
-<Picker label={names[kind].label} all={names[kind].all} {options} {selected} {onchange}>
+<Picker
+	label={names[kind].label}
+	all={names[kind].all}
+	{options}
+	{selected}
+	{onchange}
+	searchText={kind === 'project' ? (name: string) => name : undefined}
+>
 	{#snippet option(value: string)}
 		{#if kind === 'project'}<Badge tone="project" label={value} />{:else}<LevelBadge
 				level={value}

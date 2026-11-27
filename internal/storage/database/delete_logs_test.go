@@ -44,8 +44,8 @@ func TestDeleteLogs(t *testing.T) {
 	ids := logIDs(t, database, store.LogFilter{})
 	deleted, err := database.DeleteLogs(ctx, store.Access{}, []int64{ids["1 gone error"], ids["2 gone debug"], ids["2 gone debug"], 999_999, 0, -1})
 
-	if err != nil || deleted != 2 {
-		t.Fatalf("deleted %d, %v", deleted, err)
+	if err != nil || len(deleted) != 2 || deleted[0].Body != "gone error" || deleted[1].ProjectID != 2 {
+		t.Fatalf("deleted %+v, %v", deleted, err)
 	}
 
 	if left := logIDs(t, database, store.LogFilter{}); len(left) != 1 || left["1 kept"] == 0 {

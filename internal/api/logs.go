@@ -152,8 +152,9 @@ func (handler *handlers) deleteLogs(ctx context.Context, call Call, input delete
 	}
 
 	deleted, err := handler.services.Logs.Delete(ctx, call.Access(), call.Viewer, input.LogIDs)
+	handler.audit(ctx, call, logChanges(deleted)...)
 
-	return deletedLogsOutput{Deleted: deleted}, err
+	return deletedLogsOutput{Deleted: len(deleted)}, err
 }
 
 type countOutput struct {
@@ -191,6 +192,12 @@ func (handler *handlers) listLogLevels(ctx context.Context, call Call, _ noInput
 	present, err := handler.services.Logs.Levels(ctx, call.Access())
 
 	return levelsOutput{Levels: append([]string{}, config.InLevelOrder(present, config.LogLevels)...)}, err
+}
+
+func (handler *handlers) listLogProjects(ctx context.Context, call Call, _ noInput) (projectNamesOutput, error) {
+	ids, err := handler.services.Logs.Projects(ctx, call.Access())
+
+	return handler.projectNames(ids), err
 }
 
 func (handler *handlers) logFilter(call Call, input logFiltersInput) (store.LogFilter, error) {

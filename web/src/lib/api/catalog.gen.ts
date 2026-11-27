@@ -43,6 +43,28 @@ export interface Endpoints {
 			message: string;
 		};
 	};
+	count_audit: {
+		in: {
+			/** Only changes of these users (ids from list_users). */
+			user_id?: string[] | null;
+			/** Only changes of these kinds of record. */
+			resource?: ('issue' | 'log' | 'project' | 'connection' | 'user' | 'session' | 'agent')[] | null;
+			/** Only these actions. */
+			action?: ('create' | 'edit' | 'delete' | 'pause' | 'resume' | 'reset_key' | 'reset_password' | 'retry' | 'confirm' | 'unlink_google')[] | null;
+			/** Project names or IDs: only changes about one of them. */
+			project?: string[] | null;
+			/** Text in the user's name or email, the agent, the address, or the record's name or ID. */
+			query?: string;
+			/** RFC 3339 time: only changes at or after it. */
+			since?: string;
+			/** RFC 3339 time: only changes before it. */
+			until?: string;
+		};
+		out: {
+			count: number;
+			more?: boolean;
+		};
+	};
 	count_deliveries: {
 		in: {
 			/** Only this connection. */
@@ -137,6 +159,7 @@ export interface Endpoints {
 			destination: string;
 			all_projects: boolean;
 			projects?: string[] | null;
+			project_ids?: number[] | null;
 			levels: string[] | null;
 			active: boolean;
 			confirmed: boolean;
@@ -288,6 +311,41 @@ export interface Endpoints {
 				browser?: string;
 			}[] | null;
 			google_linked_at?: IsoTime | null;
+		};
+	};
+	get_audit_entry: {
+		in: {
+			/** The entry's id from list_audit. */
+			id: number;
+		};
+		out: {
+			id: number;
+			created_at: IsoTime;
+			user_id?: string;
+			user_name: string;
+			user_email?: string;
+			user_role?: string;
+			source: string;
+			agent?: string;
+			ip?: string;
+			resource: string;
+			action: string;
+			record_id: string;
+			record_name?: string;
+			project_ids: number[] | null;
+			projects: string[] | null;
+			before: Record<string, unknown>;
+			after: Record<string, unknown>;
+			exists?: boolean;
+			item_count?: number;
+			items: {
+				record_id: string;
+				record_name?: string;
+				project?: string;
+				before: Record<string, unknown>;
+				after: Record<string, unknown>;
+				exists?: boolean;
+			}[] | null;
 		};
 	};
 	get_connection: {
@@ -632,6 +690,61 @@ export interface Endpoints {
 			})[] | null;
 		};
 	};
+	list_audit: {
+		in: {
+			/** Only changes of these users (ids from list_users). */
+			user_id?: string[] | null;
+			/** Only changes of these kinds of record. */
+			resource?: ('issue' | 'log' | 'project' | 'connection' | 'user' | 'session' | 'agent')[] | null;
+			/** Only these actions. */
+			action?: ('create' | 'edit' | 'delete' | 'pause' | 'resume' | 'reset_key' | 'reset_password' | 'retry' | 'confirm' | 'unlink_google')[] | null;
+			/** Project names or IDs: only changes about one of them. */
+			project?: string[] | null;
+			/** Text in the user's name or email, the agent, the address, or the record's name or ID. */
+			query?: string;
+			/** RFC 3339 time: only changes at or after it. */
+			since?: string;
+			/** RFC 3339 time: only changes before it. */
+			until?: string;
+			/** Entries per page. @default 20 */
+			limit?: number;
+			/** next_cursor of the previous page. */
+			cursor?: string;
+		};
+		out: {
+			items: ({
+				id: number;
+				created_at: IsoTime;
+				user_id?: string;
+				user_name: string;
+				user_email?: string;
+				user_role?: string;
+				source: string;
+				agent?: string;
+				ip?: string;
+				resource: string;
+				action: string;
+				record_id: string;
+				record_name?: string;
+				project_ids: number[] | null;
+				projects: string[] | null;
+				before: Record<string, unknown>;
+				after: Record<string, unknown>;
+				exists?: boolean;
+				item_count?: number;
+			})[] | null;
+			next_cursor?: string;
+		};
+	};
+	list_audit_choices: {
+		in: Record<string, never>;
+		out: {
+			resources: string[] | null;
+			actions: string[] | null;
+			user_ids: string[] | null;
+			projects: string[] | null;
+		};
+	};
 	list_cleanups: {
 		in: Record<string, never>;
 		out: {
@@ -698,6 +811,7 @@ export interface Endpoints {
 				destination: string;
 				all_projects: boolean;
 				projects?: string[] | null;
+				project_ids?: number[] | null;
 				levels: string[] | null;
 				active: boolean;
 				confirmed: boolean;
@@ -779,6 +893,12 @@ export interface Endpoints {
 			levels: string[] | null;
 		};
 	};
+	list_issue_projects: {
+		in: Record<string, never>;
+		out: {
+			projects: string[] | null;
+		};
+	};
 	list_issues: {
 		in: {
 			/** Project names or IDs; every project when empty. */
@@ -827,6 +947,12 @@ export interface Endpoints {
 		in: Record<string, never>;
 		out: {
 			levels: string[] | null;
+		};
+	};
+	list_log_projects: {
+		in: Record<string, never>;
+		out: {
+			projects: string[] | null;
 		};
 	};
 	list_logs: {
@@ -1002,6 +1128,7 @@ export interface Endpoints {
 			destination: string;
 			all_projects: boolean;
 			projects?: string[] | null;
+			project_ids?: number[] | null;
 			levels: string[] | null;
 			active: boolean;
 			confirmed: boolean;
@@ -1144,6 +1271,7 @@ export interface Endpoints {
 			destination: string;
 			all_projects: boolean;
 			projects?: string[] | null;
+			project_ids?: number[] | null;
 			levels: string[] | null;
 			active: boolean;
 			confirmed: boolean;
@@ -1221,6 +1349,7 @@ export interface Endpoints {
 export const endpoints = {
 	apply_issue_action: { method: 'POST', admin: false, destructive: false, confirm: false },
 	confirm_email: { method: 'POST', admin: false, destructive: false, confirm: false },
+	count_audit: { method: 'GET', admin: false, destructive: false, confirm: false },
 	count_deliveries: { method: 'GET', admin: false, destructive: false, confirm: false },
 	count_issues: { method: 'GET', admin: false, destructive: false, confirm: false },
 	count_logs: { method: 'GET', admin: false, destructive: false, confirm: false },
@@ -1234,6 +1363,7 @@ export const endpoints = {
 	disconnect_agent: { method: 'POST', admin: false, destructive: true, confirm: false },
 	end_session: { method: 'POST', admin: false, destructive: false, confirm: true },
 	get_activity: { method: 'GET', admin: false, destructive: false, confirm: false },
+	get_audit_entry: { method: 'GET', admin: false, destructive: false, confirm: false },
 	get_connection: { method: 'GET', admin: false, destructive: false, confirm: false },
 	get_connection_defaults: { method: 'GET', admin: false, destructive: false, confirm: false },
 	get_issue_details: { method: 'GET', admin: false, destructive: false, confirm: false },
@@ -1245,13 +1375,17 @@ export const endpoints = {
 	get_storage: { method: 'GET', admin: false, destructive: false, confirm: false },
 	get_user: { method: 'GET', admin: false, destructive: false, confirm: false },
 	list_agents: { method: 'GET', admin: false, destructive: false, confirm: false },
+	list_audit: { method: 'GET', admin: false, destructive: false, confirm: false },
+	list_audit_choices: { method: 'GET', admin: false, destructive: false, confirm: false },
 	list_cleanups: { method: 'GET', admin: false, destructive: false, confirm: false },
 	list_connections: { method: 'GET', admin: false, destructive: false, confirm: false },
 	list_deliveries: { method: 'GET', admin: false, destructive: false, confirm: false },
 	list_issue_events: { method: 'GET', admin: false, destructive: false, confirm: false },
 	list_issue_levels: { method: 'GET', admin: false, destructive: false, confirm: false },
+	list_issue_projects: { method: 'GET', admin: false, destructive: false, confirm: false },
 	list_issues: { method: 'GET', admin: false, destructive: false, confirm: false },
 	list_log_levels: { method: 'GET', admin: false, destructive: false, confirm: false },
+	list_log_projects: { method: 'GET', admin: false, destructive: false, confirm: false },
 	list_logs: { method: 'GET', admin: false, destructive: false, confirm: false },
 	list_projects: { method: 'GET', admin: false, destructive: false, confirm: false },
 	list_users: { method: 'GET', admin: false, destructive: false, confirm: false },
@@ -1373,6 +1507,10 @@ export const choices = {
 		action: ['resolve', 'ignore', 'reopen', 'delete'],
 		ignore_for: ['1h', '24h', '7d', '30d'],
 	},
+	count_audit: {
+		action: ['create', 'edit', 'delete', 'pause', 'resume', 'reset_key', 'reset_password', 'retry', 'confirm', 'unlink_google'],
+		resource: ['issue', 'log', 'project', 'connection', 'user', 'session', 'agent'],
+	},
 	count_deliveries: {
 		status: ['pending', 'sent', 'failed'],
 	},
@@ -1392,6 +1530,10 @@ export const choices = {
 	},
 	create_user: {
 		role: ['admin', 'user'],
+	},
+	list_audit: {
+		action: ['create', 'edit', 'delete', 'pause', 'resume', 'reset_key', 'reset_password', 'retry', 'confirm', 'unlink_google'],
+		resource: ['issue', 'log', 'project', 'connection', 'user', 'session', 'agent'],
 	},
 	list_deliveries: {
 		status: ['pending', 'sent', 'failed'],

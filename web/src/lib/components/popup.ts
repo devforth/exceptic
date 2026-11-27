@@ -13,6 +13,13 @@ export function chevronClasses(open: boolean) {
 	];
 }
 
+/** The least width of a dropdown list (a Picker's, a Select's), in px: wider when its control or
+ * its values need it. */
+export const listMinWidth = 224;
+
+/** The same as a class beside a control as wide as it (Picker): 224px = 14rem. */
+export const listMinWidthClass = 'min-w-[max(100%,14rem)]';
+
 const gap = 4;
 const margin = 8;
 

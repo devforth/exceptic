@@ -23,13 +23,13 @@ export function pageWithin(paging: Paging, total: number): number {
 	return Math.min(paging.page, Math.max(1, Math.ceil(total / paging.perPage)));
 }
 
-/** The levels a level filter offers: those some record has and the chosen ones, in the known order. */
-export function offeredLevels<Level extends string>(
-	known: readonly Level[],
+/** The values a filter offers: those some record has and the chosen ones, in the known order. */
+export function offered<Value extends string>(
+	known: readonly Value[],
 	present: readonly string[] | null | undefined,
 	chosen: readonly string[]
-): Level[] {
-	return known.filter((level) => (present ?? []).includes(level) || chosen.includes(level));
+): Value[] {
+	return known.filter((value) => (present ?? []).includes(value) || chosen.includes(value));
 }
 
 /** The values of a list parameter that are among the known ones, in the known order. */
@@ -41,6 +41,13 @@ export function readChoices<Value extends string>(
 	const given = params.getAll(name).flatMap((value) => value.split(','));
 
 	return known.filter((value) => given.includes(value));
+}
+
+/** The values of a list parameter (?user=a&user=b or a,b), each once, in the order given. */
+export function readList(params: URLSearchParams, name: string): string[] {
+	const given = params.getAll(name).flatMap((value) => value.split(','));
+
+	return [...new Set(given.map((value) => value.trim()).filter(Boolean))];
 }
 
 /** The projects of a list parameter, given by name or id, as names in the projects' order. */

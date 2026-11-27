@@ -259,3 +259,35 @@ func TestLogSearchStopsInTime(t *testing.T) {
 		t.Fatalf("a trace whose search stopped: %d logs, stopped %v", len(trace.Logs), trace.Stopped)
 	}
 }
+
+// The project filter of the logs list offers only the projects some log is
+// in (one key looked up per project, no log read), and only those the
+// viewer sees.
+func TestUILogProjects(t *testing.T) {
+	server := newRESTServer(t)
+	logs := []store.NewLog{{ProjectID: 2, Timestamp: time.Now(), Level: "info", Body: "started", Fingerprint: "started"}}
+
+	if err := server.database.SaveLogs(context.Background(), logs, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	var projects struct {
+		Projects []string `json:"projects"`
+	}
+
+	for _, check := range []struct {
+		viewer uiUser
+		want   []string
+	}{
+		{server.webUser(store.RoleAdmin, false), []string{"frontend"}},
+		{server.webUserWith(store.RoleUser, store.OnlyProjects(1)), []string{}},
+		{server.webUserWith(store.RoleUser, store.OnlyProjects(1, 2)), []string{"frontend"}},
+	} {
+		projects.Projects = nil
+		check.viewer.read("list_log_projects", &projects)
+
+		if !slices.Equal(projects.Projects, check.want) {
+			t.Errorf("projects with logs %v, want %v", projects.Projects, check.want)
+		}
+	}
+}

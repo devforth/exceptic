@@ -126,6 +126,10 @@ func open(engine kv.Engine) (*Store, error) {
 	}
 
 	if err == nil {
+		err = db.Recount()
+	}
+
+	if err == nil {
 		err = errors.Join(database.loadInboxSize(), database.loadMarks(), database.loadPurges(), database.loadContacts())
 	}
 

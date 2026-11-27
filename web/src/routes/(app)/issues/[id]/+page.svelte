@@ -174,7 +174,7 @@
 </script>
 
 {#snippet pairs(rows: Pair[], label: string)}
-	<Table columns={pairColumns} {rows} {label} compact flat headerless>
+	<Table columns={pairColumns} {rows} {label} compact flat headerless top>
 		{#snippet cell(pair: Pair, column: PairColumn)}{pair[column.key]}{/snippet}
 	</Table>
 {/snippet}
@@ -386,6 +386,7 @@
 					columns={logColumns}
 					rows={event.related_logs ?? []}
 					label="Related logs"
+					top
 					compact
 					flat
 					headerless
@@ -409,6 +410,7 @@
 					columns={breadcrumbColumns}
 					rows={event.breadcrumbs}
 					label="Breadcrumbs"
+					top
 					compact
 					flat
 				>

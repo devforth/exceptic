@@ -28,7 +28,8 @@ func (db *DB) backfillKey(collection, name string) Key {
 	return db.meta.With(Text("backfill"), Text(collection), Text(name))
 }
 
-// openBackfills reads where each backfill stands; a new database records them done.
+// openBackfills reads where each backfill stands; a new database records
+// them and the recounts done.
 func (schema *Schema) openBackfills(db *DB) error {
 	if !db.fresh {
 		for _, collection := range schema.collections {
@@ -44,6 +45,7 @@ func (schema *Schema) openBackfills(db *DB) error {
 
 	for _, collection := range schema.collections {
 		collection.markBackfilled(db, batch)
+		collection.markRecounted(db, batch)
 	}
 
 	if batch.Len() == 0 {

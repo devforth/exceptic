@@ -2,7 +2,10 @@ package api
 
 import (
 	"context"
+	"slices"
 	"time"
+
+	"github.com/devforth/exceptic/internal/storage/store"
 )
 
 type activityInput struct {
@@ -65,10 +68,57 @@ type endSessionInput struct {
 	SessionID string `json:"session_id" jsonschema:"id from get_activity."`
 }
 
+// endSession ends a session; the audit log records one of another user.
 func (handler *handlers) endSession(ctx context.Context, call Call, input endSessionInput) (NoContent, error) {
-	return NoContent{}, handler.services.Users.EndSession(ctx, call.Viewer, input.UserID, input.SessionID, call.Session)
+	other := input.UserID != "" && input.UserID != call.Viewer.ID
+
+	var (
+		target   store.User
+		sessions []store.Session
+	)
+
+	if other {
+		// Read for the audit log; EndSession checks the rest.
+		target, _ = handler.services.Users.Get(ctx, input.UserID)
+
+		if activity, err := handler.services.Users.Activity(ctx, call.Viewer, input.UserID); err == nil {
+			sessions = activity.Sessions
+		}
+	}
+
+	if err := handler.services.Users.EndSession(ctx, call.Viewer, input.UserID, input.SessionID, call.Session); err != nil {
+		return NoContent{}, err
+	}
+
+	if other {
+		before := map[string]any{"user": target.Email}
+
+		if index := slices.IndexFunc(sessions, func(session store.Session) bool { return session.ID == input.SessionID }); index >= 0 {
+			session := sessions[index]
+			before["method"], before["address"], before["browser"], before["created_at"] = session.Method, session.Address, session.Browser, session.CreatedAt
+		}
+
+		handler.audit(ctx, call, auditChange{
+			Resource: store.AuditSession, Action: store.AuditDelete, RecordID: input.SessionID, RecordName: target.Email,
+			ProjectIDs: userProjects(target), Before: before,
+		})
+	}
+
+	return NoContent{}, nil
 }
 
+// unlinkGoogle unlinks a Google account; the audit log records one of another user.
 func (handler *handlers) unlinkGoogle(ctx context.Context, call Call, input activityInput) (NoContent, error) {
-	return NoContent{}, handler.services.Users.UnlinkGoogle(ctx, call.Viewer, input.UserID, call.Session)
+	target, _ := handler.services.Users.Get(ctx, input.UserID)
+
+	if err := handler.services.Users.UnlinkGoogle(ctx, call.Viewer, input.UserID, call.Session); err != nil {
+		return NoContent{}, err
+	}
+
+	if input.UserID != "" && input.UserID != call.Viewer.ID {
+		handler.audit(ctx, call, userChange(store.AuditUnlinkGoogle, target,
+			map[string]bool{"google_linked": target.GoogleSub != ""}, map[string]bool{"google_linked": false}))
+	}
+
+	return NoContent{}, nil
 }
