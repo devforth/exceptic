@@ -11,7 +11,7 @@
 # processes), MAX_DATABASE_SIZE (1500MB), LIMITS=off (no per-project rate limits), PORT (18000),
 # SENTRY_NODE_DIR (a directory whose node_modules has @sentry/node; default ../sentry-playground),
 # DSN (a project of the database dir, required with one; without a database dir the script sets up
-# an admin and adds a project). Needs curl and jq.
+# an admin and adds a project), LOGS (logs per error, 5; 0 sends errors only). Needs curl and jq.
 # Results go to data/load-runs/<time>-<cpus>-<memory>/.
 set -eu
 

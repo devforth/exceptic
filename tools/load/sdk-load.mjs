@@ -2,7 +2,7 @@
 // Needs @sentry/node: SENTRY_NODE_DIR is a directory whose node_modules has it (default ../sentry-playground).
 // Each event is an error thrown through a few frames, with breadcrumbs, a user, tags and
 // contexts as the SDK adds them; 1 in 4 repeats one of 50 issues, the rest are new issues
-// (a new error class per event). Every error also writes 5 logs through Sentry.logger.
+// (a new error class per event). Every error also writes LOGS logs (5 by default) through Sentry.logger.
 import { createRequire } from 'node:module';
 
 const sdkDir = process.env.SENTRY_NODE_DIR ?? new URL('../../../sentry-playground', import.meta.url).pathname;
@@ -10,6 +10,7 @@ const require = createRequire(`${sdkDir}/package.json`);
 const Sentry = require('@sentry/node');
 
 const [dsn, seconds, worker] = process.argv.slice(2);
+const logsPerError = Number(process.env.LOGS ?? 5);
 const stats = { captured: 0, logs: 0, envelopes: 0, status: {}, refused: {} };
 
 // The SDK's own transport, counting the answers.
@@ -38,7 +39,7 @@ function countingTransport(options) {
 
 Sentry.init({
 	dsn,
-	enableLogs: true,
+	enableLogs: logsPerError > 0,
 	environment: 'load',
 	release: 'load@1.0.0',
 	sendClientReports: true,
@@ -89,7 +90,7 @@ function once() {
 	Sentry.setUser({ id: String(Math.floor(Math.random() * 1000)), email: 'user@example.com' });
 	Sentry.setTag('route', `/api/${pick(words)}`);
 
-	for (let index = 0; index < 5; index++) {
+	for (let index = 0; index < logsPerError; index++) {
 		Sentry.logger.info(`Handled ${pick(words)} ${index} for request ${Math.floor(Math.random() * 1e6)}`, { route: pick(words) });
 		stats.logs++;
 	}

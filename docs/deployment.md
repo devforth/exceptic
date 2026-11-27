@@ -103,13 +103,16 @@ server {
 
 The server uses about 200 MB of memory whatever the load; more memory does not make it faster.
 
-Measured: 10 projects sending errors as fast as they could, each error with 5 logs, through the official Node.js SDK. The server accepted about this many requests a second (one request is one error or one batch of logs):
+How much the server can take at most, by CPU: the most errors it stored while 10 projects sent them without pause through the official Node.js SDK. Each error was about 16 KB (a stack trace, 10 breadcrumbs, user, tags). Normal use is far below this.
 
 | CPU | 0.5 | 1 | 2 | 4 |
 |---|---|---|---|---|
-| Requests a second | 130 | 220 | 310 | 410 |
+| Errors a minute, all projects together | 8,300 | 16,700 | 26,500 | 39,400 |
+| Data a minute | 130 MB | 265 MB | 415 MB | 620 MB |
 
-When the server cannot keep up, apps pause for a few seconds and then send again. What they drop meanwhile shows on the Projects page. A project that sends more than its part of the queue is paused alone ([Ingest](configuration.md#ingest)).
+Logs sent along take their share: with 5 logs per error, about a third fewer errors.
+
+Above that, apps pause for a few seconds and then send again. What they drop meanwhile shows on the Projects page. A project that sends more than its part of the queue is paused alone ([Ingest](configuration.md#ingest)).
 
 ## Backup and restore
 
