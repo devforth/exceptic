@@ -108,24 +108,13 @@ Events and logs are kept until the database nears [its size limit](configuration
 
 | | Minimum | Recommended |
 |---|---|---|
-| CPU | 0.5 core | 1–2 cores |
-| Memory | 256 MB | 512 MB – 1 GB |
-| Disk | 1.3 × `MAX_DATABASE_SIZE`, an SSD | the same |
+| CPU | 1 vCPU | 2 vCPU for many busy projects |
+| Memory | 256 MB | 512 MB |
+| Disk | 1.3 × `MAX_DATABASE_SIZE` | the same, on an SSD |
 
-Measured in Docker with these limits on an NVMe disk, with the official `@sentry/node` SDK sending errors with logs: memory stays about 200 MB at any limit (the default `GOMEMLIMIT`), 8 MB when idle. The CPU sets only the speed: about 900 small errors a second are stored on half a core, 1,750 on one; a burst over that waits in the queue and is stored within a minute or two after it. The cleanup of a database 25% over its limit took 90 s on half a core and 16 s on four, during which new envelopes were answered `429` for the moments its compaction holds the writes.
-
-Measured on a laptop with 20 threads and an NVMe disk, with the peak of 50 projects each sending 1,000 errors and 2,200 log lines at once:
-
-| | |
-|---|---|
-| Memory | About 200 MB at the peak (the default `GOMEMLIMIT`), less when idle. |
-| CPU | The errors are stored in about 14 s (3,600 a second) on 5 cores on average; SDKs get their answers in milliseconds, since envelopes wait in the queue. |
-| Disk space | At least 1.3 × `MAX_DATABASE_SIZE`: the limit counts the data held, the files hold more ([Retention](configuration.md#retention)); merging its files, the database writes new ones before it deletes the old. |
-| Disk writes | The database writes data several times as it merges its files: the 366 MB of that peak wrote 1.8 GB. Use an SSD; a slow network volume becomes the limit. |
-| Connections | At most 1,000 at once; more wait in the queue until one closes (idle keep-alive connections are closed first), none is refused. Request headers are limited to 64 KiB (431 above). |
-| At the size limit | The same peak while the cleanup runs is stored in about a minute, with answers under 0.5 s and nothing refused; the cleanup took 2 GB down to 0.5 GB in 3 minutes. |
-
-A crash of the process loses nothing the server has answered. A power cut may lose the envelopes of the last few milliseconds: the queue is written without a disk sync of its own, and the next stored batch syncs it.
+- The server uses about 200 MB of memory whatever the load; more memory does not make it faster.
+- A burst it cannot store at once waits in a queue. When the queue is full, apps pause for a few seconds; what they drop meanwhile shows on the Projects page.
+- A crash loses nothing the server has answered.
 
 ## Backup and restore
 

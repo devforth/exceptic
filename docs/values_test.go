@@ -115,10 +115,8 @@ func TestDocsValues(t *testing.T) {
 		value{Phrase: "a body must arrive within {} seconds", Value: seconds(ingest.BodyReadTimeout)},
 		value{Phrase: "**admin** ({})", Value: store.RoleSummaries[store.RoleAdmin]},
 		value{Phrase: "**user** ({})", Value: store.RoleSummaries[store.RoleUser]},
-		value{Phrase: "About {} MB at the peak (the default `GOMEMLIMIT`)", Value: config.DefaultMemoryLimit >> 20},
-		value{Phrase: "| Disk space | At least {} ×", Value: diskFactor},
-		value{Phrase: "| Connections | At most {} at once", Value: fixtures.Thousands(config.MaxConnections)},
-		value{Phrase: "Request headers are limited to {} KiB", Value: config.MaxHeaderBytes >> 10},
+		value{Phrase: "The server uses about {} MB of memory", Value: config.DefaultMemoryLimit >> 20},
+		value{Phrase: "| Disk | {} × `MAX_DATABASE_SIZE`", Value: diskFactor},
 		value{Phrase: "the authorized redirect URI `<PUBLIC_URL>{}`", Value: config.GoogleRedirectPath},
 		value{Phrase: "(for example `https://errors.example.com{}`)", Value: config.GoogleRedirectPath},
 	)
